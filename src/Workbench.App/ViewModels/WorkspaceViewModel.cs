@@ -2,8 +2,10 @@ using Avalonia.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Workbench.App.ViewModels.Panes;
+using Workbench.App.ViewModels.Leader;
 using Workbench.Core.Layout;
 using Workbench.Project.Opening;
+using Workbench.Runtime.Registry;
 using Workbench.Storage.Projects;
 
 namespace Workbench.App.ViewModels;
@@ -21,7 +23,11 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ProjectLayoutRepository layoutRepository,
         Func<Task> backToProjects,
         TimeProvider? timeProvider = null,
-        TimeSpan? debounce = null)
+        TimeSpan? debounce = null,
+        AgentRuntimeRegistry? runtimeRegistry = null,
+        ProjectLeaderSessionManager? leaderSessionManager = null,
+        string? runtimeUnavailableDetail = null,
+        Func<CancellationToken, Task>? reconnectRuntime = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -29,7 +35,13 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(350);
         Layout = result.Layout;
-        LeaderPane = new LeaderPaneViewModel(FocusLeaderAsync);
+        LeaderPane = new LeaderPaneViewModel(
+            result.Project,
+            runtimeRegistry ?? new AgentRuntimeRegistry(),
+            leaderSessionManager ?? new ProjectLeaderSessionManager(),
+            FocusLeaderAsync,
+            runtimeUnavailableDetail,
+            reconnectRuntime);
         WorkPane = new WorkPaneViewModel(FocusWorkAsync);
         LibraryPane = new LibraryPaneViewModel(result, FocusLibraryAsync);
     }

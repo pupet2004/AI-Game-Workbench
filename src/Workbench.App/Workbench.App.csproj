@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Workbench.Core\Workbench.Core.csproj" />
     <ProjectReference Include="..\Workbench.Project\Workbench.Project.csproj" />
+    <ProjectReference Include="..\Workbench.Runtime\Workbench.Runtime.csproj" />
     <ProjectReference Include="..\Workbench.Storage\Workbench.Storage.csproj" />
   </ItemGroup>
 </Project>

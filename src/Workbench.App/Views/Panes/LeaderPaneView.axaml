@@ -1,13 +1,130 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Workbench.App.ViewModels.Panes"
+             xmlns:leader="using:Workbench.App.ViewModels.Leader"
              x:Class="Workbench.App.Views.Panes.LeaderPaneView"
              x:DataType="vm:LeaderPaneViewModel">
     <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
-        <StackPanel Spacing="16">
-            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="LEADER" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
-            <TextBlock Text="No AI runtime connected." FontSize="18" />
-            <TextBlock Text="Your project's persistent Leader will live here." TextWrapping="Wrap" Foreground="#667085" />
-        </StackPanel>
+        <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                <TextBlock Text="LEADER" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" />
+            </Grid>
+
+            <ComboBox Grid.Row="1"
+                      ItemsSource="{Binding AvailableModels}"
+                      SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
+                      IsEnabled="{Binding IsModelSelectionEnabled}"
+                      HorizontalAlignment="Stretch"
+                      PlaceholderText="Select a Leader model">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="leader:LeaderModelOptionViewModel">
+                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <Grid Grid.Row="2">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Messages}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="leader:LeaderMessageViewModel">
+                                <Border Margin="0,0,0,12"
+                                        Padding="12"
+                                        Background="#F5F6F8"
+                                        CornerRadius="6">
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="{Binding RoleLabel}"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#667085" />
+                                        <TextBlock Text="{Binding Text}"
+                                                   Foreground="#101828"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <Border IsVisible="{Binding CanRetryRuntime}"
+                        Padding="18"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="#F5F6F8"
+                        CornerRadius="6">
+                    <StackPanel Spacing="8" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding RuntimeStatus}"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="#101828"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding RuntimeErrorDetail}"
+                                   Foreground="#667085"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Center"
+                                   MaxWidth="280" />
+                        <Button Content="Retry"
+                                Command="{Binding RetryRuntimeCommand}"
+                                HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="3"
+                    IsVisible="{Binding HasPendingApproval}"
+                    Padding="12"
+                    BorderBrush="#D9A441"
+                    BorderThickness="1"
+                    Background="#FFF8E7"
+                    CornerRadius="6">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Approval required"
+                               FontWeight="SemiBold"
+                               Foreground="#101828" />
+                    <TextBlock Text="{Binding PendingApproval.Summary}"
+                               Foreground="#101828"
+                               TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding ApprovalOptions}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="leader:LeaderApprovalOptionViewModel">
+                                <Button Margin="0,0,8,0"
+                                        Content="{Binding Label}"
+                                        Command="{Binding SelectCommand}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding ApprovalError}"
+                               Foreground="#B42318"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding DraftMessage, Mode=TwoWay}"
+                         PlaceholderText="Message the Project Leader"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="42"
+                         MaxHeight="110" />
+                <Button Grid.Column="1"
+                        Content="Send"
+                        Command="{Binding SendCommand}"
+                        IsEnabled="{Binding CanSend}"
+                        VerticalAlignment="Bottom" />
+                <Button Grid.Column="2"
+                        Content="Stop"
+                        Command="{Binding StopCommand}"
+                        IsVisible="{Binding CanStop}"
+                        VerticalAlignment="Bottom" />
+            </Grid>
+        </Grid>
     </Border>
 </UserControl>

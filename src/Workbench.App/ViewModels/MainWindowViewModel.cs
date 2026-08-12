@@ -1,19 +1,25 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Workbench.App.Services;
+using Workbench.App.ViewModels.Leader;
 using Workbench.Project.Opening;
 using Workbench.Storage.Database;
 
 namespace Workbench.App.ViewModels;
 
-public partial class MainWindowViewModel : ViewModelBase
+public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 {
     private readonly AppServices _services;
     private readonly IFolderPickerService _folderPickerService;
+    private readonly ProjectLeaderSessionManager _leaderSessions;
 
-    public MainWindowViewModel(AppServices services, IFolderPickerService folderPickerService)
+    public MainWindowViewModel(
+        AppServices services,
+        IFolderPickerService folderPickerService,
+        ProjectLeaderSessionManager? leaderSessions = null)
     {
         _services = services;
         _folderPickerService = folderPickerService;
+        _leaderSessions = leaderSessions ?? new ProjectLeaderSessionManager();
         CurrentPage = CreateHome();
     }
 
@@ -56,9 +62,27 @@ public partial class MainWindowViewModel : ViewModelBase
             _folderPickerService,
             ShowWorkspace);
 
-    private Task ShowWorkspace(ProjectOpenResult result)
+    private async Task ShowWorkspace(ProjectOpenResult result)
     {
-        CurrentPage = new WorkspaceViewModel(result, _services.ProjectLayoutRepository, BackToHomeAsync);
-        return Task.CompletedTask;
+        var workspace = new WorkspaceViewModel(
+            result,
+            _services.ProjectLayoutRepository,
+            BackToHomeAsync,
+            runtimeRegistry: _services.RuntimeRegistry,
+            leaderSessionManager: _leaderSessions,
+            runtimeUnavailableDetail: _services.RuntimeUnavailableDetail,
+            reconnectRuntime: _services.RetryRuntimeAsync);
+        CurrentPage = workspace;
+        await workspace.LeaderPane.InitializeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (CurrentPage is WorkspaceViewModel workspace)
+        {
+            await workspace.FlushLayoutAsync();
+        }
+
+        await _services.DisposeAsync();
     }
 }

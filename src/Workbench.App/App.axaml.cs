@@ -19,15 +19,35 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var window = new MainWindow();
+            var services = AppServices.CreateDefault(CodexRuntimeComposition.ConnectAsync);
             var viewModel = new MainWindowViewModel(
-                AppServices.CreateDefault(),
+                services,
                 new FolderPickerService(window));
             window.DataContext = viewModel;
-            window.Closing += (_, _) =>
+            var shutdownStarted = false;
+            var shutdownComplete = false;
+            window.Closing += async (_, args) =>
             {
-                if (viewModel.CurrentPage is WorkspaceViewModel workspace)
+                if (shutdownComplete)
                 {
-                    _ = workspace.FlushLayoutAsync();
+                    return;
+                }
+
+                args.Cancel = true;
+                if (shutdownStarted)
+                {
+                    return;
+                }
+
+                shutdownStarted = true;
+                try
+                {
+                    await viewModel.DisposeAsync();
+                }
+                finally
+                {
+                    shutdownComplete = true;
+                    window.Close();
                 }
             };
             desktop.MainWindow = window;

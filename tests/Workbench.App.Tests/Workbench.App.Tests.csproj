@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Workbench.App\Workbench.App.csproj" />
+    <ProjectReference Include="..\..\src\Workbench.Runtime\Workbench.Runtime.csproj" />
   </ItemGroup>
 
 </Project>

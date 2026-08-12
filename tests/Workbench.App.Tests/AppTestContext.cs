@@ -1,8 +1,10 @@
 using Workbench.App.Services;
 using Workbench.App.ViewModels;
+using Workbench.App.ViewModels.Leader;
 using Workbench.Project.Git;
 using Workbench.Project.Opening;
 using Workbench.App.Tests.Support;
+using Workbench.Runtime.Registry;
 
 namespace Workbench.App.Tests;
 
@@ -11,27 +13,45 @@ internal sealed class AppTestContext : IAsyncDisposable
     private readonly TemporaryDirectory _directory;
     private readonly TestFolderPickerService _folderPicker;
 
-    private AppTestContext(TemporaryDirectory directory, AppServices services, MutableTimeProvider time, TestFolderPickerService folderPicker)
+    private AppTestContext(
+        TemporaryDirectory directory,
+        AppServices services,
+        MutableTimeProvider time,
+        TestFolderPickerService folderPicker,
+        ProjectLeaderSessionManager leaderSessions)
     {
         _directory = directory;
         Services = services;
         Time = time;
         _folderPicker = folderPicker;
+        LeaderSessions = leaderSessions;
     }
 
     public AppServices Services { get; }
 
     public MutableTimeProvider Time { get; }
 
+    public ProjectLeaderSessionManager LeaderSessions { get; }
+
     public ProjectOpenResult? LastOpened { get; private set; }
 
-    public static async Task<AppTestContext> CreateAsync(string? folderPath = "unused")
+    public static async Task<AppTestContext> CreateAsync(
+        string? folderPath = "unused",
+        AgentRuntimeRegistry? runtimeRegistry = null)
     {
         var directory = new TemporaryDirectory("database");
         var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-01-01T00:00:00.0000000+00:00"));
-        var services = AppServices.CreateForDatabasePath(Path.Combine(directory.Path, "workbench.db"), time);
+        var services = AppServices.CreateForDatabasePath(
+            Path.Combine(directory.Path, "workbench.db"),
+            time,
+            runtimeRegistry);
         await services.InitializeAsync();
-        return new AppTestContext(directory, services, time, new TestFolderPickerService(folderPath));
+        return new AppTestContext(
+            directory,
+            services,
+            time,
+            new TestFolderPickerService(folderPath),
+            new ProjectLeaderSessionManager());
     }
 
     public HomeViewModel CreateHome(Func<string, CancellationToken, Task<ProjectOpenResult>>? opener = null) =>
@@ -41,10 +61,18 @@ internal sealed class AppTestContext : IAsyncDisposable
             return Task.CompletedTask;
         }, opener);
 
-    public MainWindowViewModel CreateMain() => new(Services, _folderPicker);
+    public MainWindowViewModel CreateMain() => new(Services, _folderPicker, LeaderSessions);
 
     public WorkspaceViewModel CreateWorkspace(ProjectOpenResult result, TimeSpan? debounce = null) =>
-        new(result, Services.ProjectLayoutRepository, () => Task.CompletedTask, Time, debounce);
+        new(
+            result,
+            Services.ProjectLayoutRepository,
+            () => Task.CompletedTask,
+            Time,
+            debounce,
+            Services.RuntimeRegistry,
+            LeaderSessions,
+            Services.RuntimeUnavailableDetail);
 
     public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
     {

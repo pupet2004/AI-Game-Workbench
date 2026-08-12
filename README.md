@@ -7,5 +7,10 @@ Completed
 
 M1 — Leader Lives
 
+Completed:
+M1-01
+M1-02
+M1-02A
+
 Current:
-M1-02A — Runtime Context & Approval Gaps
+M1-03 — Live Project Leader
