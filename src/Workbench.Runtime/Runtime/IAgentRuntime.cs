@@ -26,6 +26,11 @@ public interface IAgentRuntime
         AgentRequest request,
         CancellationToken cancellationToken = default);
 
+    Task RespondToApprovalAsync(
+        AgentSession session,
+        AgentApprovalDecision decision,
+        CancellationToken cancellationToken = default);
+
     Task StopAsync(AgentSession session, CancellationToken cancellationToken = default);
 
     Task<AgentSessionStatus> GetStatusAsync(

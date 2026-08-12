@@ -13,7 +13,8 @@ internal static class CodexRuntimeMapper
         AgentCapability.StructuredEvents |
         AgentCapability.Stop |
         AgentCapability.Transcript |
-        AgentCapability.ParallelSessions;
+        AgentCapability.ParallelSessions |
+        AgentCapability.Approval;
 
     public static IReadOnlyList<ModelProfile> MapModels(JsonElement result) =>
         result.GetProperty("data")
@@ -28,7 +29,8 @@ internal static class CodexRuntimeMapper
     public static AgentSession MapSession(
         JsonElement result,
         ProviderAccountId accountId,
-        string requestedModelId)
+        string requestedModelId,
+        string? workingDirectory = null)
     {
         var now = DateTimeOffset.UtcNow;
         var thread = result.GetProperty("thread");
@@ -41,6 +43,7 @@ internal static class CodexRuntimeMapper
             accountId,
             CodexProviderId,
             modelId,
+            workingDirectory,
             thread.GetProperty("id").GetString(),
             AgentSessionStatus.Ready,
             now,

@@ -21,10 +21,37 @@ public sealed record AgentStatusChanged(
     AgentSessionStatus Status,
     DateTimeOffset OccurredAt) : AgentEvent(OccurredAt);
 
-public sealed record AgentApprovalRequested(
-    string RequestId,
-    string Description,
-    DateTimeOffset OccurredAt) : AgentEvent(OccurredAt);
+public sealed record AgentApprovalRequested : AgentEvent
+{
+    public AgentApprovalRequested(
+        AgentApprovalRequestId requestId,
+        AgentSessionId sessionId,
+        string summary,
+        IReadOnlyList<AgentApprovalOption> options,
+        DateTimeOffset occurredAt)
+        : base(occurredAt)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(summary);
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.Count == 0)
+        {
+            throw new ArgumentException("At least one approval option is required.", nameof(options));
+        }
+
+        RequestId = requestId;
+        SessionId = sessionId;
+        Summary = summary;
+        Options = options.ToArray();
+    }
+
+    public AgentApprovalRequestId RequestId { get; }
+
+    public AgentSessionId SessionId { get; }
+
+    public string Summary { get; }
+
+    public IReadOnlyList<AgentApprovalOption> Options { get; }
+}
 
 public sealed record AgentToolEvent(
     string ToolName,

@@ -8,4 +8,4 @@ Completed
 M1 — Leader Lives
 
 Current:
-M1-02 — Codex App Server Compatibility Spike
+M1-02A — Runtime Context & Approval Gaps

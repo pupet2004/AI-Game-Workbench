@@ -14,6 +14,9 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
     private readonly CodexAppServerOptions _options;
     private readonly Dictionary<AgentSessionId, string> _activeTurns = [];
     private readonly Lock _activeTurnsLock = new();
+    private readonly Dictionary<AgentApprovalRequestId, CodexPendingApproval> _pendingApprovals = [];
+    private readonly Lock _pendingApprovalsLock = new();
+    private int _protocolFailed;
     private int _disposed;
 
     private CodexAgentRuntime(
@@ -23,6 +26,7 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
     {
         _client = client;
         _options = options;
+        _client.ConnectionFailed += HandleConnectionFailed;
         Provider = new ProviderDescriptor(CodexProviderId, "Codex");
         Account = new ProviderAccountSummary(accountId, CodexProviderId, "Local Codex Account", true);
     }
@@ -37,7 +41,10 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         AgentCapability.StructuredEvents |
         AgentCapability.Stop |
         AgentCapability.Transcript |
-        AgentCapability.ParallelSessions;
+        AgentCapability.ParallelSessions |
+        AgentCapability.Approval;
+
+    internal Task ProtocolCompletion => _client.Completion;
 
     public static async Task<CodexAgentRuntime> ConnectAsync(
         CodexAppServerOptions options,
@@ -117,12 +124,12 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
             new
             {
                 model = request.ModelId,
-                cwd = _options.WorkingDirectory,
+                cwd = request.WorkingDirectory,
                 sandbox = "read-only",
-                approvalPolicy = "never"
+                approvalPolicy = "on-request"
             },
             cancellationToken).ConfigureAwait(false);
-        return CodexRuntimeMapper.MapSession(result, Account.Id, request.ModelId);
+        return CodexRuntimeMapper.MapSession(result, Account.Id, request.ModelId, request.WorkingDirectory);
     }
 
     public async Task<AgentSession> ResumeSessionAsync(
@@ -136,13 +143,18 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
             {
                 threadId = session.ExternalSessionId,
                 model = session.ModelId,
-                cwd = _options.WorkingDirectory,
+                cwd = session.WorkingDirectory,
                 sandbox = "read-only",
-                approvalPolicy = "never"
+                approvalPolicy = "on-request"
             },
             cancellationToken).ConfigureAwait(false);
-        var mapped = CodexRuntimeMapper.MapSession(result, Account.Id, session.ModelId);
-        return mapped with { Id = session.Id, CreatedAt = session.CreatedAt };
+        var mapped = CodexRuntimeMapper.MapSession(result, Account.Id, session.ModelId, session.WorkingDirectory);
+        return mapped with
+        {
+            Id = session.Id,
+            CreatedAt = session.CreatedAt,
+            WorkingDirectory = session.WorkingDirectory
+        };
     }
 
     public async IAsyncEnumerable<AgentEvent> SendAsync(
@@ -151,16 +163,26 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ValidateSession(session);
-        var notifications = Channel.CreateUnbounded<CodexProtocolMessage>();
-        void Receive(CodexProtocolMessage message)
+        var inbound = Channel.CreateUnbounded<CodexTurnInbound>();
+        void ReceiveNotification(CodexProtocolMessage message)
         {
             if (BelongsToThread(message.Params, session.ExternalSessionId!))
             {
-                notifications.Writer.TryWrite(message);
+                inbound.Writer.TryWrite(new CodexNotificationInbound(message));
             }
         }
 
-        _client.NotificationReceived += Receive;
+        void ReceiveServerRequest(CodexServerRequest serverRequest)
+        {
+            if (IsSupportedApprovalMethod(serverRequest.Method) &&
+                BelongsToThread(serverRequest.Params, session.ExternalSessionId!))
+            {
+                inbound.Writer.TryWrite(new CodexServerRequestInbound(serverRequest));
+            }
+        }
+
+        _client.NotificationReceived += ReceiveNotification;
+        _client.ServerRequestReceived += ReceiveServerRequest;
         var finalText = new StringBuilder();
 
         try
@@ -171,8 +193,8 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                 {
                     threadId = session.ExternalSessionId,
                     input = new[] { new { type = "text", text = request.Text } },
-                    cwd = _options.WorkingDirectory,
-                    approvalPolicy = "never",
+                    cwd = session.WorkingDirectory,
+                    approvalPolicy = "on-request",
                     sandboxPolicy = new { type = "readOnly", networkAccess = false }
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -183,10 +205,22 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                 _activeTurns[session.Id] = turnId;
             }
 
-            while (await notifications.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
+            while (await inbound.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                while (notifications.Reader.TryRead(out var notification))
+                while (inbound.Reader.TryRead(out var message))
                 {
+                    if (message is CodexServerRequestInbound serverRequest)
+                    {
+                        var approval = MapApprovalRequest(session, turnId, serverRequest.Request);
+                        if (approval is not null)
+                        {
+                            yield return approval;
+                        }
+
+                        continue;
+                    }
+
+                    var notification = ((CodexNotificationInbound)message).Message;
                     if (notification.Method == "item/agentMessage/delta")
                     {
                         var text = notification.Params.GetProperty("delta").GetString() ?? string.Empty;
@@ -204,6 +238,11 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                         finalText.ToString());
                     if (mapped is not null)
                     {
+                        if (mapped is AgentTurnCompleted)
+                        {
+                            ClearPendingApprovals(session.Id);
+                        }
+
                         yield return mapped;
                     }
 
@@ -216,11 +255,65 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         }
         finally
         {
-            _client.NotificationReceived -= Receive;
+            _client.NotificationReceived -= ReceiveNotification;
+            _client.ServerRequestReceived -= ReceiveServerRequest;
+            ClearPendingApprovals(session.Id);
             lock (_activeTurnsLock)
             {
                 _activeTurns.Remove(session.Id);
             }
+        }
+    }
+
+    public async Task RespondToApprovalAsync(
+        AgentSession session,
+        AgentApprovalDecision decision,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSession(session);
+        ArgumentNullException.ThrowIfNull(decision);
+
+        CodexPendingApproval pending;
+        string providerDecision;
+        lock (_pendingApprovalsLock)
+        {
+            if (!_pendingApprovals.TryGetValue(decision.RequestId, out pending!))
+            {
+                throw new InvalidOperationException($"Approval request '{decision.RequestId}' is not pending.");
+            }
+
+            if (pending.SessionId != session.Id)
+            {
+                throw new InvalidOperationException("The approval request does not belong to this session.");
+            }
+
+            if (!pending.ProviderOptions.TryGetValue(decision.OptionId, out providerDecision!))
+            {
+                throw new InvalidOperationException(
+                    $"Approval option '{decision.OptionId}' is not valid for request '{decision.RequestId}'.");
+            }
+
+            _pendingApprovals.Remove(decision.RequestId);
+        }
+
+        try
+        {
+            await _client.SendResponseAsync(
+                pending.ProviderRequestId,
+                CreateProviderApprovalResponse(pending, providerDecision),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            lock (_pendingApprovalsLock)
+            {
+                if (Volatile.Read(ref _protocolFailed) == 0)
+                {
+                    _pendingApprovals.TryAdd(decision.RequestId, pending);
+                }
+            }
+
+            throw;
         }
     }
 
@@ -324,6 +417,108 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         parameters.TryGetProperty("threadId", out var eventThreadId) &&
         string.Equals(eventThreadId.GetString(), threadId, StringComparison.Ordinal);
 
+    private AgentApprovalRequested? MapApprovalRequest(
+        AgentSession session,
+        string activeTurnId,
+        CodexServerRequest request)
+    {
+        if (!request.Params.TryGetProperty("turnId", out var turnId) ||
+            !string.Equals(turnId.GetString(), activeTurnId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var requestId = AgentApprovalRequestId.New();
+        var providerOptions = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["approve-once"] = "accept",
+            ["approve-session"] = "acceptForSession",
+            ["decline"] = "decline",
+            ["cancel"] = "cancel"
+        };
+        var pending = new CodexPendingApproval(
+            session.Id,
+            request.Id.Clone(),
+            request.Method,
+            providerOptions);
+
+        lock (_pendingApprovalsLock)
+        {
+            _pendingApprovals.Add(requestId, pending);
+        }
+
+        return new AgentApprovalRequested(
+            requestId,
+            session.Id,
+            CreateApprovalSummary(request),
+            [
+                new AgentApprovalOption("approve-once", "Approve once", "Allow this operation once."),
+                new AgentApprovalOption("approve-session", "Approve for session", "Allow equivalent operations for this session."),
+                new AgentApprovalOption("decline", "Decline", "Deny this operation and continue the turn."),
+                new AgentApprovalOption("cancel", "Cancel turn", "Deny this operation and interrupt the turn.")
+            ],
+            DateTimeOffset.UtcNow);
+    }
+
+    private static string CreateApprovalSummary(CodexServerRequest request)
+    {
+        if (request.Params.TryGetProperty("reason", out var reason) &&
+            reason.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(reason.GetString()))
+        {
+            return reason.GetString()!;
+        }
+
+        if (request.Method == "item/commandExecution/requestApproval" &&
+            request.Params.TryGetProperty("command", out var command) &&
+            command.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(command.GetString()))
+        {
+            return $"Allow command execution: {command.GetString()}";
+        }
+
+        return request.Method == "item/fileChange/requestApproval"
+            ? "Allow the proposed file changes?"
+            : "Allow the requested command execution?";
+    }
+
+    private static bool IsSupportedApprovalMethod(string method) =>
+        method is "item/commandExecution/requestApproval" or "item/fileChange/requestApproval";
+
+    private static object CreateProviderApprovalResponse(
+        CodexPendingApproval pending,
+        string providerDecision) =>
+        pending.Method switch
+        {
+            "item/commandExecution/requestApproval" => new { decision = providerDecision },
+            "item/fileChange/requestApproval" => new { decision = providerDecision },
+            _ => throw new InvalidOperationException(
+                $"Codex approval method '{pending.Method}' is not supported.")
+        };
+
+    private void ClearPendingApprovals(AgentSessionId sessionId)
+    {
+        lock (_pendingApprovalsLock)
+        {
+            foreach (var requestId in _pendingApprovals
+                         .Where(pair => pair.Value.SessionId == sessionId)
+                         .Select(pair => pair.Key)
+                         .ToArray())
+            {
+                _pendingApprovals.Remove(requestId);
+            }
+        }
+    }
+
+    private void HandleConnectionFailed(Exception _)
+    {
+        Volatile.Write(ref _protocolFailed, 1);
+        lock (_pendingApprovalsLock)
+        {
+            _pendingApprovals.Clear();
+        }
+    }
+
     private static void TryCaptureCompletedAgentMessage(JsonElement parameters, StringBuilder finalText)
     {
         if (!parameters.TryGetProperty("item", out var item) ||
@@ -341,7 +536,25 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
+            _client.ConnectionFailed -= HandleConnectionFailed;
+            lock (_pendingApprovalsLock)
+            {
+                _pendingApprovals.Clear();
+            }
+
             await _client.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    private abstract record CodexTurnInbound;
+
+    private sealed record CodexNotificationInbound(CodexProtocolMessage Message) : CodexTurnInbound;
+
+    private sealed record CodexServerRequestInbound(CodexServerRequest Request) : CodexTurnInbound;
+
+    private sealed record CodexPendingApproval(
+        AgentSessionId SessionId,
+        JsonElement ProviderRequestId,
+        string Method,
+        IReadOnlyDictionary<string, string> ProviderOptions);
 }

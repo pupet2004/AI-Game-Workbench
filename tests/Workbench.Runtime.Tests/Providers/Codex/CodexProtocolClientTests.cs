@@ -55,6 +55,23 @@ public sealed class CodexProtocolClientTests
     }
 
     [Fact]
+    public async Task Codex_protocol_response_preserves_provider_request_id_and_result()
+    {
+        var transport = new FakeCodexJsonLineTransport();
+        await using var client = new CodexProtocolClient(transport);
+        using var request = JsonDocument.Parse("""{"id":"provider-approval-42"}""");
+
+        await client.SendResponseAsync(
+            request.RootElement.GetProperty("id"),
+            new { decision = "acceptForSession" });
+        var response = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+
+        Assert.Equal("provider-approval-42", response.GetProperty("id").GetString());
+        Assert.Equal("acceptForSession", response.GetProperty("result").GetProperty("decision").GetString());
+        Assert.False(response.TryGetProperty("method", out _));
+    }
+
+    [Fact]
     public async Task Codex_process_exit_fails_pending_requests()
     {
         var transport = new FakeCodexJsonLineTransport();

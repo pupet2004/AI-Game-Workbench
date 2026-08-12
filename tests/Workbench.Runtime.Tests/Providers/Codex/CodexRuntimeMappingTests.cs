@@ -61,13 +61,13 @@ public sealed class CodexRuntimeMappingTests
     }
 
     [Fact]
-    public void Codex_spike_does_not_claim_approval_support_without_a_decision_contract()
+    public void Codex_model_claims_proven_approval_support()
     {
         var result = JsonDocument.Parse("""{"data":[{"id":"model","displayName":"Model"}]}""").RootElement;
 
         var model = Assert.Single(CodexRuntimeMapper.MapModels(result));
 
-        Assert.False(model.Capabilities.HasFlag(AgentCapability.Approval));
+        Assert.True(model.Capabilities.HasFlag(AgentCapability.Approval));
     }
 
     [Fact]

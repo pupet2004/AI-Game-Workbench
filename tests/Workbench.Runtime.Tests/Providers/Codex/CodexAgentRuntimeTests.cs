@@ -38,23 +38,199 @@ public sealed class CodexAgentRuntimeTests
     }
 
     [Fact]
-    public async Task Codex_create_session_sends_read_only_thread_start()
+    public async Task Working_directory_maps_to_codex_thread_start_and_session()
     {
         var (runtime, transport) = await CreateInitializedRuntimeAsync();
         await using var disposableRuntime = runtime;
         var accountId = runtime.Account.Id;
 
-        var sessionTask = runtime.CreateSessionAsync(new CreateAgentSessionRequest(accountId, "server-model"));
+        var sessionTask = runtime.CreateSessionAsync(new CreateAgentSessionRequest(
+            accountId,
+            "server-model",
+            "C:/Projects/Game"));
         var request = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
 
         Assert.Equal("thread/start", request.GetProperty("method").GetString());
         var parameters = request.GetProperty("params");
         Assert.Equal("read-only", parameters.GetProperty("sandbox").GetString());
-        Assert.Equal("never", parameters.GetProperty("approvalPolicy").GetString());
-        Assert.Equal("C:/Projects/Workbench", parameters.GetProperty("cwd").GetString());
+        Assert.Equal("on-request", parameters.GetProperty("approvalPolicy").GetString());
+        Assert.Equal("C:/Projects/Game", parameters.GetProperty("cwd").GetString());
         await RespondAsync(transport, request, new { thread = new { id = "thread-42" }, model = "server-model" });
 
-        Assert.Equal("thread-42", (await sessionTask).ExternalSessionId);
+        var session = await sessionTask;
+        Assert.Equal("thread-42", session.ExternalSessionId);
+        Assert.Equal("C:/Projects/Game", session.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task Null_working_directory_is_sent_as_protocol_null_and_preserved()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+
+        var sessionTask = runtime.CreateSessionAsync(
+            new CreateAgentSessionRequest(runtime.Account.Id, "server-model"));
+        var request = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+
+        Assert.Equal(JsonValueKind.Null, request.GetProperty("params").GetProperty("cwd").ValueKind);
+        await RespondAsync(transport, request, new { thread = new { id = "thread-42" }, model = "server-model" });
+
+        Assert.Null((await sessionTask).WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task Resumed_session_preserves_working_directory_context()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+
+        var resumeTask = runtime.ResumeSessionAsync(session);
+        var request = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+
+        Assert.Equal("thread/resume", request.GetProperty("method").GetString());
+        Assert.Equal("C:/Projects/Game", request.GetProperty("params").GetProperty("cwd").GetString());
+        await RespondAsync(transport, request, new { thread = new { id = "thread-42" }, model = "server-model" });
+
+        var resumed = await resumeTask;
+        Assert.Equal(session.Id, resumed.Id);
+        Assert.Equal("C:/Projects/Game", resumed.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task Codex_server_request_emits_provider_neutral_approval_event()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+
+        await transport.SendServerLineAsync("""{"id":900,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread-42","turnId":"turn-7","itemId":"item-1","startedAtMs":0,"reason":"Run the requested command?","command":"dotnet test"}}""");
+
+        Assert.True(await moveNext);
+        var approval = Assert.IsType<AgentApprovalRequested>(enumerator.Current);
+        Assert.Equal(session.Id, approval.SessionId);
+        Assert.Equal("Run the requested command?", approval.Summary);
+        Assert.Equal(4, approval.Options.Count);
+        Assert.NotEqual(Guid.Empty, approval.RequestId.Value);
+    }
+
+    [Fact]
+    public async Task Approval_decision_writes_correct_codex_response_and_cleans_pending_request()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+        await transport.SendServerLineAsync("""{"id":"approval-provider-7","method":"item/fileChange/requestApproval","params":{"threadId":"thread-42","turnId":"turn-7","itemId":"item-1","startedAtMs":0,"reason":"Apply the proposed file changes?"}}""");
+        Assert.True(await moveNext);
+        var approval = Assert.IsType<AgentApprovalRequested>(enumerator.Current);
+        var approveOnce = Assert.Single(approval.Options, option => option.Id == "approve-once");
+
+        await runtime.RespondToApprovalAsync(
+            session,
+            new AgentApprovalDecision(approval.RequestId, approveOnce.Id));
+        var response = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+
+        Assert.Equal("approval-provider-7", response.GetProperty("id").GetString());
+        Assert.Equal("accept", response.GetProperty("result").GetProperty("decision").GetString());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RespondToApprovalAsync(
+            session,
+            new AgentApprovalDecision(approval.RequestId, approveOnce.Id)));
+    }
+
+    [Fact]
+    public async Task Unknown_approval_request_and_option_are_rejected()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RespondToApprovalAsync(
+            session,
+            new AgentApprovalDecision(AgentApprovalRequestId.New(), "approve-once")));
+
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+        await transport.SendServerLineAsync("""{"id":901,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread-42","turnId":"turn-7","itemId":"item-1","startedAtMs":0}}""");
+        Assert.True(await moveNext);
+        var approval = Assert.IsType<AgentApprovalRequested>(enumerator.Current);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RespondToApprovalAsync(
+            session,
+            new AgentApprovalDecision(approval.RequestId, "not-a-legal-option")));
+    }
+
+    [Fact]
+    public async Task User_input_server_request_is_not_treated_as_approval()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+
+        await transport.SendServerLineAsync("""{"id":902,"method":"item/tool/requestUserInput","params":{"threadId":"thread-42","turnId":"turn-7","itemId":"item-1","questions":[]}}""");
+        await transport.SendServerLineAsync("""{"method":"turn/completed","params":{"threadId":"thread-42","turn":{"id":"turn-7","items":[],"status":"completed"}}}""");
+
+        Assert.True(await moveNext);
+        Assert.IsType<AgentTurnCompleted>(enumerator.Current);
+    }
+
+    [Fact]
+    public async Task Turn_completion_cleans_pending_approval()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var approvalMoveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+        await transport.SendServerLineAsync("""{"id":903,"method":"item/fileChange/requestApproval","params":{"threadId":"thread-42","turnId":"turn-7","itemId":"item-1","startedAtMs":0}}""");
+        Assert.True(await approvalMoveNext);
+        var approval = Assert.IsType<AgentApprovalRequested>(enumerator.Current);
+
+        var completionMoveNext = enumerator.MoveNextAsync().AsTask();
+        await transport.SendServerLineAsync("""{"method":"turn/completed","params":{"threadId":"thread-42","turn":{"id":"turn-7","items":[],"status":"completed"}}}""");
+        Assert.True(await completionMoveNext);
+        Assert.IsType<AgentTurnCompleted>(enumerator.Current);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RespondToApprovalAsync(
+            session,
+            new AgentApprovalDecision(approval.RequestId, "approve-once")));
+    }
+
+    [Fact]
+    public async Task Process_exit_cleans_pending_approval()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+        await transport.SendServerLineAsync("""{"id":904,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread-42","turnId":"turn-7","itemId":"item-1","startedAtMs":0}}""");
+        Assert.True(await moveNext);
+        var approval = Assert.IsType<AgentApprovalRequested>(enumerator.Current);
+
+        transport.CompleteServerOutput();
+        await runtime.ProtocolCompletion.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RespondToApprovalAsync(
+            session,
+            new AgentApprovalDecision(approval.RequestId, "approve-once")));
     }
 
     [Fact]
@@ -92,10 +268,13 @@ public sealed class CodexAgentRuntimeTests
     private static CodexAppServerOptions CreateOptions() =>
         new("C:/Tools/node.exe", ["C:/Tools/codex.js", "app-server", "--stdio"], "C:/Projects/Workbench");
 
-    private static AgentSession CreateSession(ProviderAccountId accountId, string externalId)
+    private static AgentSession CreateSession(
+        ProviderAccountId accountId,
+        string externalId,
+        string? workingDirectory = null)
     {
         var now = DateTimeOffset.UtcNow;
-        return new AgentSession(AgentSessionId.New(), accountId, new ProviderId("codex"), "server-model", externalId, AgentSessionStatus.Ready, now, now);
+        return new AgentSession(AgentSessionId.New(), accountId, new ProviderId("codex"), "server-model", workingDirectory, externalId, AgentSessionStatus.Ready, now, now);
     }
 
     private static ValueTask RespondAsync(FakeCodexJsonLineTransport transport, JsonElement request, object result) =>

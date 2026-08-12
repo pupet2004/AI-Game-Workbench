@@ -48,6 +48,36 @@ public sealed class AgentContractsTests
         Assert.Equal("Implement the selected change.", request.Text);
     }
 
+    [Fact]
+    public void Working_directory_is_preserved_in_session_request()
+    {
+        var request = new CreateAgentSessionRequest(
+            ProviderAccountId.New(),
+            "model-a",
+            "C:/Projects/Game");
+
+        Assert.Equal("C:/Projects/Game", request.WorkingDirectory);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Session_request_rejects_blank_working_directory(string workingDirectory)
+    {
+        Assert.Throws<ArgumentException>(() => new CreateAgentSessionRequest(
+            ProviderAccountId.New(),
+            "model-a",
+            workingDirectory));
+    }
+
+    [Fact]
+    public void Session_without_working_directory_is_valid()
+    {
+        var request = new CreateAgentSessionRequest(ProviderAccountId.New(), "model-a");
+
+        Assert.Null(request.WorkingDirectory);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -86,13 +116,30 @@ public sealed class AgentContractsTests
     [Fact]
     public void Approval_event_is_provider_neutral()
     {
+        var requestId = AgentApprovalRequestId.New();
+        var sessionId = AgentSessionId.New();
         var approval = new AgentApprovalRequested(
-            "approval-42",
+            requestId,
+            sessionId,
             "Allow the requested operation?",
+            [new AgentApprovalOption("approve-once", "Approve once", "Allow this operation once.")],
             DateTimeOffset.UtcNow);
 
-        Assert.Equal("approval-42", approval.RequestId);
-        Assert.Equal("Allow the requested operation?", approval.Description);
+        Assert.Equal(requestId, approval.RequestId);
+        Assert.Equal(sessionId, approval.SessionId);
+        Assert.Equal("Allow the requested operation?", approval.Summary);
+        Assert.Equal("approve-once", Assert.Single(approval.Options).Id);
+    }
+
+    [Fact]
+    public void Approval_decision_is_correlated_by_workbench_request_id()
+    {
+        var requestId = AgentApprovalRequestId.New();
+
+        var decision = new AgentApprovalDecision(requestId, "decline");
+
+        Assert.Equal(requestId, decision.RequestId);
+        Assert.Equal("decline", decision.OptionId);
     }
 
     [Fact]
@@ -124,6 +171,7 @@ public sealed class AgentContractsTests
             ProviderAccountId.New(),
             new ProviderId("provider-a"),
             "model-a",
+            null,
             externalSessionId,
             AgentSessionStatus.Ready,
             now,

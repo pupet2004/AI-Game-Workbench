@@ -34,11 +34,18 @@ internal sealed class FakeAgentRuntime(
             request.AccountId,
             Provider.Id,
             request.ModelId,
+            request.WorkingDirectory,
             null,
             AgentSessionStatus.Ready,
             now,
             now));
     }
+
+    public Task RespondToApprovalAsync(
+        AgentSession session,
+        AgentApprovalDecision decision,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This fake runtime does not support approvals.");
 
     public Task<AgentSession> ResumeSessionAsync(
         AgentSession session,

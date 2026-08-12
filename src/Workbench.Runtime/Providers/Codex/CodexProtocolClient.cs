@@ -8,6 +8,7 @@ internal sealed class CodexProtocolClient : IAsyncDisposable
     private readonly ICodexJsonLineTransport _transport;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly Task _readerTask;
     private long _nextRequestId;
     private int _disposed;
@@ -21,6 +22,10 @@ internal sealed class CodexProtocolClient : IAsyncDisposable
     public event Action<CodexProtocolMessage>? NotificationReceived;
 
     public event Action<CodexServerRequest>? ServerRequestReceived;
+
+    public event Action<Exception>? ConnectionFailed;
+
+    internal Task Completion => _readerTask;
 
     public async Task<JsonElement> SendRequestAsync(
         string method,
@@ -40,7 +45,7 @@ internal sealed class CodexProtocolClient : IAsyncDisposable
         try
         {
             var line = JsonSerializer.Serialize(new { id, method, @params = parameters });
-            await _transport.WriteLineAsync(line, cancellationToken).ConfigureAwait(false);
+            await WriteLineAsync(line, cancellationToken).ConfigureAwait(false);
             return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -49,7 +54,7 @@ internal sealed class CodexProtocolClient : IAsyncDisposable
         }
     }
 
-    public ValueTask SendNotificationAsync(
+    public Task SendNotificationAsync(
         string method,
         object? parameters = null,
         CancellationToken cancellationToken = default)
@@ -60,7 +65,18 @@ internal sealed class CodexProtocolClient : IAsyncDisposable
         var line = parameters is null
             ? JsonSerializer.Serialize(new { method })
             : JsonSerializer.Serialize(new { method, @params = parameters });
-        return _transport.WriteLineAsync(line, cancellationToken);
+        return WriteLineAsync(line, cancellationToken);
+    }
+
+    public Task SendResponseAsync(
+        JsonElement id,
+        object result,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ArgumentNullException.ThrowIfNull(result);
+
+        return WriteLineAsync(JsonSerializer.Serialize(new { id, result }), cancellationToken);
     }
 
     private async Task ReadLoopAsync()
@@ -96,7 +112,21 @@ internal sealed class CodexProtocolClient : IAsyncDisposable
             if (failure is not null)
             {
                 FailPending(failure);
+                ConnectionFailed?.Invoke(failure);
             }
+        }
+    }
+
+    private async Task WriteLineAsync(string line, CancellationToken cancellationToken)
+    {
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _transport.WriteLineAsync(line, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
         }
     }
 
@@ -181,5 +211,6 @@ internal sealed class CodexProtocolClient : IAsyncDisposable
         }
 
         _shutdown.Dispose();
+        _writeLock.Dispose();
     }
 }
