@@ -16,13 +16,13 @@ public sealed class WorkbenchDatabaseTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages', 'workbench_settings', 'project_settings');";
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages', 'workbench_settings', 'project_settings', 'project_activity_events', 'project_memory_items', 'project_memory_sources');";
 
-        Assert.Equal(7L, await command.ExecuteScalarAsync());
+        Assert.Equal(10L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
-    public async Task Migration_003_sets_user_version_to_3()
+    public async Task Migration_004_sets_user_version_to_4()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,7 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(3L, await command.ExecuteScalarAsync());
+        Assert.Equal(4L, await command.ExecuteScalarAsync());
     }
 
     [Theory]

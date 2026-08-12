@@ -4,6 +4,8 @@ using Workbench.Project.Opening;
 using Workbench.Core.Leaders;
 using Workbench.App.Leader;
 using Workbench.Storage.Settings;
+using Workbench.Storage.Memory;
+using System.Collections.ObjectModel;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -20,17 +22,20 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly Func<Task> _focus;
     private readonly ProjectSettingsRepository? _projectSettings;
     private readonly LeaderSessionRotationStateService? _rotationState;
+    private readonly ProjectMemoryService? _memory;
 
     public LibraryPaneViewModel(
         ProjectOpenResult result,
         Func<Task> focus,
         ProjectSettingsRepository? projectSettings = null,
-        LeaderSessionRotationStateService? rotationState = null)
+        LeaderSessionRotationStateService? rotationState = null,
+        ProjectMemoryService? memory = null)
     {
         Result = result;
         _focus = focus;
         _projectSettings = projectSettings;
         _rotationState = rotationState;
+        _memory = memory;
     }
 
     public LibraryPaneViewModel(ProjectOpenResult result)
@@ -86,17 +91,34 @@ public partial class LibraryPaneViewModel : ViewModelBase
         ? $"Using global setting ({EffectiveRotationPolicy})."
         : $"Project setting: {EffectiveRotationPolicy}.";
 
+    public ObservableCollection<ProjectMemoryItem> PendingCandidates { get; } = [];
+    public ObservableCollection<ProjectMemoryItem> FormalMemories { get; } = [];
+    [ObservableProperty] public partial ProjectMemoryItem? SelectedCandidate { get; set; }
+    [ObservableProperty] public partial string CandidateEditContent { get; set; } = string.Empty;
+    public int PendingCandidateCount => PendingCandidates.Count;
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        if (_rotationState is null)
+        if (_rotationState is not null)
         {
-            return;
+            var state = await _rotationState.GetAsync(Result.Project.Id, cancellationToken);
+            RotationPolicyOverride = state.ProjectOverride;
+            EffectiveRotationPolicy = state.EffectivePolicy;
         }
-
-        var state = await _rotationState.GetAsync(Result.Project.Id, cancellationToken);
-        RotationPolicyOverride = state.ProjectOverride;
-        EffectiveRotationPolicy = state.EffectivePolicy;
+        if (_memory is not null) await LoadMemoryAsync(cancellationToken);
     }
+
+    public async Task LoadMemoryAsync(CancellationToken cancellationToken=default)
+    {
+        if (_memory is null) return;
+        PendingCandidates.Clear(); foreach(var item in await _memory.GetPendingCandidatesAsync(Result.Project.Id,cancellationToken)) PendingCandidates.Add(item);
+        FormalMemories.Clear(); foreach(var item in await _memory.GetFormalMemoriesAsync(Result.Project.Id,cancellationToken)) FormalMemories.Add(item);
+        OnPropertyChanged(nameof(PendingCandidateCount));
+    }
+    [RelayCommand] private async Task AcceptCandidate(){if(_memory is null||SelectedCandidate is null)return;await _memory.AcceptCandidateAsync(SelectedCandidate.Id);await LoadMemoryAsync();SelectedCandidate=null;}
+    [RelayCommand] private async Task EditAndAcceptCandidate(){if(_memory is null||SelectedCandidate is null)return;await _memory.EditAndAcceptCandidateAsync(SelectedCandidate.Id,CandidateEditContent);await LoadMemoryAsync();SelectedCandidate=null;CandidateEditContent=string.Empty;}
+    [RelayCommand] private async Task RejectCandidate(){if(_memory is null||SelectedCandidate is null)return;await _memory.RejectCandidateAsync(SelectedCandidate.Id);await LoadMemoryAsync();SelectedCandidate=null;}
+    [RelayCommand] private void SelectCandidate(ProjectMemoryItem candidate) { SelectedCandidate = candidate; CandidateEditContent = candidate.Content; }
 
     public async Task SetLeaderSessionRotationPolicyOverrideAsync(
         LeaderSessionRotationPolicy? policy,

@@ -25,6 +25,18 @@
             <TextBlock Text="Project browsing arrives in a later milestone." IsVisible="{Binding IsBrowse}" TextWrapping="Wrap" />
             <TextBlock Text="Project history arrives in a later milestone." IsVisible="{Binding IsHistory}" TextWrapping="Wrap" />
             <StackPanel IsVisible="{Binding IsProject}" Spacing="8">
+                <TextBlock Text="Project Memory" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding PendingCandidateCount, StringFormat=Pending Candidates: {0}}" />
+                <ItemsControl ItemsSource="{Binding PendingCandidates}">
+                    <ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Topic}" Command="{Binding $parent[UserControl].DataContext.SelectCandidateCommand}" CommandParameter="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel IsVisible="{Binding SelectedCandidate}" Spacing="4">
+                    <TextBlock Text="{Binding SelectedCandidate.Topic}" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedCandidate.Content}" TextWrapping="Wrap" />
+                    <TextBox Text="{Binding CandidateEditContent, Mode=TwoWay}" PlaceholderText="Edit before accepting" />
+                    <Button Content="Accept" Command="{Binding AcceptCandidateCommand}" /><Button Content="Edit + Accept" Command="{Binding EditAndAcceptCandidateCommand}" /><Button Content="Reject" Command="{Binding RejectCandidateCommand}" />
+                </StackPanel>
+                <TextBlock Text="Formal Memory" FontWeight="SemiBold" />
+                <ItemsControl ItemsSource="{Binding FormalMemories}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Topic}" FontWeight="SemiBold" /><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                 <TextBlock Text="Leader Session Rotation" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding RotationPolicySummary}" TextWrapping="Wrap" />
                 <Button Content="Use global setting" Command="{Binding UseGlobalRotationPolicyCommand}" />

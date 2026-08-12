@@ -87,7 +87,8 @@ internal sealed class AppTestContext : IAsyncDisposable
             Services.RuntimeUnavailableDetail,
             projectSettingsRepository: Services.ProjectSettingsRepository,
             rotationStateService: CreateRotationStateService(TimeZoneInfo.Utc),
-            rolloverService: Services.LeaderSessionRolloverService);
+            rolloverService: Services.LeaderSessionRolloverService,
+            projectMemoryService: Services.ProjectMemoryService);
 
     public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
     {

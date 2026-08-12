@@ -34,6 +34,10 @@ internal static class MigrationRunner
                 Migration003LeaderRotationSettings.ApplyAsync,
                 cancellationToken);
         }
+        if (currentVersion < Migration004ProjectMemoryFoundation.Version)
+        {
+            await ApplyAsync(connection, Migration004ProjectMemoryFoundation.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

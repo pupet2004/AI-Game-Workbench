@@ -3,6 +3,7 @@ using Workbench.App.ViewModels;
 using Workbench.App.ViewModels.Panes;
 using Workbench.Core.Layout;
 using Workbench.Project.Git;
+using Workbench.Storage.Memory;
 
 namespace Workbench.App.Tests;
 
@@ -238,6 +239,29 @@ public sealed class WorkspaceViewModelTests
 
         Assert.Equal("Unavailable", overview.GitStatus);
         Assert.Equal("Git status unavailable", overview.StatusMessage);
+    }
+
+    [Fact]
+    public async Task Project_memory_shows_pending_count_and_certifies_from_library()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        await context.Services.ProjectMemoryService.CreateCandidateAsync(workspace.Result.Project.Id, "Memory Foundation Smoke", "Project Memory belongs to the Workbench, not to a runtime session.", [new ProjectMemorySource("Manual", "smoke")]);
+
+        await workspace.LibraryPane.InitializeAsync();
+        workspace.LibraryPane.SelectCandidateCommand.Execute(workspace.LibraryPane.PendingCandidates.Single());
+        await workspace.LibraryPane.AcceptCandidateCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, workspace.LibraryPane.PendingCandidateCount);
+        Assert.Equal("Memory Foundation Smoke", Assert.Single(workspace.LibraryPane.FormalMemories).Topic);
+    }
+
+    [Fact]
+    public void Library_memory_count_uses_a_real_binding()
+    {
+        var root = FindRepositoryRoot();
+        var markup = File.ReadAllText(Path.Combine(root, "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
+        Assert.Contains("Text=\"{Binding PendingCandidateCount, StringFormat=Pending Candidates: {0}}\"", markup, StringComparison.Ordinal);
     }
 
     private static Workbench.Project.Opening.ProjectOpenResult CreateResult(GitSnapshot git)

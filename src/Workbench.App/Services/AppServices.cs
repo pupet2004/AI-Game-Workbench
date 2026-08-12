@@ -7,6 +7,7 @@ using Workbench.Storage.Leaders;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
 using Workbench.App.Leader;
+using Workbench.Storage.Memory;
 
 namespace Workbench.App.Services;
 
@@ -27,6 +28,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderMessageRepository leaderMessageRepository,
         WorkbenchSettingsRepository workbenchSettingsRepository,
         ProjectSettingsRepository projectSettingsRepository,
+        ProjectMemoryService projectMemoryService,
         LeaderSessionRolloverService leaderSessionRolloverService,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
@@ -41,6 +43,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderMessageRepository = leaderMessageRepository;
         WorkbenchSettingsRepository = workbenchSettingsRepository;
         ProjectSettingsRepository = projectSettingsRepository;
+        ProjectMemoryService = projectMemoryService;
         LeaderSessionRolloverService = leaderSessionRolloverService;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
@@ -64,6 +67,7 @@ public sealed class AppServices : IAsyncDisposable
     public WorkbenchSettingsRepository WorkbenchSettingsRepository { get; }
 
     public ProjectSettingsRepository ProjectSettingsRepository { get; }
+    public ProjectMemoryService ProjectMemoryService { get; }
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
 
@@ -110,6 +114,7 @@ public sealed class AppServices : IAsyncDisposable
             leaderMessages,
             new WorkbenchSettingsRepository(database),
             new ProjectSettingsRepository(database),
+            new ProjectMemoryService(new ProjectActivityRepository(database), new ProjectMemoryRepository(database), effectiveTimeProvider),
             new LeaderSessionRolloverService(
                 effectiveRuntimeRegistry,
                 projectLeaders,
