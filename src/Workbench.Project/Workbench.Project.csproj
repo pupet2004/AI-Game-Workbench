@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Workbench.Core\Workbench.Core.csproj" />
+    <ProjectReference Include="..\Workbench.Storage\Workbench.Storage.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
