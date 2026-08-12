@@ -11,18 +11,28 @@
                 <Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" />
             </Grid>
 
-            <ComboBox Grid.Row="1"
-                      ItemsSource="{Binding AvailableModels}"
-                      SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
-                      IsEnabled="{Binding IsModelSelectionEnabled}"
-                      HorizontalAlignment="Stretch"
-                      PlaceholderText="Select a Leader model">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="leader:LeaderModelOptionViewModel">
-                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-                    </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </ComboBox>
+            <StackPanel Grid.Row="1" Spacing="6">
+                <ComboBox ItemsSource="{Binding AvailableModels}"
+                          SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
+                          IsEnabled="{Binding IsModelSelectionEnabled}"
+                          HorizontalAlignment="Stretch"
+                          PlaceholderText="Select a Leader model">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="leader:LeaderModelOptionViewModel">
+                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasRuntimeStatus}">
+                    <TextBlock Text="{Binding RuntimeStatus}"
+                               Foreground="#B42318"
+                               TextWrapping="Wrap" />
+                    <Button Grid.Column="1"
+                            Content="Retry"
+                            Command="{Binding RetryRuntimeCommand}"
+                            IsVisible="{Binding CanRetryRuntime}" />
+                </Grid>
+            </StackPanel>
 
             <Grid Grid.Row="2">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"
@@ -49,7 +59,7 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <Border IsVisible="{Binding CanRetryRuntime}"
+                <Border IsVisible="{Binding ShowRuntimeUnavailableOverlay}"
                         Padding="18"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"

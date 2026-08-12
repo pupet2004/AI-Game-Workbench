@@ -16,11 +16,12 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
     public FakeAgentRuntime(
         string providerName = "Fake Provider",
         string accountName = "Fake Account",
+        ProviderAccountId? accountId = null,
         params ModelProfile[] models)
     {
         var providerId = new ProviderId(providerName.ToLowerInvariant().Replace(' ', '-'));
         Provider = new ProviderDescriptor(providerId, providerName);
-        Account = new ProviderAccountSummary(ProviderAccountId.New(), providerId, accountName, true);
+        Account = new ProviderAccountSummary(accountId ?? ProviderAccountId.New(), providerId, accountName, true);
         Models = models.Length > 0
             ? models
             : [new ModelProfile(providerId, "model-a", "Model A", AgentCapability.StructuredEvents)];
@@ -44,6 +45,8 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public List<AgentSession> SentSessions { get; } = [];
 
+    public List<AgentSession> ResumedSessions { get; } = [];
+
     public List<AgentRequest> SentRequests { get; } = [];
 
     public List<AgentApprovalDecision> ApprovalDecisions { get; } = [];
@@ -53,6 +56,12 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
     public Exception? ModelException { get; set; }
 
     public Exception? SendException { get; set; }
+
+    public Exception? CreateException { get; set; }
+
+    public Exception? ResumeException { get; set; }
+
+    public int GetModelsCallCount { get; private set; }
 
     public Exception? ApprovalException { get; set; }
 
@@ -74,6 +83,7 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public Task<IReadOnlyList<ModelProfile>> GetModelsAsync(CancellationToken cancellationToken = default)
     {
+        GetModelsCallCount++;
         if (ModelException is not null)
         {
             return Task.FromException<IReadOnlyList<ModelProfile>>(ModelException);
@@ -86,6 +96,11 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
         CreateAgentSessionRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (CreateException is not null)
+        {
+            return Task.FromException<AgentSession>(CreateException);
+        }
+
         CreateRequests.Add(request);
         var now = DateTimeOffset.UtcNow;
         var session = new AgentSession(
@@ -104,8 +119,16 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public Task<AgentSession> ResumeSessionAsync(
         AgentSession session,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult(session);
+        CancellationToken cancellationToken = default)
+    {
+        if (ResumeException is not null)
+        {
+            return Task.FromException<AgentSession>(ResumeException);
+        }
+
+        ResumedSessions.Add(session);
+        return Task.FromResult(session);
+    }
 
     public async IAsyncEnumerable<AgentEvent> SendAsync(
         AgentSession session,

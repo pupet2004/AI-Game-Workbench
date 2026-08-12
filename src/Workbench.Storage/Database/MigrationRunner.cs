@@ -11,15 +11,32 @@ internal static class MigrationRunner
         versionCommand.CommandText = "PRAGMA user_version;";
         var currentVersion = Convert.ToInt64(await versionCommand.ExecuteScalarAsync(cancellationToken));
 
-        if (currentVersion >= Migration001Initial.Version)
+        if (currentVersion < Migration001Initial.Version)
         {
-            return;
+            await ApplyAsync(
+                connection,
+                Migration001Initial.ApplyAsync,
+                cancellationToken);
         }
 
+        if (currentVersion < Migration002PersistentLeaderSessions.Version)
+        {
+            await ApplyAsync(
+                connection,
+                Migration002PersistentLeaderSessions.ApplyAsync,
+                cancellationToken);
+        }
+    }
+
+    private static async Task ApplyAsync(
+        SqliteConnection connection,
+        Func<SqliteConnection, SqliteTransaction, CancellationToken, Task> migration,
+        CancellationToken cancellationToken)
+    {
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         try
         {
-            await Migration001Initial.ApplyAsync(connection, transaction, cancellationToken);
+            await migration(connection, transaction, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch

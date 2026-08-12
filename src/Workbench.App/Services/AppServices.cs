@@ -3,6 +3,7 @@ using Workbench.Project.Opening;
 using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Database;
+using Workbench.Storage.Leaders;
 using Workbench.Storage.Projects;
 
 namespace Workbench.App.Services;
@@ -19,6 +20,9 @@ public sealed class AppServices : IAsyncDisposable
         ProjectRepository projectRepository,
         ProjectLayoutRepository projectLayoutRepository,
         ProjectOpenService projectOpenService,
+        ProjectLeaderRepository projectLeaderRepository,
+        LeaderSessionEpochRepository leaderSessionEpochRepository,
+        LeaderMessageRepository leaderMessageRepository,
         AgentRuntimeRegistry runtimeRegistry,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
     {
@@ -26,6 +30,9 @@ public sealed class AppServices : IAsyncDisposable
         ProjectRepository = projectRepository;
         ProjectLayoutRepository = projectLayoutRepository;
         ProjectOpenService = projectOpenService;
+        ProjectLeaderRepository = projectLeaderRepository;
+        LeaderSessionEpochRepository = leaderSessionEpochRepository;
+        LeaderMessageRepository = leaderMessageRepository;
         RuntimeRegistry = runtimeRegistry;
         _runtimeFactory = runtimeFactory;
     }
@@ -37,6 +44,12 @@ public sealed class AppServices : IAsyncDisposable
     public ProjectLayoutRepository ProjectLayoutRepository { get; }
 
     public ProjectOpenService ProjectOpenService { get; }
+
+    public ProjectLeaderRepository ProjectLeaderRepository { get; }
+
+    public LeaderSessionEpochRepository LeaderSessionEpochRepository { get; }
+
+    public LeaderMessageRepository LeaderMessageRepository { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -69,6 +82,9 @@ public sealed class AppServices : IAsyncDisposable
             projectRepository,
             layoutRepository,
             projectOpenService,
+            new ProjectLeaderRepository(database),
+            new LeaderSessionEpochRepository(database),
+            new LeaderMessageRepository(database),
             runtimeRegistry ?? new AgentRuntimeRegistry(),
             runtimeFactory);
     }
@@ -76,7 +92,6 @@ public sealed class AppServices : IAsyncDisposable
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await Database.InitializeAsync(cancellationToken);
-        await RetryRuntimeAsync(cancellationToken);
     }
 
     public async Task RetryRuntimeAsync(CancellationToken cancellationToken = default)

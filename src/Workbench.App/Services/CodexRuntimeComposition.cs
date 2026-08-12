@@ -6,6 +6,9 @@ namespace Workbench.App.Services;
 
 internal static class CodexRuntimeComposition
 {
+    private static readonly ProviderId CodexProviderId = new("codex");
+    private static readonly ProviderAccountId LocalAccountId =
+        new(Guid.Parse("c0de0001-4a49-4741-8d45-574f524b424e"));
     private const string ExecutableVariable = "WORKBENCH_CODEX_EXECUTABLE";
     private const string EntryVariable = "WORKBENCH_CODEX_ENTRY";
     private const string WorkingDirectoryVariable = "WORKBENCH_CODEX_CWD";
@@ -25,9 +28,12 @@ internal static class CodexRuntimeComposition
 
         return await CodexAgentRuntime.ConnectAsync(
             options,
-            ProviderAccountId.New(),
+            CreateLocalAccountSummary().Id,
             cancellationToken);
     }
+
+    internal static ProviderAccountSummary CreateLocalAccountSummary() =>
+        new(LocalAccountId, CodexProviderId, "Local Codex Account", true);
 
     internal static CodexAppServerOptions CreateOptions(
         Func<string, string?> getEnvironmentVariable,

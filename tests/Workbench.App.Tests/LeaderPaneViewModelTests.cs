@@ -77,7 +77,7 @@ public sealed class LeaderPaneViewModelTests
     }
 
     [Fact]
-    public async Task Retry_reconnects_runtime_before_reloading_models()
+    public async Task Fresh_pane_connects_runtime_before_loading_models()
     {
         var runtime = new FakeAgentRuntime();
         var registry = new AgentRuntimeRegistry();
@@ -92,8 +92,6 @@ public sealed class LeaderPaneViewModelTests
                 return Task.CompletedTask;
             });
         await pane.InitializeAsync();
-
-        await pane.RetryRuntimeAsync();
 
         Assert.True(pane.IsRuntimeAvailable);
         Assert.Equal(runtime.Models.Select(model => model.ModelId), pane.AvailableModels.Select(model => model.Profile.Model.ModelId));

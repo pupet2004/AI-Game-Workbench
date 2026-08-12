@@ -51,7 +51,11 @@ internal sealed class AppTestContext : IAsyncDisposable
             services,
             time,
             new TestFolderPickerService(folderPath),
-            new ProjectLeaderSessionManager());
+            new ProjectLeaderSessionManager(
+                services.ProjectLeaderRepository,
+                services.LeaderSessionEpochRepository,
+                services.LeaderMessageRepository,
+                time));
     }
 
     public HomeViewModel CreateHome(Func<string, CancellationToken, Task<ProjectOpenResult>>? opener = null) =>

@@ -19,7 +19,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     {
         _services = services;
         _folderPickerService = folderPickerService;
-        _leaderSessions = leaderSessions ?? new ProjectLeaderSessionManager();
+        _leaderSessions = leaderSessions ?? new ProjectLeaderSessionManager(
+            services.ProjectLeaderRepository,
+            services.LeaderSessionEpochRepository,
+            services.LeaderMessageRepository,
+            TimeProvider.System);
         CurrentPage = CreateHome();
     }
 

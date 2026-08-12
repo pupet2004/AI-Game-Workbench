@@ -11,6 +11,7 @@ Completed:
 M1-01
 M1-02
 M1-02A
+M1-03
 
 Current:
-M1-03 — Live Project Leader
+M1-04 — Persistent Logical Leader & Session Epochs

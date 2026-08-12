@@ -1,12 +1,24 @@
 using Workbench.App.Services;
 using Workbench.App.Tests.Support;
 using Workbench.App.ViewModels;
+using Workbench.Runtime.Providers;
 using Workbench.Runtime.Runtime;
 
 namespace Workbench.App.Tests;
 
 public sealed class RuntimeCompositionTests
 {
+    [Fact]
+    public void Local_codex_account_id_is_stable_across_composition_instances()
+    {
+        var first = CodexRuntimeComposition.CreateLocalAccountSummary();
+        var second = CodexRuntimeComposition.CreateLocalAccountSummary();
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal(new ProviderId("codex"), first.ProviderId);
+        Assert.Equal("Local Codex Account", first.DisplayName);
+    }
+
     [Fact]
     public void Codex_composition_builds_one_app_server_configuration_without_credentials()
     {
@@ -29,7 +41,7 @@ public sealed class RuntimeCompositionTests
     }
 
     [Fact]
-    public async Task App_services_registers_and_disposes_owned_runtime()
+    public async Task App_services_initialize_storage_without_starting_runtime_then_connects_on_demand()
     {
         using var directory = new TemporaryDirectory("runtime-composition");
         var runtime = new FakeAgentRuntime();
@@ -39,6 +51,8 @@ public sealed class RuntimeCompositionTests
 
         await services.InitializeAsync();
 
+        Assert.Empty(services.RuntimeRegistry.Runtimes);
+        await services.RetryRuntimeAsync();
         Assert.Same(runtime, Assert.Single(services.RuntimeRegistry.Runtimes));
         await services.DisposeAsync();
         Assert.True(runtime.IsDisposed);
@@ -57,6 +71,8 @@ public sealed class RuntimeCompositionTests
 
         Assert.IsType<HomeViewModel>(main.CurrentPage);
         Assert.Empty(services.RuntimeRegistry.Runtimes);
+        Assert.Null(services.RuntimeUnavailableDetail);
+        await services.RetryRuntimeAsync();
         Assert.Equal("Codex could not be started.", services.RuntimeUnavailableDetail);
         await main.DisposeAsync();
     }
@@ -73,6 +89,7 @@ public sealed class RuntimeCompositionTests
                 ? Task.FromException<IAgentRuntime>(new InvalidOperationException("startup failed"))
                 : Task.FromResult<IAgentRuntime>(runtime));
         await services.InitializeAsync();
+        await services.RetryRuntimeAsync();
 
         await services.RetryRuntimeAsync();
 
@@ -153,7 +170,7 @@ public sealed class RuntimeCompositionTests
             });
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => services.InitializeAsync(cancellation.Token));
+            () => services.RetryRuntimeAsync(cancellation.Token));
         Assert.Null(services.RuntimeUnavailableDetail);
     }
 
