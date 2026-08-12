@@ -91,6 +91,16 @@ public sealed class WorkspaceViewModelTests
     }
 
     [Fact]
+    public void Grid_splitter_drag_completion_is_wired_to_the_layout_bridge()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var viewMarkup = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "WorkspaceView.axaml"));
+
+        Assert.Equal(2, viewMarkup.Split("DragCompleted=\"OnDividerDragCompleted\"").Length - 1);
+        Assert.DoesNotContain("PointerReleased=", viewMarkup);
+    }
+
+    [Fact]
     public async Task Manual_resize_rejects_impossible_zero_width_layout()
     {
         await using var context = await AppTestContext.CreateAsync();
@@ -234,5 +244,16 @@ public sealed class WorkspaceViewModelTests
     {
         var project = new Workbench.Core.Projects.Project(Guid.NewGuid(), "Project", "C:/Project", Workbench.Core.Projects.ProjectType.Godot, git.RepositoryRoot, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         return new Workbench.Project.Opening.ProjectOpenResult(project, ProjectLayout.CreateDefault(project.Id), git);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AI.Game.Workbench.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new DirectoryNotFoundException("Could not locate the repository root.");
     }
 }

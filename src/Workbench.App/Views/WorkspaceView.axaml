@@ -21,9 +21,9 @@
                 <ColumnDefinition Width="{Binding LibraryGridLength}" MinWidth="180" />
             </Grid.ColumnDefinitions>
             <ContentControl Content="{Binding LeaderPane}" />
-            <GridSplitter Grid.Column="1" ResizeDirection="Columns" PointerReleased="OnDividerPointerReleased" />
+            <GridSplitter Grid.Column="1" ResizeDirection="Columns" DragCompleted="OnDividerDragCompleted" />
             <ContentControl Grid.Column="2" Content="{Binding WorkPane}" />
-            <GridSplitter Grid.Column="3" ResizeDirection="Columns" PointerReleased="OnDividerPointerReleased" />
+            <GridSplitter Grid.Column="3" ResizeDirection="Columns" DragCompleted="OnDividerDragCompleted" />
             <ContentControl Grid.Column="4" Content="{Binding LibraryPane}" />
         </Grid>
     </Grid>

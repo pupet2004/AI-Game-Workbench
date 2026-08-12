@@ -11,7 +11,7 @@ public partial class WorkspaceView : UserControl
         InitializeComponent();
     }
 
-    private void OnDividerPointerReleased(object? sender, PointerReleasedEventArgs eventArgs)
+    private void OnDividerDragCompleted(object? sender, VectorEventArgs eventArgs)
     {
         if (DataContext is not WorkspaceViewModel viewModel)
         {
