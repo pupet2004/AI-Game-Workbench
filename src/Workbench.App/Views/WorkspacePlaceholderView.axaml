@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels"
+             x:Class="Workbench.App.Views.WorkspacePlaceholderView"
+             x:DataType="vm:WorkspacePlaceholderViewModel">
+    <StackPanel Margin="32" Spacing="16">
+        <TextBlock Text="{Binding Result.Project.Name}" FontSize="28" FontWeight="SemiBold" />
+        <TextBlock Text="Project opened successfully." />
+        <TextBlock Text="{Binding ProjectTypeText}" />
+        <TextBlock Text="{Binding GitStatusText}" />
+        <TextBlock Text="Workspace UI arrives in M0-06." />
+        <Button Content="Back to Projects"
+                HorizontalAlignment="Left"
+                Command="{Binding BackToProjectsCommand}" />
+    </StackPanel>
+</UserControl>

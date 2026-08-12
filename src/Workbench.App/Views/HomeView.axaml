@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels"
+             x:Class="Workbench.App.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="32" Spacing="16">
+            <TextBlock Text="AI Game Workbench" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="Recent Projects" FontSize="20" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
+            <TextBlock Text="No recent projects yet." IsVisible="{Binding HasNoRecentProjects}" />
+            <ItemsControl ItemsSource="{Binding RecentProjects}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RecentProjectItemViewModel">
+                        <Button Margin="0,4"
+                                Padding="12"
+                                IsEnabled="{Binding IsAvailable}"
+                                Command="{Binding $parent[UserControl].DataContext.OpenRecentProjectCommand}"
+                                CommandParameter="{Binding}">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Type}" />
+                                <TextBlock Text="{Binding GitLabel}" />
+                                <TextBlock Text="{Binding RootPath}" TextWrapping="Wrap" />
+                                <TextBlock Text="Unavailable" IsVisible="{Binding !IsAvailable}" Foreground="IndianRed" />
+                            </StackPanel>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="Open Project Folder"
+                    HorizontalAlignment="Left"
+                    Command="{Binding OpenProjectFolderCommand}"
+                    IsEnabled="{Binding CanOpenProjects}" />
+            <TextBlock Text="Opening project..." IsVisible="{Binding IsBusy}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

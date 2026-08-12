@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Workbench.App.Services;
 using Workbench.App.ViewModels;
 using Workbench.App.Views;
 
@@ -17,10 +18,13 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = new MainViewModel(),
-            };
+            var window = new MainWindow();
+            var viewModel = new MainWindowViewModel(
+                AppServices.CreateDefault(),
+                new FolderPickerService(window));
+            window.DataContext = viewModel;
+            desktop.MainWindow = window;
+            _ = viewModel.InitializeAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
