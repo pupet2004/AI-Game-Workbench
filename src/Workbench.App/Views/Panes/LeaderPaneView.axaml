@@ -6,9 +6,13 @@
              x:DataType="vm:LeaderPaneViewModel">
     <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
         <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12">
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                 <TextBlock Text="LEADER" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" />
+                <Button Grid.Column="1"
+                        Content="New Brain"
+                        Command="{Binding StartNewBrainCommand}"
+                        IsEnabled="{Binding CanStartNewBrain}" />
+                <Button Grid.Column="2" Content="Focus" Command="{Binding FocusCommand}" />
             </Grid>
 
             <StackPanel Grid.Row="1" Spacing="6">
@@ -18,7 +22,9 @@
                         BorderBrush="#D9A441"
                         BorderThickness="1"
                         CornerRadius="4">
-                    <TextBlock Text="{Binding RotationMessage}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding RotationMessage}"
+                               Foreground="#101828"
+                               TextWrapping="Wrap" />
                 </Border>
                 <ComboBox ItemsSource="{Binding AvailableModels}"
                           SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
@@ -91,39 +97,65 @@
                 </Border>
             </Grid>
 
-            <Border Grid.Row="3"
-                    IsVisible="{Binding HasPendingApproval}"
-                    Padding="12"
-                    BorderBrush="#D9A441"
-                    BorderThickness="1"
-                    Background="#FFF8E7"
-                    CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Approval required"
-                               FontWeight="SemiBold"
-                               Foreground="#101828" />
-                    <TextBlock Text="{Binding PendingApproval.Summary}"
-                               Foreground="#101828"
-                               TextWrapping="Wrap" />
-                    <ItemsControl ItemsSource="{Binding ApprovalOptions}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel Orientation="Horizontal" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="leader:LeaderApprovalOptionViewModel">
-                                <Button Margin="0,0,8,0"
-                                        Content="{Binding Label}"
-                                        Command="{Binding SelectCommand}" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock Text="{Binding ApprovalError}"
-                               Foreground="#B42318"
-                               TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
+            <StackPanel Grid.Row="3" Spacing="8">
+                <Border IsVisible="{Binding HasPendingRotationDecision}"
+                        Padding="12"
+                        BorderBrush="#84ADFF"
+                        BorderThickness="1"
+                        Background="#EEF4FF"
+                        CornerRadius="6">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="A fresh Leader session is available."
+                                   FontWeight="SemiBold"
+                                   Foreground="#344054"
+                                   TextWrapping="Wrap" />
+                        <WrapPanel>
+                            <Button Margin="0,0,8,0"
+                                    Content="Continue Previous"
+                                    Background="#FFFFFF"
+                                    Foreground="#101828"
+                                    Command="{Binding ContinuePreviousCommand}" />
+                            <Button Content="Start Fresh"
+                                    Background="#FFFFFF"
+                                    Foreground="#101828"
+                                    Command="{Binding StartFreshCommand}" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border IsVisible="{Binding HasPendingApproval}"
+                        Padding="12"
+                        BorderBrush="#D9A441"
+                        BorderThickness="1"
+                        Background="#FFF8E7"
+                        CornerRadius="6">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Approval required"
+                                   FontWeight="SemiBold"
+                                   Foreground="#101828" />
+                        <TextBlock Text="{Binding PendingApproval.Summary}"
+                                   Foreground="#101828"
+                                   TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding ApprovalOptions}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="leader:LeaderApprovalOptionViewModel">
+                                    <Button Margin="0,0,8,0"
+                                            Content="{Binding Label}"
+                                            Command="{Binding SelectCommand}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding ApprovalError}"
+                                   Foreground="#B42318"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
 
             <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                 <TextBox Text="{Binding DraftMessage, Mode=TwoWay}"

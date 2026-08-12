@@ -31,7 +31,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         string? runtimeUnavailableDetail = null,
         Func<CancellationToken, Task>? reconnectRuntime = null,
         ProjectSettingsRepository? projectSettingsRepository = null,
-        LeaderSessionRotationStateService? rotationStateService = null)
+        LeaderSessionRotationStateService? rotationStateService = null,
+        LeaderSessionRolloverService? rolloverService = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -46,7 +47,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             FocusLeaderAsync,
             runtimeUnavailableDetail,
             reconnectRuntime,
-            rotationStateService);
+            rotationStateService,
+            rolloverService);
         WorkPane = new WorkPaneViewModel(FocusWorkAsync);
         LibraryPane = new LibraryPaneViewModel(result, FocusLibraryAsync, projectSettingsRepository, rotationStateService);
     }

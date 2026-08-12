@@ -240,6 +240,10 @@ internal sealed class LeaderConversationState(Guid projectId)
 
     public bool IsApprovalResponding { get; set; }
 
+    public bool IsRolloverRunning { get; set; }
+
+    public bool HasPendingRotationDecision { get; set; }
+
     public string? RuntimeStatus { get; set; }
 
     public string? RuntimeErrorDetail { get; set; }

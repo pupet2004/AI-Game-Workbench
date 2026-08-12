@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add M1-05A rotation-policy evaluation and persisted global/project settings without rotating a Leader session.
+**Goal:** Deliver M1-05 session rotation in phases: M1-05A policy/settings, M1-05B safe handoff and real rollover, then M1-05C history UI.
 
 **Architecture:** Keep policy and workday evaluation in `Workbench.Core`, with a caller-supplied `TimeZoneInfo` for deterministic local-day semantics. Add SQLite-backed settings repositories through Migration003, then compose their resolved policy into the existing App service, project workspace, and Leader pane. M1-05B will execute rollover/handoff; M1-05C will display archived epochs.
 
@@ -119,5 +119,33 @@
 
 ## Future M1-05 phases
 
-- **M1-05B — Handoff & Rollover:** consume a due/manual request, summarize and archive the old epoch, create the successor epoch/session, and attach the handoff; this plan must not implement any of it.
+- **M1-05A — Policy & Settings:** completed in `2487e935f1486c6a536aff173527c3a20e17696f`.
+- **M1-05B — Handoff & Rollover:** current execution phase.
 - **M1-05C — Epoch History UI:** show archived epoch history and transcripts with the current epoch expanded; this plan must not load or render archive history.
+
+## M1-05B execution
+
+### Task 6: Atomic storage rollover and predecessor lookup
+
+- [x] Add failing Storage tests for archive/handoff/reason, fresh current epoch, identity/metadata preservation, deterministic predecessor lookup, rollback, and project isolation.
+- [x] Add `ProjectLeaderRepository.RolloverAsync(...)` as one SQLite transaction and `LeaderSessionEpochRepository.GetMostRecentArchivedForProjectAsync(...)` with deterministic ordering.
+- [x] Run Storage tests green.
+
+### Task 7: Bounded handoff and provider-neutral rollover orchestration
+
+- [x] Add failing App tests for semantic handoff isolation, approval/error/empty/oversized fallback, UTF-8 bounded fallback, fresh runtime creation, cleanup after persistence failure, and immediate-predecessor-only boot context.
+- [x] Add focused `LeaderHandoffBuilder` and `LeaderSessionRolloverService` units depending only on `IAgentRuntime`, `AgentRuntimeRegistry`, primitive Storage records/repositories, and `TimeProvider`.
+- [x] Run focused App tests green.
+
+### Task 8: Policy execution, Ask decision, Manual New Brain, and boot context
+
+- [x] Add failing ViewModel tests for Auto, Ask Continue/Start Fresh, ManualOnly, busy/approval guards, original-draft preservation, and one-time boot envelope isolation.
+- [x] Route all rollover entry points through `LeaderSessionRolloverService`; keep policy interception and presentation state in `LeaderPaneViewModel`.
+- [x] Add the lightweight inline Ask decision and New Brain controls; do not add archived-history UI.
+- [x] Run App tests green and render the pane at 1280×720.
+
+### Task 9: Acceptance and commit
+
+- [x] Update README status, run restore/build/Storage/App/full tests and `git diff --check`, then complete independent review.
+- [x] Run the opt-in real Codex manual rollover smoke using a dedicated safe temporary Git project; verify identities, handoff marker, DB isolation, and no internal-message leakage.
+- [x] Commit exactly `feat(leader): add session handoff and rollover`, then verify clean `master`.

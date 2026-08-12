@@ -38,6 +38,14 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
         return epochs;
     }
 
+    public Task<StoredLeaderSessionEpoch?> GetMostRecentArchivedForProjectAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default) =>
+        GetSingleAsync(
+            "WHERE project_id = $projectId AND ended_at IS NOT NULL ORDER BY ended_at DESC, started_at DESC, id DESC LIMIT 1",
+            command => command.Parameters.AddWithValue("$projectId", projectId.ToString()),
+            cancellationToken);
+
     public async Task SaveAsync(StoredLeaderSessionEpoch epoch, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(epoch);

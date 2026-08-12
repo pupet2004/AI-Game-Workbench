@@ -33,7 +33,7 @@ public sealed class LeaderPaneViewTests
         var markup = ReadLeaderView();
 
         Assert.Equal(2, CountOccurrences(markup, "Background=\"#F5F6F8\""));
-        Assert.Equal(4, CountOccurrences(markup, "Foreground=\"#101828\""));
+        Assert.Equal(7, CountOccurrences(markup, "Foreground=\"#101828\""));
         Assert.Contains("Background=\"#FFF8E7\"", markup, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"#101828\"", markup, StringComparison.Ordinal);
     }
@@ -48,6 +48,30 @@ public sealed class LeaderPaneViewTests
         Assert.Contains("PendingApproval.Summary", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Allow once\"", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Decline\"", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rollover_controls_are_inline_and_bind_to_single_view_model_commands()
+    {
+        var markup = ReadLeaderView();
+
+        Assert.Contains("Content=\"New Brain\"", markup, StringComparison.Ordinal);
+        Assert.Contains("StartNewBrainCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("HasPendingRotationDecision", markup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Continue Previous\"", markup, StringComparison.Ordinal);
+        Assert.Contains("ContinuePreviousCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Start Fresh\"", markup, StringComparison.Ordinal);
+        Assert.Contains("StartFreshCommand", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Window.ShowDialog", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Light_rotation_surfaces_define_readable_dark_foregrounds()
+    {
+        var markup = ReadLeaderView().Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        Assert.Contains("Text=\"{Binding RotationMessage}\"\n                               Foreground=\"#101828\"", markup, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(markup, "Foreground=\"#101828\"\n                                    Command=\"{Binding"));
     }
 
     private static string ReadLeaderView()

@@ -167,6 +167,111 @@ public sealed class ProjectLeaderRepository(WorkbenchDatabase database)
         }
     }
 
+    public async Task RolloverAsync(
+        Guid projectId,
+        Guid oldEpochId,
+        StoredLeaderSessionEpoch newEpoch,
+        DateTimeOffset endedAt,
+        string rolloverReason,
+        string handoffSummary,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(newEpoch);
+        ArgumentException.ThrowIfNullOrWhiteSpace(rolloverReason);
+        ArgumentException.ThrowIfNullOrWhiteSpace(handoffSummary);
+        if (newEpoch.ProjectId != projectId || newEpoch.Id == oldEpochId || newEpoch.EndedAt is not null)
+        {
+            throw new InvalidOperationException("The successor must be a distinct active epoch owned by the same Project Leader.");
+        }
+        if (newEpoch.StartedAt != endedAt || newEpoch.LastActiveAt != endedAt)
+        {
+            throw new InvalidOperationException("The successor epoch must start at the rollover timestamp.");
+        }
+
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var archive = connection.CreateCommand();
+            archive.Transaction = transaction;
+            archive.CommandText = """
+                UPDATE leader_session_epochs
+                SET ended_at = $endedAt,
+                    rollover_reason = $rolloverReason,
+                    handoff_summary = $handoffSummary
+                WHERE id = $oldEpochId
+                  AND project_id = $projectId
+                  AND ended_at IS NULL
+                  AND provider_id = $providerId
+                  AND provider_account_id = $providerAccountId
+                  AND model_id = $modelId
+                  AND working_directory IS $workingDirectory
+                  AND id = (SELECT current_epoch_id FROM project_leaders WHERE project_id = $projectId);
+                """;
+            archive.Parameters.AddWithValue("$endedAt", Format(endedAt));
+            archive.Parameters.AddWithValue("$rolloverReason", rolloverReason);
+            archive.Parameters.AddWithValue("$handoffSummary", handoffSummary);
+            archive.Parameters.AddWithValue("$oldEpochId", oldEpochId.ToString());
+            archive.Parameters.AddWithValue("$projectId", projectId.ToString());
+            archive.Parameters.AddWithValue("$providerId", newEpoch.ProviderId);
+            archive.Parameters.AddWithValue("$providerAccountId", newEpoch.ProviderAccountId.ToString());
+            archive.Parameters.AddWithValue("$modelId", newEpoch.ModelId);
+            archive.Parameters.AddWithValue("$workingDirectory", (object?)newEpoch.WorkingDirectory ?? DBNull.Value);
+            if (await archive.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException("The old epoch is not the active current epoch for this Project Leader.");
+            }
+
+            var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT INTO leader_session_epochs (
+                    id, project_id, provider_id, provider_account_id, model_id,
+                    agent_session_id, external_session_id, working_directory,
+                    started_at, last_active_at, ended_at, rollover_reason, handoff_summary)
+                VALUES (
+                    $id, $projectId, $providerId, $providerAccountId, $modelId,
+                    $agentSessionId, $externalSessionId, $workingDirectory,
+                    $startedAt, $lastActiveAt, NULL, NULL, NULL);
+                """;
+            insert.Parameters.AddWithValue("$id", newEpoch.Id.ToString());
+            insert.Parameters.AddWithValue("$projectId", newEpoch.ProjectId.ToString());
+            insert.Parameters.AddWithValue("$providerId", newEpoch.ProviderId);
+            insert.Parameters.AddWithValue("$providerAccountId", newEpoch.ProviderAccountId.ToString());
+            insert.Parameters.AddWithValue("$modelId", newEpoch.ModelId);
+            insert.Parameters.AddWithValue("$agentSessionId", newEpoch.AgentSessionId.ToString());
+            insert.Parameters.AddWithValue("$externalSessionId", (object?)newEpoch.ExternalSessionId ?? DBNull.Value);
+            insert.Parameters.AddWithValue("$workingDirectory", (object?)newEpoch.WorkingDirectory ?? DBNull.Value);
+            insert.Parameters.AddWithValue("$startedAt", Format(newEpoch.StartedAt));
+            insert.Parameters.AddWithValue("$lastActiveAt", Format(newEpoch.LastActiveAt));
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+
+            var switchCurrent = connection.CreateCommand();
+            switchCurrent.Transaction = transaction;
+            switchCurrent.CommandText = """
+                UPDATE project_leaders
+                SET current_epoch_id = $newEpochId, updated_at = $endedAt
+                WHERE project_id = $projectId AND current_epoch_id = $oldEpochId;
+                """;
+            switchCurrent.Parameters.AddWithValue("$newEpochId", newEpoch.Id.ToString());
+            switchCurrent.Parameters.AddWithValue("$endedAt", Format(endedAt));
+            switchCurrent.Parameters.AddWithValue("$projectId", projectId.ToString());
+            switchCurrent.Parameters.AddWithValue("$oldEpochId", oldEpochId.ToString());
+            if (await switchCurrent.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException("The Project Leader current epoch changed during rollover.");
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     private static void AddParameters(SqliteCommand command, StoredProjectLeader leader)
     {
         command.Parameters.AddWithValue("$projectId", leader.ProjectId.ToString());

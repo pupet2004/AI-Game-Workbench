@@ -61,6 +61,10 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public Exception? ResumeException { get; set; }
 
+    public Exception? StopException { get; set; }
+
+    public Func<CreateAgentSessionRequest, AgentSession>? CreateSessionOverride { get; set; }
+
     public int GetModelsCallCount { get; private set; }
 
     public Exception? ApprovalException { get; set; }
@@ -80,6 +84,14 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
     public void ReleaseSend() => _sendRelease.TrySetResult();
 
     public void ReleaseApproval() => _approvalRelease.TrySetResult();
+
+    public void ResetTurnSignals()
+    {
+        _sendRelease = NewSignal();
+        _approvalRelease = NewSignal();
+        _sendStarted = NewSignal();
+        _approvalObserved = NewSignal();
+    }
 
     public Task<IReadOnlyList<ModelProfile>> GetModelsAsync(CancellationToken cancellationToken = default)
     {
@@ -102,6 +114,13 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
         }
 
         CreateRequests.Add(request);
+        if (CreateSessionOverride is not null)
+        {
+            var overridden = CreateSessionOverride(request);
+            CreatedSessions.Add(overridden);
+            return Task.FromResult(overridden);
+        }
+
         var now = DateTimeOffset.UtcNow;
         var session = new AgentSession(
             AgentSessionId.New(),
@@ -182,6 +201,11 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
     public Task StopAsync(AgentSession session, CancellationToken cancellationToken = default)
     {
         StoppedSessions.Add(session);
+        if (StopException is not null)
+        {
+            return Task.FromException(StopException);
+        }
+
         _sendRelease.TrySetResult();
         _approvalRelease.TrySetResult();
         return Task.CompletedTask;

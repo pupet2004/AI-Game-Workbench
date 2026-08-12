@@ -13,10 +13,10 @@ M1-02
 M1-02A
 M1-03
 M1-04
+M1-05A
 
 Current:
-M1-05A — Session Rotation Policy & Settings
+M1-05B — Handoff & Real Session Rollover
 
 Planned:
-M1-05B — Handoff & Rollover
 M1-05C — Epoch History UI

@@ -25,7 +25,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             services.ProjectLeaderRepository,
             services.LeaderSessionEpochRepository,
             services.LeaderMessageRepository,
-            TimeProvider.System);
+            services.TimeProvider);
         CurrentPage = CreateHome();
     }
 
@@ -94,7 +94,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 _services.WorkbenchSettingsRepository,
                 _services.ProjectSettingsRepository,
                 _services.LeaderSessionEpochRepository,
-                _services.TimeProvider));
+                _services.TimeProvider),
+            rolloverService: _services.LeaderSessionRolloverService);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await workspace.LibraryPane.InitializeAsync();

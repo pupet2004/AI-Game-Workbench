@@ -6,6 +6,7 @@ using Workbench.Storage.Database;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
+using Workbench.App.Leader;
 
 namespace Workbench.App.Services;
 
@@ -26,6 +27,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderMessageRepository leaderMessageRepository,
         WorkbenchSettingsRepository workbenchSettingsRepository,
         ProjectSettingsRepository projectSettingsRepository,
+        LeaderSessionRolloverService leaderSessionRolloverService,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -39,6 +41,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderMessageRepository = leaderMessageRepository;
         WorkbenchSettingsRepository = workbenchSettingsRepository;
         ProjectSettingsRepository = projectSettingsRepository;
+        LeaderSessionRolloverService = leaderSessionRolloverService;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -61,6 +64,8 @@ public sealed class AppServices : IAsyncDisposable
     public WorkbenchSettingsRepository WorkbenchSettingsRepository { get; }
 
     public ProjectSettingsRepository ProjectSettingsRepository { get; }
+
+    public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -85,6 +90,10 @@ public sealed class AppServices : IAsyncDisposable
         var projectRepository = new ProjectRepository(database);
         var layoutRepository = new ProjectLayoutRepository(database);
         var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
+        var effectiveRuntimeRegistry = runtimeRegistry ?? new AgentRuntimeRegistry();
+        var projectLeaders = new ProjectLeaderRepository(database);
+        var leaderEpochs = new LeaderSessionEpochRepository(database);
+        var leaderMessages = new LeaderMessageRepository(database);
         var projectOpenService = new ProjectOpenService(
             projectRepository,
             layoutRepository,
@@ -96,12 +105,18 @@ public sealed class AppServices : IAsyncDisposable
             projectRepository,
             layoutRepository,
             projectOpenService,
-            new ProjectLeaderRepository(database),
-            new LeaderSessionEpochRepository(database),
-            new LeaderMessageRepository(database),
+            projectLeaders,
+            leaderEpochs,
+            leaderMessages,
             new WorkbenchSettingsRepository(database),
             new ProjectSettingsRepository(database),
-            runtimeRegistry ?? new AgentRuntimeRegistry(),
+            new LeaderSessionRolloverService(
+                effectiveRuntimeRegistry,
+                projectLeaders,
+                leaderEpochs,
+                leaderMessages,
+                effectiveTimeProvider),
+            effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);
     }

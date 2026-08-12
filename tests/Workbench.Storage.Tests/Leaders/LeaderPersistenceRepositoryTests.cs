@@ -125,6 +125,152 @@ public sealed class LeaderPersistenceRepositoryTests
     }
 
     [Fact]
+    public async Task Atomic_rollover_archives_old_epoch_and_switches_to_fresh_current_epoch()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        var oldEpoch = context.CreateEpoch(context.ProjectA.Id);
+        await context.CreateCurrentEpochAsync(oldEpoch);
+        var newEpoch = context.CreateEpoch(context.ProjectA.Id) with
+        {
+            ProviderId = oldEpoch.ProviderId,
+            ProviderAccountId = oldEpoch.ProviderAccountId,
+            ModelId = oldEpoch.ModelId,
+            WorkingDirectory = oldEpoch.WorkingDirectory,
+            StartedAt = context.T1,
+            LastActiveAt = context.T1
+        };
+
+        await context.Leaders.RolloverAsync(
+            context.ProjectA.Id,
+            oldEpoch.Id,
+            newEpoch,
+            context.T1,
+            "WorkdayBoundary",
+            "CURRENT FOCUS\nContinue M1-05B");
+
+        var archived = await context.Epochs.GetAsync(oldEpoch.Id);
+        var current = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        Assert.Equal(context.T1, archived!.EndedAt);
+        Assert.Equal("WorkdayBoundary", archived.RolloverReason);
+        Assert.Equal("CURRENT FOCUS\nContinue M1-05B", archived.HandoffSummary);
+        Assert.Equal(newEpoch, current);
+        Assert.NotEqual(oldEpoch.Id, current!.Id);
+        Assert.NotEqual(oldEpoch.AgentSessionId, current.AgentSessionId);
+        Assert.NotEqual(oldEpoch.ExternalSessionId, current.ExternalSessionId);
+        Assert.Equal(oldEpoch.ProviderAccountId, current.ProviderAccountId);
+        Assert.Equal(oldEpoch.ModelId, current.ModelId);
+        Assert.Equal(oldEpoch.WorkingDirectory, current.WorkingDirectory);
+        Assert.Null(current.EndedAt);
+    }
+
+    [Fact]
+    public async Task Failed_rollover_transaction_leaves_old_current_and_no_new_epoch()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        var oldEpoch = context.CreateEpoch(context.ProjectA.Id);
+        await context.CreateCurrentEpochAsync(oldEpoch);
+        var newEpoch = context.CreateEpoch(context.ProjectA.Id) with { StartedAt = context.T1, LastActiveAt = context.T1 };
+        await using (var connection = context.Database.CreateConnection())
+        {
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TRIGGER fail_rollover_pointer
+                BEFORE UPDATE OF current_epoch_id ON project_leaders
+                BEGIN SELECT RAISE(ABORT, 'forced rollover failure'); END;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await Assert.ThrowsAnyAsync<Exception>(() => context.Leaders.RolloverAsync(
+            context.ProjectA.Id, oldEpoch.Id, newEpoch, context.T1, "Manual", "handoff"));
+
+        Assert.Equal(oldEpoch, await context.Epochs.GetAsync(oldEpoch.Id));
+        Assert.Equal(oldEpoch.Id, (await context.Leaders.GetAsync(context.ProjectA.Id))!.CurrentEpochId);
+        Assert.Null(await context.Epochs.GetAsync(newEpoch.Id));
+    }
+
+    [Fact]
+    public async Task Most_recent_archived_epoch_is_deterministic_and_project_isolated()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        await context.EnsureLeaderAsync(context.ProjectA.Id);
+        await context.EnsureLeaderAsync(context.ProjectB.Id);
+        var lowerId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var higherId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var first = context.CreateEpoch(context.ProjectA.Id) with
+        {
+            Id = lowerId, EndedAt = context.T1, RolloverReason = "Manual", HandoffSummary = "older tie"
+        };
+        var deterministicWinner = context.CreateEpoch(context.ProjectA.Id) with
+        {
+            Id = higherId, EndedAt = context.T1, RolloverReason = "Manual", HandoffSummary = "winner"
+        };
+        var otherProject = context.CreateEpoch(context.ProjectB.Id) with
+        {
+            EndedAt = context.T1.AddDays(1), RolloverReason = "Manual", HandoffSummary = "B"
+        };
+        await context.Epochs.SaveAsync(first);
+        await context.Epochs.SaveAsync(deterministicWinner);
+        await context.Epochs.SaveAsync(otherProject);
+
+        var restored = await context.Epochs.GetMostRecentArchivedForProjectAsync(context.ProjectA.Id);
+
+        Assert.Equal(deterministicWinner.Id, restored!.Id);
+        Assert.Equal("winner", restored.HandoffSummary);
+    }
+
+    [Fact]
+    public async Task Project_A_rollover_does_not_change_Project_B_epoch()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        var oldA = context.CreateEpoch(context.ProjectA.Id);
+        var currentB = context.CreateEpoch(context.ProjectB.Id);
+        await context.CreateCurrentEpochAsync(oldA);
+        await context.CreateCurrentEpochAsync(currentB);
+        var newA = context.CreateEpoch(context.ProjectA.Id) with
+        {
+            ProviderId = oldA.ProviderId,
+            ProviderAccountId = oldA.ProviderAccountId,
+            ModelId = oldA.ModelId,
+            WorkingDirectory = oldA.WorkingDirectory,
+            StartedAt = context.T1,
+            LastActiveAt = context.T1
+        };
+
+        await context.Leaders.RolloverAsync(
+            context.ProjectA.Id, oldA.Id, newA, context.T1, "Manual", "A handoff");
+
+        Assert.Equal(newA.Id, (await context.Leaders.GetAsync(context.ProjectA.Id))!.CurrentEpochId);
+        Assert.Equal(currentB.Id, (await context.Leaders.GetAsync(context.ProjectB.Id))!.CurrentEpochId);
+        Assert.Equal(currentB, await context.Epochs.GetAsync(currentB.Id));
+    }
+
+    [Fact]
+    public async Task Atomic_rollover_rejects_successor_that_changes_runtime_slot_or_model()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        var oldEpoch = context.CreateEpoch(context.ProjectA.Id);
+        await context.CreateCurrentEpochAsync(oldEpoch);
+        var changed = context.CreateEpoch(context.ProjectA.Id) with
+        {
+            ProviderId = "other-provider",
+            ProviderAccountId = Guid.NewGuid(),
+            ModelId = "other-model",
+            WorkingDirectory = "C:/Other",
+            StartedAt = context.T1,
+            LastActiveAt = context.T1
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => context.Leaders.RolloverAsync(
+            context.ProjectA.Id, oldEpoch.Id, changed, context.T1, "Manual", "handoff"));
+
+        Assert.Equal(oldEpoch, await context.Epochs.GetAsync(oldEpoch.Id));
+        Assert.Equal(oldEpoch.Id, (await context.Leaders.GetAsync(context.ProjectA.Id))!.CurrentEpochId);
+        Assert.Null(await context.Epochs.GetAsync(changed.Id));
+    }
+
+    [Fact]
     public async Task Messages_round_trip_ordered_with_independent_epoch_sequences_and_unicode()
     {
         await using var context = await LeaderStorageContext.CreateAsync();

@@ -19,6 +19,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly Func<Task> _focus;
     private readonly Func<CancellationToken, Task>? _reconnectRuntime;
     private readonly LeaderSessionRotationStateService? _rotationState;
+    private readonly LeaderSessionRolloverService? _rolloverService;
 
     public LeaderPaneViewModel(
         CoreProject project,
@@ -27,7 +28,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         Func<Task> focus,
         string? runtimeUnavailableDetail = null,
         Func<CancellationToken, Task>? reconnectRuntime = null,
-        LeaderSessionRotationStateService? rotationState = null)
+        LeaderSessionRotationStateService? rotationState = null,
+        LeaderSessionRolloverService? rolloverService = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -36,6 +38,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _focus = focus;
         _reconnectRuntime = reconnectRuntime;
         _rotationState = rotationState;
+        _rolloverService = rolloverService;
         if (_conversation.RuntimeErrorDetail is null && runtimeUnavailableDetail is not null)
         {
             _conversation.RuntimeErrorDetail = runtimeUnavailableDetail;
@@ -76,7 +79,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public bool CanSend =>
         !IsBusy &&
+        !_conversation.IsRolloverRunning &&
         !HasPendingApproval &&
+        !HasPendingRotationDecision &&
         (IsRuntimeAvailable ||
          (_conversation.Session is not null && _conversation.SessionNeedsResume && _reconnectRuntime is not null)) &&
         SelectedModel is not null &&
@@ -87,6 +92,17 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public AgentApprovalRequested? PendingApproval => _conversation.PendingApproval;
 
     public bool HasPendingApproval => PendingApproval is not null;
+
+    public bool HasPendingRotationDecision => _conversation.HasPendingRotationDecision;
+
+    public bool CanStartNewBrain =>
+        Session is not null &&
+        _conversation.Epoch is not null &&
+        !IsBusy &&
+        !HasPendingApproval &&
+        !HasPendingRotationDecision &&
+        !_conversation.IsRolloverRunning &&
+        _rolloverService is not null;
 
     public string? ApprovalError => _conversation.ApprovalError;
 
@@ -204,15 +220,120 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public async Task SendAsync(CancellationToken cancellationToken = default)
     {
-        if (IsBusy)
+        if (IsBusy || _conversation.IsRolloverRunning)
         {
-            throw new InvalidOperationException("The Project Leader already has an active turn.");
+            throw new InvalidOperationException("The Project Leader already has an active turn or rollover.");
+        }
+
+        if (HasPendingRotationDecision)
+        {
+            throw new InvalidOperationException("Choose whether to continue the previous Leader session or start fresh.");
         }
 
         var selectedModel = SelectedModel
             ?? throw new InvalidOperationException("Select a model before sending a message.");
         var text = DraftMessage;
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
+
+        if (_conversation.Session is not null && _rotationState is not null)
+        {
+            var rotation = await _rotationState.GetAsync(_project.Id, cancellationToken);
+            if (rotation.Evaluation.IsDue && rotation.EffectivePolicy == LeaderSessionRotationPolicy.Ask)
+            {
+                _conversation.HasPendingRotationDecision = true;
+                _conversation.RotationMessage = "A fresh Leader session is available.";
+                NotifyAllState();
+                return;
+            }
+
+            if (rotation.Evaluation.IsDue && rotation.EffectivePolicy == LeaderSessionRotationPolicy.Auto)
+            {
+                try
+                {
+                    await ExecuteRolloverAsync("WorkdayBoundary", cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    AddErrorMessage("Could not start a fresh Leader session. Your message was not sent.");
+                    NotifyAllState();
+                    return;
+                }
+            }
+        }
+
+        await SendCoreAsync(text, cancellationToken);
+    }
+
+    public async Task ContinuePreviousAsync(CancellationToken cancellationToken = default)
+    {
+        if (!HasPendingRotationDecision)
+        {
+            throw new InvalidOperationException("No Leader session rotation decision is pending.");
+        }
+
+        var text = DraftMessage;
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        _conversation.HasPendingRotationDecision = false;
+        _conversation.RotationMessage = null;
+        await SendCoreAsync(text, cancellationToken);
+    }
+
+    public async Task StartFreshAsync(CancellationToken cancellationToken = default)
+    {
+        if (!HasPendingRotationDecision)
+        {
+            throw new InvalidOperationException("No Leader session rotation decision is pending.");
+        }
+
+        var text = DraftMessage;
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        try
+        {
+            await ExecuteRolloverAsync("WorkdayBoundary", cancellationToken);
+            _conversation.HasPendingRotationDecision = false;
+            await SendCoreAsync(text, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            AddErrorMessage("Could not start a fresh Leader session. Your message was not sent.");
+            NotifyAllState();
+        }
+    }
+
+    public async Task StartNewBrainAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanStartNewBrain)
+        {
+            throw new InvalidOperationException("A new Leader brain cannot be started in the current state.");
+        }
+
+        try
+        {
+            await ExecuteRolloverAsync("Manual", cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            AddErrorMessage("Could not start a fresh Leader session.");
+            NotifyAllState();
+        }
+    }
+
+    private async Task SendCoreAsync(string text, CancellationToken cancellationToken)
+    {
+        var selectedModel = SelectedModel
+            ?? throw new InvalidOperationException("Select a model before sending a message.");
 
         _conversation.IsBusy = true;
         _conversation.ApprovalError = null;
@@ -265,12 +386,15 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 _conversation.RuntimeErrorDetail = null;
             }
 
+            var runtimeRequest = _rolloverService is not null && _conversation.Epoch is not null
+                ? await _rolloverService.CreateUserRequestAsync(_project, _conversation.Epoch, text, cancellationToken)
+                : new AgentRequest(text);
             await _sessionManager.PersistUserMessageAsync(_conversation, text, cancellationToken);
             NotifyAllState();
 
             await foreach (var agentEvent in runtime.SendAsync(
                                _conversation.Session,
-                               new AgentRequest(text),
+                               runtimeRequest,
                                cancellationToken))
             {
                 switch (agentEvent)
@@ -321,6 +445,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                 _conversation,
                                 persistedAssistantText,
                                 cancellationToken);
+                            _conversation.RotationMessage = null;
                         }
 
                         break;
@@ -349,6 +474,52 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
             ClearPendingApproval();
             _conversation.IsBusy = false;
+            NotifyAllState();
+        }
+    }
+
+    private async Task ExecuteRolloverAsync(string reason, CancellationToken cancellationToken)
+    {
+        if (_rolloverService is null || _conversation.Session is null || _conversation.Epoch is null)
+        {
+            throw new InvalidOperationException("No current Leader session is available for rollover.");
+        }
+
+        if (_conversation.IsBusy || HasPendingApproval || _conversation.IsRolloverRunning)
+        {
+            throw new InvalidOperationException("The current Leader interaction must finish before rollover.");
+        }
+
+        _conversation.IsRolloverRunning = true;
+        NotifyAllState();
+        try
+        {
+            if (_conversation.SessionNeedsResume &&
+                !_conversation.RuntimeAccountAvailable &&
+                _reconnectRuntime is not null)
+            {
+                await _reconnectRuntime(cancellationToken);
+            }
+
+            var result = await _rolloverService.RolloverAsync(
+                _project,
+                _conversation.Session,
+                _conversation.Epoch,
+                _conversation.SessionNeedsResume,
+                reason,
+                cancellationToken);
+            _conversation.Session = result.NewSession;
+            _conversation.Epoch = result.NewEpoch;
+            _conversation.SessionNeedsResume = false;
+            _conversation.RuntimeAccountAvailable = true;
+            _conversation.RuntimeStatus = null;
+            _conversation.RuntimeErrorDetail = null;
+            _conversation.Messages.Clear();
+            _conversation.RotationMessage = "Fresh Leader session started.";
+        }
+        finally
+        {
+            _conversation.IsRolloverRunning = false;
             NotifyAllState();
         }
     }
@@ -440,6 +611,15 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     [RelayCommand]
     private Task Stop() => StopAsync();
 
+    [RelayCommand]
+    private Task ContinuePrevious() => ContinuePreviousAsync();
+
+    [RelayCommand]
+    private Task StartFresh() => StartFreshAsync();
+
+    [RelayCommand]
+    private Task StartNewBrain() => StartNewBrainAsync();
+
     private LeaderMessageViewModel AddAssistantMessage()
     {
         var message = new LeaderMessageViewModel(LeaderMessageRole.Assistant, string.Empty, true);
@@ -506,6 +686,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(PendingApproval));
         OnPropertyChanged(nameof(HasPendingApproval));
+        OnPropertyChanged(nameof(HasPendingRotationDecision));
+        OnPropertyChanged(nameof(CanStartNewBrain));
         OnPropertyChanged(nameof(ApprovalError));
         OnPropertyChanged(nameof(RotationMessage));
         OnPropertyChanged(nameof(HasRotationMessage));
@@ -519,5 +701,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         SendCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
         RetryRuntimeCommand.NotifyCanExecuteChanged();
+        ContinuePreviousCommand.NotifyCanExecuteChanged();
+        StartFreshCommand.NotifyCanExecuteChanged();
+        StartNewBrainCommand.NotifyCanExecuteChanged();
     }
 }

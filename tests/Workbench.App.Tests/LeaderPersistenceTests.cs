@@ -8,6 +8,8 @@ using Workbench.Runtime.Registry;
 using Workbench.Storage.Database;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Projects;
+using Workbench.Storage.Settings;
+using Workbench.App.Leader;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests;
@@ -347,6 +349,8 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
         Leaders = new ProjectLeaderRepository(database);
         Epochs = new LeaderSessionEpochRepository(database);
         Messages = new LeaderMessageRepository(database);
+        WorkbenchSettings = new WorkbenchSettingsRepository(database);
+        ProjectSettings = new ProjectSettingsRepository(database);
         Time = new MutableTimeProvider(T0);
     }
 
@@ -358,6 +362,8 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
     public ProjectLeaderRepository Leaders { get; }
     public LeaderSessionEpochRepository Epochs { get; }
     public LeaderMessageRepository Messages { get; }
+    public WorkbenchSettingsRepository WorkbenchSettings { get; }
+    public ProjectSettingsRepository ProjectSettings { get; }
     public MutableTimeProvider Time { get; }
 
     public static async Task<PersistentLeaderContext> CreateAsync()
@@ -383,6 +389,12 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
 
     public ProjectLeaderSessionManager CreateManager() =>
         new(Leaders, Epochs, Messages, Time);
+
+    public LeaderSessionRotationStateService CreateRotationStateService() =>
+        new(WorkbenchSettings, ProjectSettings, Epochs, Time, TimeZoneInfo.Utc);
+
+    public LeaderSessionRolloverService CreateRolloverService(AgentRuntimeRegistry registry) =>
+        new(registry, Leaders, Epochs, Messages, Time);
 
     public LeaderPaneViewModel CreatePane(
         FakeAgentRuntime runtime,
