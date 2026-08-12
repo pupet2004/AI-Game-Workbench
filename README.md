@@ -14,9 +14,10 @@ M1-02A
 M1-03
 M1-04
 M1-05A
+M1-05B
 
 Current:
-M1-05B — Handoff & Real Session Rollover
+M1-05C — Leader Epoch History UI
 
 Planned:
-M1-05C — Epoch History UI
+None

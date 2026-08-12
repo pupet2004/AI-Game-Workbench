@@ -333,6 +333,29 @@ public sealed class LeaderPersistenceRepositoryTests
         Assert.Null(await context.Epochs.GetAsync(epoch.Id));
         Assert.Empty(await context.Messages.GetAllAsync(epoch.Id));
     }
+
+    [Fact]
+    public async Task Archived_history_uses_stable_keyset_cursor_and_returns_metadata_counts()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        await context.EnsureLeaderAsync(context.ProjectA.Id);
+        var oldest = context.CreateEpoch(context.ProjectA.Id) with { Id = Guid.Parse("00000000-0000-0000-0000-000000000001"), EndedAt = context.T0, HandoffSummary = "old" };
+        var tie = context.CreateEpoch(context.ProjectA.Id) with { Id = Guid.Parse("00000000-0000-0000-0000-000000000002"), EndedAt = context.T1, HandoffSummary = "tie" };
+        var newest = context.CreateEpoch(context.ProjectA.Id) with { Id = Guid.Parse("00000000-0000-0000-0000-000000000003"), EndedAt = context.T1, HandoffSummary = "new" };
+        await context.Epochs.SaveAsync(oldest);
+        await context.Epochs.SaveAsync(tie);
+        await context.Epochs.SaveAsync(newest);
+        await context.Messages.AppendAsync(newest.Id, "user", "only count this", context.T1);
+
+        var first = await context.Epochs.GetArchivedPageAsync(context.ProjectA.Id, 2);
+        var second = await context.Epochs.GetArchivedPageAsync(context.ProjectA.Id, 2, first.NextCursor);
+
+        Assert.Equal([newest.Id, tie.Id], first.Epochs.Select(epoch => epoch.Id));
+        Assert.Equal(1, first.Epochs[0].MessageCount);
+        Assert.Equal([oldest.Id], second.Epochs.Select(epoch => epoch.Id));
+        Assert.Null(second.NextCursor);
+        Assert.Equal(3, first.Epochs.Concat(second.Epochs).Select(epoch => epoch.Id).Distinct().Count());
+    }
 }
 
 internal sealed class LeaderStorageContext : IAsyncDisposable

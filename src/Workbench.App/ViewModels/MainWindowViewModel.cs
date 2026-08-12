@@ -95,7 +95,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 _services.ProjectSettingsRepository,
                 _services.LeaderSessionEpochRepository,
                 _services.TimeProvider),
-            rolloverService: _services.LeaderSessionRolloverService);
+            rolloverService: _services.LeaderSessionRolloverService,
+            epochRepository: _services.LeaderSessionEpochRepository,
+            messageRepository: _services.LeaderMessageRepository);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await workspace.LibraryPane.InitializeAsync();

@@ -16,7 +16,7 @@
             </Grid>
 
             <StackPanel Grid.Row="1" Spacing="6">
-                <Border IsVisible="{Binding HasRotationMessage}"
+                <Border IsVisible="{Binding ShowRotationMessage}"
                         Padding="8"
                         Background="#FFF8E7"
                         BorderBrush="#D9A441"
@@ -51,6 +51,46 @@
             <Grid Grid.Row="2">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="8">
+                        <StackPanel IsVisible="{Binding HasHistory}" Spacing="8">
+                            <Button Content="Load earlier sessions"
+                                    Command="{Binding History.LoadEarlierCommand}"
+                                    IsVisible="{Binding History.HasMore}" />
+                            <Border IsVisible="{Binding History.HasError}" Padding="8" Background="#FFF8E7" CornerRadius="4">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding History.ErrorMessage}" Foreground="#B42318" />
+                                    <Button Content="Retry" Command="{Binding History.RetryCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ItemsControl ItemsSource="{Binding History.ArchivedEpochs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="leader:ArchivedLeaderEpochViewModel">
+                                        <Border Padding="10" Background="#F5F6F8" CornerRadius="6" Margin="0,0,0,4">
+                                            <StackPanel Spacing="6">
+                                                <Button Content="{Binding Header}" Command="{Binding ToggleCommand}" HorizontalAlignment="Left" />
+                                                <TextBlock Text="{Binding Preview}" TextWrapping="Wrap" Foreground="#667085" />
+                                                <Border IsVisible="{Binding HasError}" Padding="6" Background="#FFF8E7" CornerRadius="4">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <TextBlock Text="{Binding ErrorMessage}" Foreground="#B42318" />
+                                                        <Button Content="Retry" Command="{Binding RetryCommand}" />
+                                                    </StackPanel>
+                                                </Border>
+                                                <ItemsControl ItemsSource="{Binding Messages}" IsVisible="{Binding IsExpanded}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="leader:LeaderMessageViewModel">
+                                                            <Border Margin="0,0,0,6" Padding="8" Background="#FFFFFF" CornerRadius="4">
+                                                                <StackPanel Spacing="3"><TextBlock Text="{Binding RoleLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#667085" /><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /></StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <TextBlock Text="Current session" FontSize="12" FontWeight="SemiBold" Foreground="#667085" />
                     <ItemsControl ItemsSource="{Binding Messages}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="leader:LeaderMessageViewModel">
@@ -71,6 +111,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
 
                 <Border IsVisible="{Binding ShowRuntimeUnavailableOverlay}"

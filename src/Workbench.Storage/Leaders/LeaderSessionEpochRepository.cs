@@ -46,6 +46,51 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
             command => command.Parameters.AddWithValue("$projectId", projectId.ToString()),
             cancellationToken);
 
+    public async Task<LeaderEpochHistoryPage> GetArchivedPageAsync(
+        Guid projectId,
+        int pageSize,
+        LeaderEpochHistoryCursor? before = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        }
+
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT e.id, e.ended_at, e.rollover_reason, e.handoff_summary,
+                   (SELECT COUNT(*) FROM leader_messages m WHERE m.epoch_id = e.id)
+            FROM leader_session_epochs e
+            WHERE e.project_id = $projectId AND e.ended_at IS NOT NULL
+              AND ($beforeEndedAt IS NULL OR e.ended_at < $beforeEndedAt
+                   OR (e.ended_at = $beforeEndedAt AND e.id < $beforeId))
+            ORDER BY e.ended_at DESC, e.id DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        command.Parameters.AddWithValue("$beforeEndedAt", before is null ? DBNull.Value : Format(before.EndedAt));
+        command.Parameters.AddWithValue("$beforeId", before is null ? DBNull.Value : before.Id.ToString());
+        command.Parameters.AddWithValue("$limit", pageSize + 1);
+        var rows = new List<StoredArchivedLeaderSessionEpoch>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new StoredArchivedLeaderSessionEpoch(
+                Guid.Parse(reader.GetString(0)), Parse(reader.GetString(1)),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(4)));
+        }
+
+        var hasMore = rows.Count > pageSize;
+        if (hasMore) rows.RemoveAt(rows.Count - 1);
+        var last = rows.LastOrDefault();
+        return new LeaderEpochHistoryPage(rows, hasMore && last is not null
+            ? new LeaderEpochHistoryCursor(last.EndedAt, last.Id) : null);
+    }
+
     public async Task SaveAsync(StoredLeaderSessionEpoch epoch, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(epoch);

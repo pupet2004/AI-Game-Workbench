@@ -32,7 +32,7 @@ public sealed class LeaderPaneViewTests
     {
         var markup = ReadLeaderView();
 
-        Assert.Equal(2, CountOccurrences(markup, "Background=\"#F5F6F8\""));
+        Assert.Equal(3, CountOccurrences(markup, "Background=\"#F5F6F8\""));
         Assert.Equal(7, CountOccurrences(markup, "Foreground=\"#101828\""));
         Assert.Contains("Background=\"#FFF8E7\"", markup, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"#101828\"", markup, StringComparison.Ordinal);

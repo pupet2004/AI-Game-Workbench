@@ -6,6 +6,7 @@ using Workbench.App.Leader;
 using Workbench.Core.Leaders;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
+using Workbench.Storage.Leaders;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ViewModels.Panes;
@@ -29,7 +30,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         string? runtimeUnavailableDetail = null,
         Func<CancellationToken, Task>? reconnectRuntime = null,
         LeaderSessionRotationStateService? rotationState = null,
-        LeaderSessionRolloverService? rolloverService = null)
+        LeaderSessionRolloverService? rolloverService = null,
+        LeaderSessionEpochRepository? epochRepository = null,
+        LeaderMessageRepository? messageRepository = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -39,6 +42,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _reconnectRuntime = reconnectRuntime;
         _rotationState = rotationState;
         _rolloverService = rolloverService;
+        if ((epochRepository is null) != (messageRepository is null))
+        {
+            throw new ArgumentException("History repositories must be supplied together.");
+        }
+        if (epochRepository is not null)
+        {
+            History = new LeaderEpochHistoryViewModel(project.Id, epochRepository, messageRepository!);
+        }
         if (_conversation.RuntimeErrorDetail is null && runtimeUnavailableDetail is not null)
         {
             _conversation.RuntimeErrorDetail = runtimeUnavailableDetail;
@@ -50,6 +61,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public ObservableCollection<LeaderModelOptionViewModel> AvailableModels => _conversation.AvailableModels;
 
     public ObservableCollection<LeaderMessageViewModel> Messages => _conversation.Messages;
+
+    public LeaderEpochHistoryViewModel? History { get; }
+
+    public bool HasHistory => History is not null;
 
     public ObservableCollection<LeaderApprovalOptionViewModel> ApprovalOptions { get; } = [];
 
@@ -110,6 +125,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public bool HasRotationMessage => !string.IsNullOrWhiteSpace(RotationMessage);
 
+    public bool ShowRotationMessage => HasRotationMessage && !HasPendingRotationDecision;
+
     public LeaderModelOptionViewModel? SelectedModel
     {
         get => _conversation.SelectedModel;
@@ -133,6 +150,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await _sessionManager.LoadAsync(_project.Id, cancellationToken);
+        if (History is not null)
+        {
+            await History.InitializeAsync(cancellationToken);
+        }
         if (_rotationState is not null)
         {
             var state = await _rotationState.GetAsync(_project.Id, cancellationToken);
@@ -516,6 +537,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             _conversation.RuntimeErrorDetail = null;
             _conversation.Messages.Clear();
             _conversation.RotationMessage = "Fresh Leader session started.";
+            if (History is not null)
+            {
+                await History.RefreshAfterRolloverAsync(cancellationToken);
+            }
         }
         finally
         {
@@ -691,8 +716,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(ApprovalError));
         OnPropertyChanged(nameof(RotationMessage));
         OnPropertyChanged(nameof(HasRotationMessage));
+        OnPropertyChanged(nameof(ShowRotationMessage));
         OnPropertyChanged(nameof(ProjectLeaderId));
         OnPropertyChanged(nameof(SessionEpochId));
+        OnPropertyChanged(nameof(HasHistory));
         NotifyCommandState();
     }
 

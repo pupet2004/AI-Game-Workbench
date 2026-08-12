@@ -120,8 +120,8 @@
 ## Future M1-05 phases
 
 - **M1-05A — Policy & Settings:** completed in `2487e935f1486c6a536aff173527c3a20e17696f`.
-- **M1-05B — Handoff & Rollover:** current execution phase.
-- **M1-05C — Epoch History UI:** show archived epoch history and transcripts with the current epoch expanded; this plan must not load or render archive history.
+- **M1-05B — Handoff & Rollover:** completed in `ea6b3ce21f9f47e5c953e658a7be783927c7e75c`.
+- **M1-05C — Epoch History UI:** current execution phase; show archived epoch history and transcripts with the current epoch expanded.
 
 ## M1-05B execution
 
