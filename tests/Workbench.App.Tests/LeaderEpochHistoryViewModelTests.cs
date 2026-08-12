@@ -6,6 +6,42 @@ namespace Workbench.App.Tests;
 public sealed class LeaderEpochHistoryViewModelTests
 {
     [Fact]
+    public void Long_handoff_preview_is_bounded()
+    {
+        var preview = ArchivedLeaderEpochViewModel.CreateHandoffPreview(new string('a', 250));
+
+        Assert.NotNull(preview);
+        Assert.True(preview!.Length <= 181);
+        Assert.EndsWith("…", preview, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Multi_section_handoff_preview_is_compact()
+    {
+        var preview = ArchivedLeaderEpochViewModel.CreateHandoffPreview("First section is useful.\n\nSECOND SECTION\n" + new string('b', 200));
+
+        Assert.Equal("First section is useful.", preview);
+    }
+
+    [Fact]
+    public void Short_handoff_preview_remains_readable() =>
+        Assert.Equal("A concise handoff.", ArchivedLeaderEpochViewModel.CreateHandoffPreview("  A concise\n handoff.  "));
+
+    [Fact]
+    public void Null_handoff_has_no_preview() =>
+        Assert.Null(ArchivedLeaderEpochViewModel.CreateHandoffPreview(null));
+
+    [Fact]
+    public void Unicode_handoff_preview_is_valid()
+    {
+        var preview = ArchivedLeaderEpochViewModel.CreateHandoffPreview(string.Concat(Enumerable.Repeat("游戏🎮", 61)));
+
+        Assert.NotNull(preview);
+        Assert.EndsWith("…", preview, StringComparison.Ordinal);
+        Assert.DoesNotContain('\uFFFD', preview);
+    }
+
+    [Fact]
     public async Task Archived_transcripts_are_not_loaded_until_their_card_is_expanded()
     {
         await using var context = await PersistentLeaderContext.CreateAsync();

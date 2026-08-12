@@ -21,6 +21,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly Func<CancellationToken, Task>? _reconnectRuntime;
     private readonly LeaderSessionRotationStateService? _rotationState;
     private readonly LeaderSessionRolloverService? _rolloverService;
+    private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
         CoreProject project,
@@ -65,6 +66,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public LeaderEpochHistoryViewModel? History { get; }
 
     public bool HasHistory => History is not null;
+
+    [ObservableProperty]
+    public partial int InitialAnchorRequestVersion { get; set; }
 
     public ObservableCollection<LeaderApprovalOptionViewModel> ApprovalOptions { get; } = [];
 
@@ -153,6 +157,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         if (History is not null)
         {
             await History.InitializeAsync(cancellationToken);
+        }
+        if (!_initialAnchorRequested)
+        {
+            _initialAnchorRequested = true;
+            InitialAnchorRequestVersion++;
         }
         if (_rotationState is not null)
         {

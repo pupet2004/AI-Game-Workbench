@@ -74,7 +74,9 @@ public sealed partial class ArchivedLeaderEpochViewModel : ViewModelBase
     { Epoch = epoch; _messages = messages; }
     public StoredArchivedLeaderSessionEpoch Epoch { get; }
     public string Header => $"{FormatDate(Epoch.EndedAt)} · {Epoch.MessageCount} message{(Epoch.MessageCount == 1 ? string.Empty : "s")}";
-    public string Preview => string.IsNullOrWhiteSpace(Epoch.HandoffSummary) ? ReasonLabel(Epoch.RolloverReason) : Epoch.HandoffSummary!;
+    public string Preview => CreateHandoffPreview(Epoch.HandoffSummary) ?? ReasonLabel(Epoch.RolloverReason);
+    public string? FullHandoff => Epoch.HandoffSummary;
+    public bool HasFullHandoff => !string.IsNullOrWhiteSpace(FullHandoff);
     public ObservableCollection<LeaderMessageViewModel> Messages { get; } = [];
     [ObservableProperty] public partial bool IsExpanded { get; set; }
     [ObservableProperty] public partial bool IsLoading { get; set; }
@@ -103,5 +105,17 @@ public sealed partial class ArchivedLeaderEpochViewModel : ViewModelBase
         if (date == DateTime.Today.AddDays(-1)) return "Yesterday";
         return endedAt.ToLocalTime().ToString("MMM d");
     }
+
+    public static string? CreateHandoffPreview(string? handoff)
+    {
+        if (string.IsNullOrWhiteSpace(handoff)) return null;
+        var firstSection = handoff.Split(["\r\n\r\n", "\n\n"], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault() ?? handoff;
+        var normalized = string.Join(" ", firstSection.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        const int maximumRunes = 180;
+        if (normalized.EnumerateRunes().Count() <= maximumRunes) return normalized;
+        return string.Concat(normalized.EnumerateRunes().Take(maximumRunes).Select(rune => rune.ToString())) + "…";
+    }
+
     private static string ReasonLabel(string? reason) => reason switch { "Manual" => "Started manually", "WorkdayBoundary" => "New workday", _ => "Previous session" };
 }

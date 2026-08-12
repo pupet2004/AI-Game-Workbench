@@ -33,7 +33,7 @@ public sealed class LeaderPaneViewTests
         var markup = ReadLeaderView();
 
         Assert.Equal(3, CountOccurrences(markup, "Background=\"#F5F6F8\""));
-        Assert.Equal(7, CountOccurrences(markup, "Foreground=\"#101828\""));
+        Assert.Equal(8, CountOccurrences(markup, "Foreground=\"#101828\""));
         Assert.Contains("Background=\"#FFF8E7\"", markup, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"#101828\"", markup, StringComparison.Ordinal);
     }
@@ -74,6 +74,31 @@ public sealed class LeaderPaneViewTests
         Assert.Equal(2, CountOccurrences(markup, "Foreground=\"#101828\"\n                                    Command=\"{Binding"));
     }
 
+    [Fact]
+    public void Archived_transcript_and_header_define_readable_foregrounds_and_bounded_preview()
+    {
+        var markup = ReadLeaderView();
+
+        Assert.Contains("Content=\"{Binding Header}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Foreground=\"#344054\"", markup, StringComparison.Ordinal);
+        Assert.Contains("TextTrimming=\"CharacterEllipsis\"", markup, StringComparison.Ordinal);
+        Assert.Contains("MaxLines=\"2\"", markup, StringComparison.Ordinal);
+        Assert.Contains("<TextBlock Text=\"{Binding Text}\" Foreground=\"#101828\" TextWrapping=\"Wrap\" />", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Leader_view_requests_the_initial_current_latest_anchor_only_on_view_load()
+    {
+        var markup = ReadLeaderView();
+        var codeBehind = ReadLeaderViewCodeBehind();
+
+        Assert.Contains("x:Name=\"ConversationScrollViewer\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Loaded=\"OnLoaded\"", markup, StringComparison.Ordinal);
+        Assert.Contains("ScrollToEnd", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadEarlier", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("Toggle", codeBehind, StringComparison.Ordinal);
+    }
+
     private static string ReadLeaderView()
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
@@ -88,4 +113,10 @@ public sealed class LeaderPaneViewTests
 
     private static int CountOccurrences(string value, string fragment) =>
         value.Split(fragment, StringSplitOptions.None).Length - 1;
+
+    private static string ReadLeaderViewCodeBehind()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        return File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "LeaderPaneView.axaml.cs"));
+    }
 }
