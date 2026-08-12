@@ -1,6 +1,7 @@
 using Workbench.Core.Projects;
 using Workbench.Storage.Database;
 using Workbench.Storage.Leaders;
+using Workbench.Storage.Memory;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Tests.Database;
 
@@ -161,6 +162,9 @@ public sealed class LeaderPersistenceRepositoryTests
         Assert.Equal(oldEpoch.ModelId, current.ModelId);
         Assert.Equal(oldEpoch.WorkingDirectory, current.WorkingDirectory);
         Assert.Null(current.EndedAt);
+        var synthesis = await new ProjectMemorySynthesisRepository(context.Database).GetAsync(oldEpoch.Id);
+        Assert.Equal(ProjectMemorySynthesisJobStatus.Pending, synthesis!.Status);
+        Assert.Null(await new ProjectMemorySynthesisRepository(context.Database).GetAsync(newEpoch.Id));
     }
 
     [Fact]
@@ -188,6 +192,7 @@ public sealed class LeaderPersistenceRepositoryTests
         Assert.Equal(oldEpoch, await context.Epochs.GetAsync(oldEpoch.Id));
         Assert.Equal(oldEpoch.Id, (await context.Leaders.GetAsync(context.ProjectA.Id))!.CurrentEpochId);
         Assert.Null(await context.Epochs.GetAsync(newEpoch.Id));
+        Assert.Null(await new ProjectMemorySynthesisRepository(context.Database).GetAsync(oldEpoch.Id));
     }
 
     [Fact]

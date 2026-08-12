@@ -12,13 +12,26 @@ internal sealed class TemporaryDatabase : IAsyncDisposable
 
     public string DatabasePath { get; }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        if (Directory.Exists(_directory))
+        for (var attempt = 0; attempt < 20; attempt++)
         {
-            Directory.Delete(_directory, recursive: true);
+            try
+            {
+                if (Directory.Exists(_directory))
+                {
+                    Directory.Delete(_directory, recursive: true);
+                }
+                return;
+            }
+            catch (IOException) when (attempt < 19)
+            {
+                await Task.Delay(25);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 19)
+            {
+                await Task.Delay(25);
+            }
         }
-
-        return ValueTask.CompletedTask;
     }
 }

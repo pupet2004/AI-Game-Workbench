@@ -8,6 +8,8 @@ using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
 using Workbench.App.Leader;
 using Workbench.Storage.Memory;
+using Workbench.App.Memory;
+using System.Collections.Concurrent;
 
 namespace Workbench.App.Services;
 
@@ -16,6 +18,8 @@ public sealed class AppServices : IAsyncDisposable
     private readonly Func<CancellationToken, Task<IAgentRuntime>>? _runtimeFactory;
     private readonly List<IAsyncDisposable> _ownedRuntimes = [];
     private readonly SemaphoreSlim _runtimeConnectionGate = new(1, 1);
+    private readonly CancellationTokenSource _synthesisShutdown = new();
+    private readonly ConcurrentDictionary<Guid, byte> _scheduledSynthesis = [];
     private int _disposeRequested;
 
     private AppServices(
@@ -29,6 +33,8 @@ public sealed class AppServices : IAsyncDisposable
         WorkbenchSettingsRepository workbenchSettingsRepository,
         ProjectSettingsRepository projectSettingsRepository,
         ProjectMemoryService projectMemoryService,
+        ProjectMemorySynthesisRepository projectMemorySynthesisRepository,
+        ProjectMemorySynthesisCoordinator projectMemorySynthesisCoordinator,
         LeaderSessionRolloverService leaderSessionRolloverService,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
@@ -44,6 +50,8 @@ public sealed class AppServices : IAsyncDisposable
         WorkbenchSettingsRepository = workbenchSettingsRepository;
         ProjectSettingsRepository = projectSettingsRepository;
         ProjectMemoryService = projectMemoryService;
+        ProjectMemorySynthesisRepository = projectMemorySynthesisRepository;
+        ProjectMemorySynthesisCoordinator = projectMemorySynthesisCoordinator;
         LeaderSessionRolloverService = leaderSessionRolloverService;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
@@ -68,6 +76,8 @@ public sealed class AppServices : IAsyncDisposable
 
     public ProjectSettingsRepository ProjectSettingsRepository { get; }
     public ProjectMemoryService ProjectMemoryService { get; }
+    public ProjectMemorySynthesisRepository ProjectMemorySynthesisRepository { get; }
+    public ProjectMemorySynthesisCoordinator ProjectMemorySynthesisCoordinator { get; }
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
 
@@ -98,6 +108,8 @@ public sealed class AppServices : IAsyncDisposable
         var projectLeaders = new ProjectLeaderRepository(database);
         var leaderEpochs = new LeaderSessionEpochRepository(database);
         var leaderMessages = new LeaderMessageRepository(database);
+        var memoryRepository = new ProjectMemoryRepository(database);
+        var synthesisRepository = new ProjectMemorySynthesisRepository(database, effectiveTimeProvider);
         var projectOpenService = new ProjectOpenService(
             projectRepository,
             layoutRepository,
@@ -114,7 +126,15 @@ public sealed class AppServices : IAsyncDisposable
             leaderMessages,
             new WorkbenchSettingsRepository(database),
             new ProjectSettingsRepository(database),
-            new ProjectMemoryService(new ProjectActivityRepository(database), new ProjectMemoryRepository(database), effectiveTimeProvider),
+            new ProjectMemoryService(new ProjectActivityRepository(database), memoryRepository, effectiveTimeProvider),
+            synthesisRepository,
+            new ProjectMemorySynthesisCoordinator(
+                effectiveRuntimeRegistry,
+                synthesisRepository,
+                leaderEpochs,
+                leaderMessages,
+                memoryRepository,
+                effectiveTimeProvider),
             new LeaderSessionRolloverService(
                 effectiveRuntimeRegistry,
                 projectLeaders,
@@ -129,6 +149,33 @@ public sealed class AppServices : IAsyncDisposable
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await Database.InitializeAsync(cancellationToken);
+        await ProjectMemorySynthesisRepository.RecoverRunningAsync(cancellationToken);
+    }
+
+    public void ScheduleMemorySynthesis(Guid projectId)
+    {
+        if (Volatile.Read(ref _disposeRequested) != 0 || !_scheduledSynthesis.TryAdd(projectId, 0))
+        {
+            return;
+        }
+
+        _ = RunScheduledSynthesisAsync(projectId);
+    }
+
+    private async Task RunScheduledSynthesisAsync(Guid projectId)
+    {
+        try
+        {
+            await ProjectMemorySynthesisCoordinator.TryProcessNextAsync(projectId, _synthesisShutdown.Token);
+        }
+        catch
+        {
+            // Coordinator failures are persisted for a later safe trigger.
+        }
+        finally
+        {
+            _scheduledSynthesis.TryRemove(projectId, out _);
+        }
     }
 
     public async Task RetryRuntimeAsync(CancellationToken cancellationToken = default)
@@ -184,6 +231,7 @@ public sealed class AppServices : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _disposeRequested, 1);
+        _synthesisShutdown.Cancel();
         await _runtimeConnectionGate.WaitAsync();
         try
         {

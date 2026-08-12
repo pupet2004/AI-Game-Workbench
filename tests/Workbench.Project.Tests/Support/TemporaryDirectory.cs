@@ -12,14 +12,28 @@ internal sealed class TemporaryDirectory : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(Path))
+        for (var attempt = 0; attempt < 20; attempt++)
         {
-            foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
+            try
             {
-                File.SetAttributes(file, FileAttributes.Normal);
+                if (Directory.Exists(Path))
+                {
+                    foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
+                    {
+                        File.SetAttributes(file, FileAttributes.Normal);
+                    }
+                    Directory.Delete(Path, recursive: true);
+                }
+                return;
             }
-
-            Directory.Delete(Path, recursive: true);
+            catch (IOException) when (attempt < 19)
+            {
+                Thread.Sleep(25);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 19)
+            {
+                Thread.Sleep(25);
+            }
         }
     }
 }

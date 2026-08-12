@@ -20,9 +20,11 @@ M1-05C
 
 M1.5 — Project Memory
 
-Current:
 M1.5A — Memory Foundation
+Completed
+
+Current:
+M1.5B — Session-Derived Memory Intelligence
 
 Planned:
-M1.5B — Memory Intelligence
 M1.5C — Memory-Aware Leader Boot

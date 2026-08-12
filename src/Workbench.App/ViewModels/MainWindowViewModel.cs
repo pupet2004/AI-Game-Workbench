@@ -13,11 +13,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly AppServices _services;
     private readonly IFolderPickerService _folderPickerService;
     private readonly ProjectLeaderSessionManager _leaderSessions;
+    private readonly Action<Guid> _scheduleMemorySynthesis;
 
     public MainWindowViewModel(
         AppServices services,
         IFolderPickerService folderPickerService,
-        ProjectLeaderSessionManager? leaderSessions = null)
+        ProjectLeaderSessionManager? leaderSessions = null,
+        Action<Guid>? scheduleMemorySynthesis = null)
     {
         _services = services;
         _folderPickerService = folderPickerService;
@@ -26,6 +28,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             services.LeaderSessionEpochRepository,
             services.LeaderMessageRepository,
             services.TimeProvider);
+        _scheduleMemorySynthesis = scheduleMemorySynthesis ?? services.ScheduleMemorySynthesis;
         CurrentPage = CreateHome();
     }
 
@@ -98,10 +101,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             rolloverService: _services.LeaderSessionRolloverService,
             epochRepository: _services.LeaderSessionEpochRepository,
             messageRepository: _services.LeaderMessageRepository,
-            projectMemoryService: _services.ProjectMemoryService);
+            projectMemoryService: _services.ProjectMemoryService,
+            memorySynthesisRepository: _services.ProjectMemorySynthesisRepository,
+            scheduleMemorySynthesis: _scheduleMemorySynthesis);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await workspace.LibraryPane.InitializeAsync();
+        _scheduleMemorySynthesis(result.Project.Id);
     }
 
     public async ValueTask DisposeAsync()

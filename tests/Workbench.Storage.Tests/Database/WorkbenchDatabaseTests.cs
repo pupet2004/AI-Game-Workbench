@@ -16,13 +16,13 @@ public sealed class WorkbenchDatabaseTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages', 'workbench_settings', 'project_settings', 'project_activity_events', 'project_memory_items', 'project_memory_sources');";
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages', 'workbench_settings', 'project_settings', 'project_activity_events', 'project_memory_items', 'project_memory_sources', 'project_memory_synthesis_jobs');";
 
-        Assert.Equal(10L, await command.ExecuteScalarAsync());
+        Assert.Equal(11L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
-    public async Task Migration_004_sets_user_version_to_4()
+    public async Task Migration_005_sets_user_version_to_5()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,35 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(4L, await command.ExecuteScalarAsync());
+        Assert.Equal(5L, await command.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task Migration_005_preserves_v4_memory()
+    {
+        await using var temporary = new TemporaryDatabase();
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+        await database.InitializeAsync();
+        await using (var connection = database.CreateConnection())
+        {
+            await connection.OpenAsync();
+            var setup = connection.CreateCommand();
+            setup.CommandText = """
+                INSERT INTO projects VALUES ('00000000-0000-0000-0000-000000000011', 'P', 'C:/Memory', 0, NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+                INSERT INTO project_memory_items VALUES ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000011', 'Formal', 'Rule', 'Keep me.', 'Active', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+                DROP TABLE project_memory_synthesis_jobs;
+                PRAGMA user_version = 4;
+                """;
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        await new WorkbenchDatabase(temporary.DatabasePath).InitializeAsync();
+
+        await using var reopened = database.CreateConnection();
+        await reopened.OpenAsync();
+        var query = reopened.CreateCommand();
+        query.CommandText = "SELECT content FROM project_memory_items WHERE topic = 'Rule';";
+        Assert.Equal("Keep me.", await query.ExecuteScalarAsync());
     }
 
     [Theory]

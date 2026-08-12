@@ -37,7 +37,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         LeaderSessionRolloverService? rolloverService = null,
         LeaderSessionEpochRepository? epochRepository = null,
         LeaderMessageRepository? messageRepository = null,
-        ProjectMemoryService? projectMemoryService = null)
+        ProjectMemoryService? projectMemoryService = null,
+        ProjectMemorySynthesisRepository? memorySynthesisRepository = null,
+        Action<Guid>? scheduleMemorySynthesis = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -55,9 +57,18 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             rotationStateService,
             rolloverService,
             epochRepository,
-            messageRepository);
+            messageRepository,
+            scheduleMemorySynthesis);
         WorkPane = new WorkPaneViewModel(FocusWorkAsync);
-        LibraryPane = new LibraryPaneViewModel(result, FocusLibraryAsync, projectSettingsRepository, rotationStateService, projectMemoryService);
+        LibraryPane = new LibraryPaneViewModel(
+            result,
+            FocusLibraryAsync,
+            projectSettingsRepository,
+            rotationStateService,
+            projectMemoryService,
+            memorySynthesisRepository,
+            epochRepository,
+            scheduleMemorySynthesis);
     }
 
     public ProjectOpenResult Result { get; }

@@ -263,6 +263,20 @@ public sealed class ProjectLeaderRepository(WorkbenchDatabase database)
                 throw new InvalidOperationException("The Project Leader current epoch changed during rollover.");
             }
 
+            var queueSynthesis = connection.CreateCommand();
+            queueSynthesis.Transaction = transaction;
+            queueSynthesis.CommandText = """
+                INSERT INTO project_memory_synthesis_jobs (
+                    epoch_id, project_id, status, attempt_count, last_attempted_at,
+                    completed_at, last_error, created_at, updated_at)
+                VALUES ($oldEpochId, $projectId, 'Pending', 0, NULL, NULL, NULL, $endedAt, $endedAt)
+                ON CONFLICT(epoch_id) DO NOTHING;
+                """;
+            queueSynthesis.Parameters.AddWithValue("$oldEpochId", oldEpochId.ToString());
+            queueSynthesis.Parameters.AddWithValue("$projectId", projectId.ToString());
+            queueSynthesis.Parameters.AddWithValue("$endedAt", Format(endedAt));
+            await queueSynthesis.ExecuteNonQueryAsync(cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch

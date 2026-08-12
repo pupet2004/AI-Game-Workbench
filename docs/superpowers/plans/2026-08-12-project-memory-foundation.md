@@ -39,4 +39,6 @@
 
 ### Task 4: Verification and release
 
-- [ ] Run full restore/build/test, real v3→v4 database verification, UI smoke, diff check, and commit.
+- [x] Run full restore/build/test, real v3→v4 database verification, UI smoke, diff check, and commit.
+
+M1.5A manual certification smoke was completed on 2026-08-13 in `AI Game Workbench M105B Smoke`: Accept, Edit + Accept, and Reject all passed without modifying protected projects.

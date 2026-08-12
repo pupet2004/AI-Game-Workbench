@@ -5,7 +5,9 @@ using Workbench.Core.Leaders;
 using Workbench.App.Leader;
 using Workbench.Storage.Settings;
 using Workbench.Storage.Memory;
+using Workbench.Storage.Leaders;
 using System.Collections.ObjectModel;
+using System.Globalization;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -23,19 +25,29 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly ProjectSettingsRepository? _projectSettings;
     private readonly LeaderSessionRotationStateService? _rotationState;
     private readonly ProjectMemoryService? _memory;
+    private readonly ProjectMemorySynthesisRepository? _synthesisJobs;
+    private readonly LeaderSessionEpochRepository? _epochRepository;
+    private readonly Action<Guid>? _scheduleMemorySynthesis;
+    private readonly Dictionary<Guid, string> _candidateSourceLabels = [];
 
     public LibraryPaneViewModel(
         ProjectOpenResult result,
         Func<Task> focus,
         ProjectSettingsRepository? projectSettings = null,
         LeaderSessionRotationStateService? rotationState = null,
-        ProjectMemoryService? memory = null)
+        ProjectMemoryService? memory = null,
+        ProjectMemorySynthesisRepository? synthesisJobs = null,
+        LeaderSessionEpochRepository? epochRepository = null,
+        Action<Guid>? scheduleMemorySynthesis = null)
     {
         Result = result;
         _focus = focus;
         _projectSettings = projectSettings;
         _rotationState = rotationState;
         _memory = memory;
+        _synthesisJobs = synthesisJobs;
+        _epochRepository = epochRepository;
+        _scheduleMemorySynthesis = scheduleMemorySynthesis;
     }
 
     public LibraryPaneViewModel(ProjectOpenResult result)
@@ -93,6 +105,10 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     public ObservableCollection<ProjectMemoryItem> PendingCandidates { get; } = [];
     public ObservableCollection<ProjectMemoryItem> FormalMemories { get; } = [];
+    public ObservableCollection<ProjectMemoryItem> LearnedMemories { get; } = [];
+    public string LearnedMemoryLabel => "Learned Memory · AI-generated";
+    [ObservableProperty] public partial string MemoryLearningStatus { get; set; } = "Memory learning: Up to date";
+    [ObservableProperty] public partial string? SelectedCandidateSourceLabel { get; set; }
     [ObservableProperty] public partial ProjectMemoryItem? SelectedCandidate { get; set; }
     [ObservableProperty] public partial string CandidateEditContent { get; set; } = string.Empty;
     public int PendingCandidateCount => PendingCandidates.Count;
@@ -113,12 +129,39 @@ public partial class LibraryPaneViewModel : ViewModelBase
         if (_memory is null) return;
         PendingCandidates.Clear(); foreach(var item in await _memory.GetPendingCandidatesAsync(Result.Project.Id,cancellationToken)) PendingCandidates.Add(item);
         FormalMemories.Clear(); foreach(var item in await _memory.GetFormalMemoriesAsync(Result.Project.Id,cancellationToken)) FormalMemories.Add(item);
+        LearnedMemories.Clear(); foreach(var item in await _memory.GetLearnedMemoriesAsync(Result.Project.Id,cancellationToken)) LearnedMemories.Add(item);
+        _candidateSourceLabels.Clear();
+        if (_epochRepository is not null)
+        {
+            foreach (var candidate in PendingCandidates)
+            {
+                var source = (await _memory.GetSourcesAsync(candidate.Id, cancellationToken))
+                    .FirstOrDefault(value => value.SourceType == "LeaderEpoch" && Guid.TryParse(value.SourceRef, out _));
+                if (source is not null && Guid.TryParse(source.SourceRef, out var epochId))
+                {
+                    var epoch = await _epochRepository.GetAsync(epochId, cancellationToken);
+                    if (epoch?.EndedAt is not null)
+                    {
+                        _candidateSourceLabels[candidate.Id] = $"From Leader session · {epoch.EndedAt.Value.ToString("MMM d", CultureInfo.InvariantCulture)}";
+                    }
+                }
+            }
+        }
+        if (_synthesisJobs is not null)
+        {
+            var status = await _synthesisJobs.GetStatusAsync(Result.Project.Id, cancellationToken);
+            MemoryLearningStatus = status.RunningCount > 0
+                ? "Learning..."
+                : status.PendingCount > 0
+                    ? $"Memory learning: {status.PendingCount} session{(status.PendingCount == 1 ? string.Empty : "s")} pending"
+                    : "Memory learning: Up to date";
+        }
         OnPropertyChanged(nameof(PendingCandidateCount));
     }
     [RelayCommand] private async Task AcceptCandidate(){if(_memory is null||SelectedCandidate is null)return;await _memory.AcceptCandidateAsync(SelectedCandidate.Id);await LoadMemoryAsync();SelectedCandidate=null;}
     [RelayCommand] private async Task EditAndAcceptCandidate(){if(_memory is null||SelectedCandidate is null)return;await _memory.EditAndAcceptCandidateAsync(SelectedCandidate.Id,CandidateEditContent);await LoadMemoryAsync();SelectedCandidate=null;CandidateEditContent=string.Empty;}
     [RelayCommand] private async Task RejectCandidate(){if(_memory is null||SelectedCandidate is null)return;await _memory.RejectCandidateAsync(SelectedCandidate.Id);await LoadMemoryAsync();SelectedCandidate=null;}
-    [RelayCommand] private void SelectCandidate(ProjectMemoryItem candidate) { SelectedCandidate = candidate; CandidateEditContent = candidate.Content; }
+    [RelayCommand] private void SelectCandidate(ProjectMemoryItem candidate) { SelectedCandidate = candidate; CandidateEditContent = candidate.Content; SelectedCandidateSourceLabel = _candidateSourceLabels.GetValueOrDefault(candidate.Id); }
 
     public async Task SetLeaderSessionRotationPolicyOverrideAsync(
         LeaderSessionRotationPolicy? policy,
@@ -159,7 +202,12 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private void ShowHistory() => SelectedSection = LibrarySection.History;
 
     [RelayCommand]
-    private void ShowProject() => SelectedSection = LibrarySection.Project;
+    private async Task ShowProject()
+    {
+        SelectedSection = LibrarySection.Project;
+        await LoadMemoryAsync();
+        _scheduleMemorySynthesis?.Invoke(Result.Project.Id);
+    }
 
     [RelayCommand]
     private Task Focus() => _focus();

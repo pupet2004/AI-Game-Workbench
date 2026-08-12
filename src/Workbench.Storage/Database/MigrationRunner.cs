@@ -38,6 +38,10 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration004ProjectMemoryFoundation.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration005MemorySynthesisJobs.Version)
+        {
+            await ApplyAsync(connection, Migration005MemorySynthesisJobs.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

@@ -21,6 +21,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly Func<CancellationToken, Task>? _reconnectRuntime;
     private readonly LeaderSessionRotationStateService? _rotationState;
     private readonly LeaderSessionRolloverService? _rolloverService;
+    private readonly Action<Guid>? _scheduleMemorySynthesis;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -33,7 +34,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         LeaderSessionRotationStateService? rotationState = null,
         LeaderSessionRolloverService? rolloverService = null,
         LeaderSessionEpochRepository? epochRepository = null,
-        LeaderMessageRepository? messageRepository = null)
+        LeaderMessageRepository? messageRepository = null,
+        Action<Guid>? scheduleMemorySynthesis = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -43,6 +45,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _reconnectRuntime = reconnectRuntime;
         _rotationState = rotationState;
         _rolloverService = rolloverService;
+        _scheduleMemorySynthesis = scheduleMemorySynthesis;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -373,6 +376,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         LeaderMessageViewModel? assistant = null;
         var turnCompleted = false;
+        var scheduleSynthesisAfterTurn = false;
         try
         {
             if (_conversation.SessionNeedsResume &&
@@ -476,6 +480,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                 persistedAssistantText,
                                 cancellationToken);
                             _conversation.RotationMessage = null;
+                            scheduleSynthesisAfterTurn = true;
                         }
 
                         break;
@@ -505,6 +510,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             ClearPendingApproval();
             _conversation.IsBusy = false;
             NotifyAllState();
+            if (scheduleSynthesisAfterTurn)
+            {
+                _scheduleMemorySynthesis?.Invoke(_project.Id);
+            }
         }
     }
 
@@ -550,6 +559,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             {
                 await History.RefreshAfterRolloverAsync(cancellationToken);
             }
+            _scheduleMemorySynthesis?.Invoke(_project.Id);
         }
         finally
         {

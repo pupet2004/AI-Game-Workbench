@@ -13,6 +13,7 @@ public sealed class ProjectMemoryService(ProjectActivityRepository activities, P
     { if (layer!="Candidate") throw new InvalidOperationException("Agents may only create Candidate memory."); return await CreateCandidateAsync(projectId,topic,content,sources,cancellationToken); }
     public Task<IReadOnlyList<ProjectMemoryItem>> GetPendingCandidatesAsync(Guid projectId,CancellationToken cancellationToken=default)=>_memories.GetAsync(projectId,"Candidate","Active",cancellationToken);
     public Task<IReadOnlyList<ProjectMemoryItem>> GetFormalMemoriesAsync(Guid projectId,CancellationToken cancellationToken=default)=>_memories.GetAsync(projectId,"Formal","Active",cancellationToken);
+    public Task<IReadOnlyList<ProjectMemoryItem>> GetLearnedMemoriesAsync(Guid projectId,CancellationToken cancellationToken=default)=>_memories.GetAsync(projectId,"Learned","Active",cancellationToken);
     public Task<ProjectMemoryItem?> GetMemoryItemAsync(Guid id,CancellationToken cancellationToken=default)=>_memories.GetAsync(id,cancellationToken);
     public Task<IReadOnlyList<ProjectMemorySource>> GetSourcesAsync(Guid id,CancellationToken cancellationToken=default)=>_memories.GetSourcesAsync(id,cancellationToken);
     public Task<ProjectMemoryItem> AcceptCandidateAsync(Guid id,CancellationToken cancellationToken=default)=>AcceptAsync(id,null,cancellationToken);
