@@ -23,6 +23,13 @@ public partial class App : Application
                 AppServices.CreateDefault(),
                 new FolderPickerService(window));
             window.DataContext = viewModel;
+            window.Closing += (_, _) =>
+            {
+                if (viewModel.CurrentPage is WorkspaceViewModel workspace)
+                {
+                    _ = workspace.FlushLayoutAsync();
+                }
+            };
             desktop.MainWindow = window;
             _ = viewModel.InitializeAsync();
         }

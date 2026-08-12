@@ -38,10 +38,15 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    public void BackToHome()
+    public async Task BackToHomeAsync()
     {
+        if (CurrentPage is WorkspaceViewModel workspace)
+        {
+            await workspace.FlushLayoutAsync();
+        }
+
         CurrentPage = CreateHome();
-        _ = ((HomeViewModel)CurrentPage).LoadAsync();
+        await ((HomeViewModel)CurrentPage).LoadAsync();
     }
 
     private HomeViewModel CreateHome() =>
@@ -53,7 +58,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private Task ShowWorkspace(ProjectOpenResult result)
     {
-        CurrentPage = new WorkspacePlaceholderViewModel(result, BackToHome);
+        CurrentPage = new WorkspaceViewModel(result, _services.ProjectLayoutRepository, BackToHomeAsync);
         return Task.CompletedTask;
     }
 }

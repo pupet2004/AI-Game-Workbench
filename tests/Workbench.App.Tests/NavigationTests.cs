@@ -1,5 +1,5 @@
-using Workbench.App.ViewModels;
 using Workbench.App.Tests.Support;
+using Workbench.App.ViewModels;
 
 namespace Workbench.App.Tests;
 
@@ -10,14 +10,13 @@ public sealed class NavigationTests
     {
         await using var context = await AppTestContext.CreateAsync();
         var main = context.CreateMain();
-
         await main.InitializeAsync();
 
         Assert.IsType<HomeViewModel>(main.CurrentPage);
     }
 
     [Fact]
-    public async Task Successful_project_open_navigates_to_workspace_placeholder()
+    public async Task Successful_project_open_navigates_to_workspace()
     {
         using var folder = new TemporaryDirectory();
         await using var context = await AppTestContext.CreateAsync();
@@ -26,11 +25,11 @@ public sealed class NavigationTests
 
         await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
 
-        Assert.IsType<WorkspacePlaceholderViewModel>(main.CurrentPage);
+        Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
     }
 
     [Fact]
-    public async Task Back_from_workspace_returns_home()
+    public async Task Back_to_projects_refreshes_recent_list()
     {
         using var folder = new TemporaryDirectory();
         await using var context = await AppTestContext.CreateAsync();
@@ -38,22 +37,9 @@ public sealed class NavigationTests
         await main.InitializeAsync();
         await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
 
-        main.BackToHome();
+        await main.BackToHomeAsync();
 
-        Assert.IsType<HomeViewModel>(main.CurrentPage);
-    }
-
-    [Fact]
-    public async Task Workspace_placeholder_receives_project_open_result()
-    {
-        using var folder = new TemporaryDirectory();
-        await using var context = await AppTestContext.CreateAsync();
-        var main = context.CreateMain();
-        await main.InitializeAsync();
-        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
-
-        var workspace = Assert.IsType<WorkspacePlaceholderViewModel>(main.CurrentPage);
-
-        Assert.Equal(Path.GetFullPath(folder.Path), workspace.Result.Project.RootPath);
+        var home = Assert.IsType<HomeViewModel>(main.CurrentPage);
+        Assert.Equal(Path.GetFullPath(folder.Path), Assert.Single(home.RecentProjects).RootPath);
     }
 }

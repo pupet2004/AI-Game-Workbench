@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels.Panes"
+             x:Class="Workbench.App.Views.Panes.WorkPaneView"
+             x:DataType="vm:WorkPaneViewModel">
+    <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
+        <StackPanel Spacing="16">
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="WORK" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
+            <TextBlock Text="No active workers." FontSize="18" />
+            <TextBlock Text="Tasks requested by your Leader will appear here." TextWrapping="Wrap" Foreground="#667085" />
+        </StackPanel>
+    </Border>
+</UserControl>

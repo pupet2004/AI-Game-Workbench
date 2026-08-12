@@ -3,13 +3,15 @@
         xmlns:vm="using:Workbench.App.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="1400" d:DesignHeight="850"
         x:Class="Workbench.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="AI Game Workbench"
-        MinWidth="640"
-        MinHeight="420">
+        Width="1400"
+        Height="850"
+        MinWidth="1280"
+        MinHeight="720">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,

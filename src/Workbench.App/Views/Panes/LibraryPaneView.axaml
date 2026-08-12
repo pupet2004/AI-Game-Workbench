@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels.Panes"
+             x:Class="Workbench.App.Views.Panes.LibraryPaneView"
+             x:DataType="vm:LibraryPaneViewModel">
+    <Border Padding="16">
+        <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="LIBRARY" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
+            <WrapPanel ItemHeight="28" ItemWidth="68">
+                <Button Content="Overview" Command="{Binding ShowOverviewCommand}" />
+                <Button Content="Browse" Command="{Binding ShowBrowseCommand}" />
+                <Button Content="History" Command="{Binding ShowHistoryCommand}" />
+                <Button Content="Project" Command="{Binding ShowProjectCommand}" />
+            </WrapPanel>
+            <StackPanel IsVisible="{Binding IsOverview}" Spacing="6">
+                <TextBlock Text="{Binding ProjectName}" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="Project Type:" /><TextBlock Text="{Binding ProjectType}" />
+                <TextBlock Text="Project Path:" /><TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" />
+                <TextBlock Text="Git:" /><TextBlock Text="{Binding GitStatus}" />
+                <TextBlock Text="Branch:" /><TextBlock Text="{Binding BranchText}" />
+                <TextBlock Text="HEAD:" /><TextBlock Text="{Binding ShortHead}" />
+                <TextBlock Text="Working Tree:" /><TextBlock Text="{Binding WorkingTreeText}" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="IndianRed" />
+            </StackPanel>
+            <TextBlock Text="Project browsing arrives in a later milestone." IsVisible="{Binding IsBrowse}" TextWrapping="Wrap" />
+            <TextBlock Text="Project history arrives in a later milestone." IsVisible="{Binding IsHistory}" TextWrapping="Wrap" />
+            <TextBlock Text="Project settings arrive in a later milestone." IsVisible="{Binding IsProject}" TextWrapping="Wrap" />
+        </StackPanel>
+    </Border>
+</UserControl>

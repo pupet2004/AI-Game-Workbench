@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels.Panes"
+             x:Class="Workbench.App.Views.Panes.LeaderPaneView"
+             x:DataType="vm:LeaderPaneViewModel">
+    <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
+        <StackPanel Spacing="16">
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="LEADER" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
+            <TextBlock Text="No AI runtime connected." FontSize="18" />
+            <TextBlock Text="Your project's persistent Leader will live here." TextWrapping="Wrap" Foreground="#667085" />
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -43,6 +43,15 @@ internal sealed class AppTestContext : IAsyncDisposable
 
     public MainWindowViewModel CreateMain() => new(Services, _folderPicker);
 
+    public WorkspaceViewModel CreateWorkspace(ProjectOpenResult result, TimeSpan? debounce = null) =>
+        new(result, Services.ProjectLayoutRepository, () => Task.CompletedTask, Time, debounce);
+
+    public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
+    {
+        using var folder = new TemporaryDirectory();
+        return CreateWorkspace(await Services.ProjectOpenService.OpenAsync(folder.Path), debounce);
+    }
+
     public ValueTask DisposeAsync()
     {
         _directory.Dispose();
