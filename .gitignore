@@ -1,0 +1,26 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+
+# IDE local state
+.vs/
+.idea/
+.vscode/
+
+# Avalonia generated/local state
+.avalonia/
+
+# SQLite local runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# OS temporary files
+Thumbs.db
+Desktop.ini
+*.tmp
+*.temp
