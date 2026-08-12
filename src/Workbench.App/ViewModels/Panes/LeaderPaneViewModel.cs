@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Workbench.App.ViewModels.Leader;
+using Workbench.App.Leader;
+using Workbench.Core.Leaders;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using CoreProject = Workbench.Core.Projects.Project;
@@ -16,6 +18,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly LeaderConversationState _conversation;
     private readonly Func<Task> _focus;
     private readonly Func<CancellationToken, Task>? _reconnectRuntime;
+    private readonly LeaderSessionRotationStateService? _rotationState;
 
     public LeaderPaneViewModel(
         CoreProject project,
@@ -23,7 +26,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         ProjectLeaderSessionManager sessionManager,
         Func<Task> focus,
         string? runtimeUnavailableDetail = null,
-        Func<CancellationToken, Task>? reconnectRuntime = null)
+        Func<CancellationToken, Task>? reconnectRuntime = null,
+        LeaderSessionRotationStateService? rotationState = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -31,6 +35,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _conversation = sessionManager.GetOrCreate(project.Id);
         _focus = focus;
         _reconnectRuntime = reconnectRuntime;
+        _rotationState = rotationState;
         if (_conversation.RuntimeErrorDetail is null && runtimeUnavailableDetail is not null)
         {
             _conversation.RuntimeErrorDetail = runtimeUnavailableDetail;
@@ -85,6 +90,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public string? ApprovalError => _conversation.ApprovalError;
 
+    public string? RotationMessage => _conversation.RotationMessage;
+
+    public bool HasRotationMessage => !string.IsNullOrWhiteSpace(RotationMessage);
+
     public LeaderModelOptionViewModel? SelectedModel
     {
         get => _conversation.SelectedModel;
@@ -108,6 +117,19 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await _sessionManager.LoadAsync(_project.Id, cancellationToken);
+        if (_rotationState is not null)
+        {
+            var state = await _rotationState.GetAsync(_project.Id, cancellationToken);
+            _conversation.RotationMessage = state.Evaluation.IsDue
+                ? state.EffectivePolicy switch
+                {
+                    LeaderSessionRotationPolicy.Auto => "A fresh Leader session will start with your next message.",
+                    LeaderSessionRotationPolicy.Ask => "You’ll be asked whether to start a fresh Leader session.",
+                    _ => null
+                }
+                : null;
+        }
+
         if (_conversation.Session is not null)
         {
             try
@@ -485,6 +507,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(PendingApproval));
         OnPropertyChanged(nameof(HasPendingApproval));
         OnPropertyChanged(nameof(ApprovalError));
+        OnPropertyChanged(nameof(RotationMessage));
+        OnPropertyChanged(nameof(HasRotationMessage));
         OnPropertyChanged(nameof(ProjectLeaderId));
         OnPropertyChanged(nameof(SessionEpochId));
         NotifyCommandState();

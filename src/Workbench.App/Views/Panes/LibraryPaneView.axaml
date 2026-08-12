@@ -24,7 +24,14 @@
             </StackPanel>
             <TextBlock Text="Project browsing arrives in a later milestone." IsVisible="{Binding IsBrowse}" TextWrapping="Wrap" />
             <TextBlock Text="Project history arrives in a later milestone." IsVisible="{Binding IsHistory}" TextWrapping="Wrap" />
-            <TextBlock Text="Project settings arrive in a later milestone." IsVisible="{Binding IsProject}" TextWrapping="Wrap" />
+            <StackPanel IsVisible="{Binding IsProject}" Spacing="8">
+                <TextBlock Text="Leader Session Rotation" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding RotationPolicySummary}" TextWrapping="Wrap" />
+                <Button Content="Use global setting" Command="{Binding UseGlobalRotationPolicyCommand}" />
+                <Button Content="Automatic" Command="{Binding UseAutomaticRotationCommand}" />
+                <Button Content="Ask first" Command="{Binding AskBeforeRotationCommand}" />
+                <Button Content="Manual only" Command="{Binding UseManualRotationCommand}" />
+            </StackPanel>
         </StackPanel>
     </Border>
 </UserControl>

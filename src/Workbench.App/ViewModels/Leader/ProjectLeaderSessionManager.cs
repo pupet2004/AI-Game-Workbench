@@ -245,4 +245,6 @@ internal sealed class LeaderConversationState(Guid projectId)
     public string? RuntimeErrorDetail { get; set; }
 
     public string? ApprovalError { get; set; }
+
+    public string? RotationMessage { get; set; }
 }

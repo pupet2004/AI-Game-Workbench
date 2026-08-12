@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Workbench.App.Services;
+using Workbench.App.Leader;
 using Workbench.App.ViewModels.Leader;
 using Workbench.Project.Opening;
 using Workbench.Storage.Database;
@@ -64,7 +66,18 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _services.ProjectRepository,
             _services.ProjectOpenService,
             _folderPickerService,
-            ShowWorkspace);
+            ShowWorkspace,
+            showSettings: ShowSettingsAsync);
+
+    public async Task ShowSettingsAsync()
+    {
+        var settings = new SettingsViewModel(_services.WorkbenchSettingsRepository, BackToHomeAsync);
+        CurrentPage = settings;
+        await settings.InitializeAsync();
+    }
+
+    [RelayCommand]
+    private Task ShowSettings() => ShowSettingsAsync();
 
     private async Task ShowWorkspace(ProjectOpenResult result)
     {
@@ -75,9 +88,16 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             runtimeRegistry: _services.RuntimeRegistry,
             leaderSessionManager: _leaderSessions,
             runtimeUnavailableDetail: _services.RuntimeUnavailableDetail,
-            reconnectRuntime: _services.RetryRuntimeAsync);
+            reconnectRuntime: _services.RetryRuntimeAsync,
+            projectSettingsRepository: _services.ProjectSettingsRepository,
+            rotationStateService: new LeaderSessionRotationStateService(
+                _services.WorkbenchSettingsRepository,
+                _services.ProjectSettingsRepository,
+                _services.LeaderSessionEpochRepository,
+                _services.TimeProvider));
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
+        await workspace.LibraryPane.InitializeAsync();
     }
 
     public async ValueTask DisposeAsync()

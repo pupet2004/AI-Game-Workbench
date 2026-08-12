@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels"
+             x:Class="Workbench.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="32" Spacing="16" MaxWidth="620">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
+                <Button Grid.Column="1" Content="Projects" Command="{Binding BackCommand}" />
+            </Grid>
+            <TextBlock Text="Leader Session Rotation" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="Choose when a fresh Leader session should be considered after a new workday." TextWrapping="Wrap" />
+            <StackPanel Spacing="8">
+                <Button Content="Automatic" Command="{Binding UseAutomaticRotationCommand}" />
+                <TextBlock Text="Automatically start a fresh Leader session after a new workday" TextWrapping="Wrap" />
+                <Button Content="Ask first" Command="{Binding AskBeforeRotationCommand}" />
+                <TextBlock Text="Ask before starting a fresh session" TextWrapping="Wrap" />
+                <Button Content="Manual only" Command="{Binding UseManualRotationCommand}" />
+                <TextBlock Text="Only start a fresh session when you choose to" TextWrapping="Wrap" />
+            </StackPanel>
+            <TextBlock Text="{Binding LeaderSessionRotationPolicy}" FontWeight="SemiBold" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

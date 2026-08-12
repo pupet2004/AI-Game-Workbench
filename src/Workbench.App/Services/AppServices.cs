@@ -5,6 +5,7 @@ using Workbench.Runtime.Runtime;
 using Workbench.Storage.Database;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Projects;
+using Workbench.Storage.Settings;
 
 namespace Workbench.App.Services;
 
@@ -23,7 +24,10 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLeaderRepository projectLeaderRepository,
         LeaderSessionEpochRepository leaderSessionEpochRepository,
         LeaderMessageRepository leaderMessageRepository,
+        WorkbenchSettingsRepository workbenchSettingsRepository,
+        ProjectSettingsRepository projectSettingsRepository,
         AgentRuntimeRegistry runtimeRegistry,
+        TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
     {
         Database = database;
@@ -33,7 +37,10 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLeaderRepository = projectLeaderRepository;
         LeaderSessionEpochRepository = leaderSessionEpochRepository;
         LeaderMessageRepository = leaderMessageRepository;
+        WorkbenchSettingsRepository = workbenchSettingsRepository;
+        ProjectSettingsRepository = projectSettingsRepository;
         RuntimeRegistry = runtimeRegistry;
+        TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
     }
 
@@ -51,7 +58,13 @@ public sealed class AppServices : IAsyncDisposable
 
     public LeaderMessageRepository LeaderMessageRepository { get; }
 
+    public WorkbenchSettingsRepository WorkbenchSettingsRepository { get; }
+
+    public ProjectSettingsRepository ProjectSettingsRepository { get; }
+
     public AgentRuntimeRegistry RuntimeRegistry { get; }
+
+    public TimeProvider TimeProvider { get; }
 
     public string? RuntimeUnavailableDetail { get; private set; }
 
@@ -71,11 +84,12 @@ public sealed class AppServices : IAsyncDisposable
         var database = new WorkbenchDatabase(databasePath);
         var projectRepository = new ProjectRepository(database);
         var layoutRepository = new ProjectLayoutRepository(database);
+        var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
         var projectOpenService = new ProjectOpenService(
             projectRepository,
             layoutRepository,
             new GitCliInspector(),
-            timeProvider ?? TimeProvider.System);
+            effectiveTimeProvider);
 
         return new AppServices(
             database,
@@ -85,7 +99,10 @@ public sealed class AppServices : IAsyncDisposable
             new ProjectLeaderRepository(database),
             new LeaderSessionEpochRepository(database),
             new LeaderMessageRepository(database),
+            new WorkbenchSettingsRepository(database),
+            new ProjectSettingsRepository(database),
             runtimeRegistry ?? new AgentRuntimeRegistry(),
+            effectiveTimeProvider,
             runtimeFactory);
     }
 

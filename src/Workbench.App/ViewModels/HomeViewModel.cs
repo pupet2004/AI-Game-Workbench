@@ -14,19 +14,22 @@ public partial class HomeViewModel : ViewModelBase
     private readonly IFolderPickerService _folderPickerService;
     private readonly Func<ProjectOpenResult, Task> _onProjectOpened;
     private readonly Func<string, CancellationToken, Task<ProjectOpenResult>> _openProject;
+    private readonly Func<Task>? _showSettings;
 
     public HomeViewModel(
         ProjectRepository projectRepository,
         ProjectOpenService projectOpenService,
         IFolderPickerService folderPickerService,
         Func<ProjectOpenResult, Task> onProjectOpened,
-        Func<string, CancellationToken, Task<ProjectOpenResult>>? openProject = null)
+        Func<string, CancellationToken, Task<ProjectOpenResult>>? openProject = null,
+        Func<Task>? showSettings = null)
     {
         _projectRepository = projectRepository;
         _projectOpenService = projectOpenService;
         _folderPickerService = folderPickerService;
         _onProjectOpened = onProjectOpened;
         _openProject = openProject ?? _projectOpenService.OpenAsync;
+        _showSettings = showSettings;
     }
 
     public ObservableCollection<RecentProjectItemViewModel> RecentProjects { get; } = [];
@@ -73,6 +76,9 @@ public partial class HomeViewModel : ViewModelBase
 
     [RelayCommand]
     private Task OpenProjectFolder() => OpenProjectFolderAsync();
+
+    [RelayCommand]
+    private Task ShowSettings() => _showSettings?.Invoke() ?? Task.CompletedTask;
 
     [RelayCommand]
     private Task OpenRecentProject(RecentProjectItemViewModel item) => OpenRecentProjectAsync(item);

@@ -26,6 +26,14 @@ internal static class MigrationRunner
                 Migration002PersistentLeaderSessions.ApplyAsync,
                 cancellationToken);
         }
+
+        if (currentVersion < Migration003LeaderRotationSettings.Version)
+        {
+            await ApplyAsync(
+                connection,
+                Migration003LeaderRotationSettings.ApplyAsync,
+                cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

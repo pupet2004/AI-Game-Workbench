@@ -7,6 +7,8 @@ using Workbench.Core.Layout;
 using Workbench.Project.Opening;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Projects;
+using Workbench.Storage.Settings;
+using Workbench.App.Leader;
 
 namespace Workbench.App.ViewModels;
 
@@ -27,7 +29,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         AgentRuntimeRegistry? runtimeRegistry = null,
         ProjectLeaderSessionManager? leaderSessionManager = null,
         string? runtimeUnavailableDetail = null,
-        Func<CancellationToken, Task>? reconnectRuntime = null)
+        Func<CancellationToken, Task>? reconnectRuntime = null,
+        ProjectSettingsRepository? projectSettingsRepository = null,
+        LeaderSessionRotationStateService? rotationStateService = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -41,9 +45,10 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             leaderSessionManager ?? new ProjectLeaderSessionManager(),
             FocusLeaderAsync,
             runtimeUnavailableDetail,
-            reconnectRuntime);
+            reconnectRuntime,
+            rotationStateService);
         WorkPane = new WorkPaneViewModel(FocusWorkAsync);
-        LibraryPane = new LibraryPaneViewModel(result, FocusLibraryAsync);
+        LibraryPane = new LibraryPaneViewModel(result, FocusLibraryAsync, projectSettingsRepository, rotationStateService);
     }
 
     public ProjectOpenResult Result { get; }

@@ -16,13 +16,13 @@ public sealed class WorkbenchDatabaseTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages');";
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages', 'workbench_settings', 'project_settings');";
 
-        Assert.Equal(5L, await command.ExecuteScalarAsync());
+        Assert.Equal(7L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
-    public async Task Migration_002_sets_user_version_to_2()
+    public async Task Migration_003_sets_user_version_to_3()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,7 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(2L, await command.ExecuteScalarAsync());
+        Assert.Equal(3L, await command.ExecuteScalarAsync());
     }
 
     [Theory]
@@ -75,6 +75,28 @@ public sealed class WorkbenchDatabaseTests
         Assert.Equal(1L, reader.GetInt64(1));
     }
 
+    [Fact]
+    public async Task Migration_003_preserves_v2_leader_data()
+    {
+        await using var temporary = new TemporaryDatabase();
+        await CreateV2DatabaseAsync(temporary.DatabasePath);
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+
+        await database.InitializeAsync();
+
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT (SELECT COUNT(*) FROM projects), (SELECT COUNT(*) FROM project_leaders), (SELECT COUNT(*) FROM leader_session_epochs), (SELECT COUNT(*) FROM leader_messages), (SELECT value FROM workbench_settings WHERE key = 'leader_session_rotation_policy');";
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1L, reader.GetInt64(0));
+        Assert.Equal(1L, reader.GetInt64(1));
+        Assert.Equal(1L, reader.GetInt64(2));
+        Assert.Equal(1L, reader.GetInt64(3));
+        Assert.True(reader.IsDBNull(4));
+    }
+
     private static async Task CreateV1DatabaseAsync(string databasePath)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
@@ -95,6 +117,28 @@ public sealed class WorkbenchDatabaseTests
             INSERT INTO projects VALUES ('00000000-0000-0000-0000-000000000001', 'P', 'C:/P', 0, NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
             INSERT INTO project_layouts VALUES ('00000000-0000-0000-0000-000000000001', 0.3, 0.4, 0.3, 0, '2026-01-01T00:00:00+00:00');
             PRAGMA user_version = 1;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task CreateV2DatabaseAsync(string databasePath)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+        await using var connection = new SqliteConnection($"Data Source={databasePath};Foreign Keys=True;Pooling=False");
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, root_path TEXT NOT NULL, project_type INTEGER NOT NULL, git_root TEXT NULL, created_at TEXT NOT NULL, last_opened_at TEXT NOT NULL);
+            CREATE TABLE project_layouts (project_id TEXT PRIMARY KEY, leader_width REAL NOT NULL, work_width REAL NOT NULL, library_width REAL NOT NULL, focused_pane INTEGER NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+            CREATE TABLE project_leaders (project_id TEXT PRIMARY KEY, current_epoch_id TEXT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE, FOREIGN KEY(current_epoch_id) REFERENCES leader_session_epochs(id) ON DELETE SET NULL);
+            CREATE TABLE leader_session_epochs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, provider_id TEXT NOT NULL, provider_account_id TEXT NOT NULL, model_id TEXT NOT NULL, agent_session_id TEXT NOT NULL, external_session_id TEXT NULL, working_directory TEXT NULL, started_at TEXT NOT NULL, last_active_at TEXT NOT NULL, ended_at TEXT NULL, rollover_reason TEXT NULL, handoff_summary TEXT NULL, FOREIGN KEY(project_id) REFERENCES project_leaders(project_id) ON DELETE CASCADE);
+            CREATE TABLE leader_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, epoch_id TEXT NOT NULL, sequence INTEGER NOT NULL, role TEXT NOT NULL CHECK(role IN ('user', 'assistant')), text TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(epoch_id) REFERENCES leader_session_epochs(id) ON DELETE CASCADE, UNIQUE(epoch_id, sequence));
+            INSERT INTO projects VALUES ('00000000-0000-0000-0000-000000000001', 'P', 'C:/P', 0, NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            INSERT INTO project_leaders VALUES ('00000000-0000-0000-0000-000000000001', NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+            INSERT INTO leader_session_epochs VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'provider', '00000000-0000-0000-0000-000000000003', 'model', '00000000-0000-0000-0000-000000000004', 'external', 'C:/P', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', NULL, NULL, NULL);
+            UPDATE project_leaders SET current_epoch_id = '00000000-0000-0000-0000-000000000002' WHERE project_id = '00000000-0000-0000-0000-000000000001';
+            INSERT INTO leader_messages (epoch_id, sequence, role, text, created_at) VALUES ('00000000-0000-0000-0000-000000000002', 1, 'user', 'kept', '2026-01-01T00:00:00+00:00');
+            PRAGMA user_version = 2;
             """;
         await command.ExecuteNonQueryAsync();
     }

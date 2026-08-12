@@ -5,6 +5,7 @@ using Workbench.Project.Git;
 using Workbench.Project.Opening;
 using Workbench.App.Tests.Support;
 using Workbench.Runtime.Registry;
+using Workbench.App.Leader;
 
 namespace Workbench.App.Tests;
 
@@ -28,6 +29,8 @@ internal sealed class AppTestContext : IAsyncDisposable
     }
 
     public AppServices Services { get; }
+
+    public string DatabasePath => Path.Combine(_directory.Path, "workbench.db");
 
     public MutableTimeProvider Time { get; }
 
@@ -67,6 +70,11 @@ internal sealed class AppTestContext : IAsyncDisposable
 
     public MainWindowViewModel CreateMain() => new(Services, _folderPicker, LeaderSessions);
 
+    public SettingsViewModel CreateSettings() => new(Services.WorkbenchSettingsRepository, () => Task.CompletedTask);
+
+    public LeaderSessionRotationStateService CreateRotationStateService(TimeZoneInfo timeZone) =>
+        new(Services.WorkbenchSettingsRepository, Services.ProjectSettingsRepository, Services.LeaderSessionEpochRepository, Time, timeZone);
+
     public WorkspaceViewModel CreateWorkspace(ProjectOpenResult result, TimeSpan? debounce = null) =>
         new(
             result,
@@ -76,7 +84,9 @@ internal sealed class AppTestContext : IAsyncDisposable
             debounce,
             Services.RuntimeRegistry,
             LeaderSessions,
-            Services.RuntimeUnavailableDetail);
+            Services.RuntimeUnavailableDetail,
+            projectSettingsRepository: Services.ProjectSettingsRepository,
+            rotationStateService: CreateRotationStateService(TimeZoneInfo.Utc));
 
     public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
     {

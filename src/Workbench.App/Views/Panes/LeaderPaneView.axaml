@@ -12,6 +12,14 @@
             </Grid>
 
             <StackPanel Grid.Row="1" Spacing="6">
+                <Border IsVisible="{Binding HasRotationMessage}"
+                        Padding="8"
+                        Background="#FFF8E7"
+                        BorderBrush="#D9A441"
+                        BorderThickness="1"
+                        CornerRadius="4">
+                    <TextBlock Text="{Binding RotationMessage}" TextWrapping="Wrap" />
+                </Border>
                 <ComboBox ItemsSource="{Binding AvailableModels}"
                           SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
                           IsEnabled="{Binding IsModelSelectionEnabled}"

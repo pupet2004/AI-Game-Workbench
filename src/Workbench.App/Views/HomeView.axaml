@@ -6,7 +6,10 @@
     <ScrollViewer>
         <StackPanel Margin="32" Spacing="16">
             <TextBlock Text="AI Game Workbench" FontSize="28" FontWeight="SemiBold" />
-            <TextBlock Text="Recent Projects" FontSize="20" />
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Recent Projects" FontSize="20" />
+                <Button Grid.Column="1" Content="Settings" Command="{Binding ShowSettingsCommand}" />
+            </Grid>
             <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
             <TextBlock Text="No recent projects yet." IsVisible="{Binding HasNoRecentProjects}" />
             <ItemsControl ItemsSource="{Binding RecentProjects}">

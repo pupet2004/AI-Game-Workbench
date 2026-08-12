@@ -12,6 +12,11 @@ M1-01
 M1-02
 M1-02A
 M1-03
+M1-04
 
 Current:
-M1-04 — Persistent Logical Leader & Session Epochs
+M1-05A — Session Rotation Policy & Settings
+
+Planned:
+M1-05B — Handoff & Rollover
+M1-05C — Epoch History UI

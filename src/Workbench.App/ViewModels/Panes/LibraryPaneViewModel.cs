@@ -1,6 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Workbench.Project.Opening;
+using Workbench.Core.Leaders;
+using Workbench.App.Leader;
+using Workbench.Storage.Settings;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -15,11 +18,19 @@ public enum LibrarySection
 public partial class LibraryPaneViewModel : ViewModelBase
 {
     private readonly Func<Task> _focus;
+    private readonly ProjectSettingsRepository? _projectSettings;
+    private readonly LeaderSessionRotationStateService? _rotationState;
 
-    public LibraryPaneViewModel(ProjectOpenResult result, Func<Task> focus)
+    public LibraryPaneViewModel(
+        ProjectOpenResult result,
+        Func<Task> focus,
+        ProjectSettingsRepository? projectSettings = null,
+        LeaderSessionRotationStateService? rotationState = null)
     {
         Result = result;
         _focus = focus;
+        _projectSettings = projectSettings;
+        _rotationState = rotationState;
     }
 
     public LibraryPaneViewModel(ProjectOpenResult result)
@@ -62,6 +73,59 @@ public partial class LibraryPaneViewModel : ViewModelBase
         : "—";
 
     public string? StatusMessage => Result.Git.Error is null ? null : "Git status unavailable";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RotationPolicySummary))]
+    public partial LeaderSessionRotationPolicy? RotationPolicyOverride { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RotationPolicySummary))]
+    public partial LeaderSessionRotationPolicy EffectiveRotationPolicy { get; set; } = LeaderSessionRotationPolicy.Auto;
+
+    public string RotationPolicySummary => RotationPolicyOverride is null
+        ? $"Using global setting ({EffectiveRotationPolicy})."
+        : $"Project setting: {EffectiveRotationPolicy}.";
+
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_rotationState is null)
+        {
+            return;
+        }
+
+        var state = await _rotationState.GetAsync(Result.Project.Id, cancellationToken);
+        RotationPolicyOverride = state.ProjectOverride;
+        EffectiveRotationPolicy = state.EffectivePolicy;
+    }
+
+    public async Task SetLeaderSessionRotationPolicyOverrideAsync(
+        LeaderSessionRotationPolicy? policy,
+        CancellationToken cancellationToken = default)
+    {
+        if (_projectSettings is null)
+        {
+            throw new InvalidOperationException("Project settings are unavailable.");
+        }
+
+        await _projectSettings.SaveLeaderSessionRotationPolicyOverrideAsync(Result.Project.Id, policy, cancellationToken);
+        RotationPolicyOverride = policy;
+        if (_rotationState is not null)
+        {
+            EffectiveRotationPolicy = (await _rotationState.GetAsync(Result.Project.Id, cancellationToken)).EffectivePolicy;
+        }
+    }
+
+    [RelayCommand]
+    private Task UseGlobalRotationPolicy() => SetLeaderSessionRotationPolicyOverrideAsync(null);
+
+    [RelayCommand]
+    private Task UseAutomaticRotation() => SetLeaderSessionRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.Auto);
+
+    [RelayCommand]
+    private Task AskBeforeRotation() => SetLeaderSessionRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.Ask);
+
+    [RelayCommand]
+    private Task UseManualRotation() => SetLeaderSessionRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.ManualOnly);
 
     [RelayCommand]
     private void ShowOverview() => SelectedSection = LibrarySection.Overview;
