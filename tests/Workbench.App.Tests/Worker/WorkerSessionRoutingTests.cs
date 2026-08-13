@@ -49,6 +49,18 @@ public sealed class WorkerSessionRoutingTests
     }
 
     [Fact]
+    public async Task Leader_handoff_delivery_failure_does_not_remove_the_persisted_worker_handoff()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Worker result", null), DateTimeOffset.UtcNow));
+
+        var result = await fixture.Router.StartAsync(fixture.NewRequest("Leader prompt", onHandoff: (_, _) => Task.FromException(new InvalidOperationException("Leader unavailable"))));
+
+        Assert.True(result.Succeeded);
+        Assert.Contains(await fixture.ListAsync(), item => item.Type == "WorkerToLeaderHandoff" && item.Payload.Contains("Worker result", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Runtime_creation_followed_by_relation_persistence_failure_stops_the_new_session()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -104,8 +116,8 @@ public sealed class WorkerSessionRoutingTests
         public AgentRuntimeRegistry Registry { get; }
         public Workbench.Storage.Database.WorkbenchDatabase Database => _context.Services.Database;
 
-        public WorkerStartRequest NewRequest(string prompt, AgentSessionId? reuse = null) =>
-            new(Project, Task.TaskId, Task.Title, Profile, prompt, reuse, "Worker 1");
+        public WorkerStartRequest NewRequest(string prompt, AgentSessionId? reuse = null, Func<WorkerHandoff, CancellationToken, Task>? onHandoff = null) =>
+            new(Project, Task.TaskId, Task.Title, Profile, prompt, reuse, "Worker 1", onHandoff);
 
         public AgentSession CreateExistingWorker() => new(AgentSessionId.New(), Runtime.Account.Id, Runtime.Provider.Id, "model-a", Project.RootPath, "worker-existing", AgentSessionStatus.Ready, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 

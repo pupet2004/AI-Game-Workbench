@@ -3,6 +3,7 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Providers;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Leaders;
+using Workbench.App.Worker;
 
 namespace Workbench.App.ViewModels.Leader;
 
@@ -159,6 +160,21 @@ public sealed class ProjectLeaderSessionManager
         {
             await _epochs.SaveAsync(conversation.Epoch, cancellationToken);
         }
+    }
+
+    internal async Task IngestWorkerHandoffAsync(
+        WorkerHandoff handoff,
+        CancellationToken cancellationToken = default)
+    {
+        var conversation = GetOrCreate(handoff.ProjectId);
+        if (conversation.Epoch is null)
+        {
+            return;
+        }
+
+        var text = $"Worker · {handoff.WorkerLabel}\nTask: {handoff.TaskId}\nWorker Session: {handoff.WorkerSessionId.Value}\nStatus: {handoff.Status}\n\n{handoff.Message}";
+        await PersistCompletedAssistantAsync(conversation, text, cancellationToken);
+        conversation.Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.Assistant, text));
     }
 
     internal async Task MarkBootContextDeliveredAsync(

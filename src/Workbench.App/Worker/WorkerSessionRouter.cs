@@ -14,7 +14,8 @@ public sealed record WorkerStartRequest(
     ExecutionProfile ExecutionProfile,
     string LeaderPrompt,
     AgentSessionId? ReuseWorkerSessionId,
-    string WorkerLabel);
+    string WorkerLabel,
+    Func<WorkerHandoff, CancellationToken, Task>? OnHandoff = null);
 
 public sealed record WorkerStartResult(bool Succeeded, AgentSession? WorkerSession, string? Error);
 
@@ -62,9 +63,24 @@ public sealed class TaskEventWorkerRoutingStore(TaskEventRepository events) : IW
 
     public async Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
-        var events = await _events.ListForProjectAsync(projectId, "WorkerSessionStarted", 200, cancellationToken);
-        return events.Select(item => JsonSerializer.Deserialize<StoredSession>(item.Payload)?.ToRecord())
+        var started = (await _events.ListForProjectAsync(projectId, "WorkerSessionStarted", 200, cancellationToken))
+            .Select(item => JsonSerializer.Deserialize<StoredSession>(item.Payload)?.ToRecord())
             .Where(item => item is not null).Cast<WorkerSessionRecord>().ToArray();
+        var sessions = new List<WorkerSessionRecord>(started.Length);
+        foreach (var session in started)
+        {
+            var handoff = (await _events.ListAsync(projectId, session.TaskId, 200, cancellationToken))
+                .Where(item => item.Type == "WorkerToLeaderHandoff")
+                .Select(item => JsonSerializer.Deserialize<WorkerHandoff>(item.Payload))
+                .Where(item => item?.WorkerSessionId == session.Session.Id)
+                .OrderByDescending(item => item!.CreatedAt)
+                .FirstOrDefault();
+            sessions.Add(handoff is null
+                ? session
+                : session with { Session = session.Session with { Status = handoff.Status, UpdatedAt = handoff.CreatedAt }, LastActiveAt = handoff.CreatedAt });
+        }
+
+        return sessions;
     }
 
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) =>
@@ -127,8 +143,15 @@ public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRo
         {
             if (item is AgentTurnCompleted completed && !string.IsNullOrWhiteSpace(completed.Result.FinalText))
             {
-                await store.AppendHandoffAsync(new WorkerHandoff(request.Project.Id, request.TaskId, session.Id,
-                    request.WorkerLabel, completed.Result.FinalStatus, completed.Result.FinalText, time.GetUtcNow()), cancellationToken);
+                var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id,
+                    request.WorkerLabel, completed.Result.FinalStatus, completed.Result.FinalText, time.GetUtcNow());
+                await store.AppendHandoffAsync(handoff, cancellationToken);
+                if (request.OnHandoff is not null)
+                {
+                    try { await request.OnHandoff(handoff, cancellationToken); }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch { }
+                }
             }
         }
         return new WorkerStartResult(true, session, null);

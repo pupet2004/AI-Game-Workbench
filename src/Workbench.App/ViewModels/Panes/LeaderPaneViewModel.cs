@@ -856,7 +856,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         var confirmation = DraftConfirmation ?? throw new InvalidOperationException("No draft confirmation is active.");
         if (_workerSessionRouter is null) return;
         var result = await _workerSessionRouter.StartAsync(new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Title,
-            confirmation.Revision.RecommendedExecutionProfile, confirmation.Goal, null, "Worker"), cancellationToken);
+            confirmation.Revision.RecommendedExecutionProfile, confirmation.Goal, null, "Worker",
+            (handoff, token) => _sessionManager.IngestWorkerHandoffAsync(handoff, token)), cancellationToken);
         if (!result.Succeeded)
         {
             AddErrorMessage("Worker could not be started.");

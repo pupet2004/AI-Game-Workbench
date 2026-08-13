@@ -100,6 +100,33 @@ public sealed class NavigationTests
         Assert.Single(workspace.WorkPane.Workers);
         Assert.Null(workspace.LeaderPane.DraftConfirmation);
         Assert.False(workspace.LeaderPane.HasDraftConfirmation);
+        var events = await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id);
+        Assert.Single(events);
+        var epochId = Assert.IsType<Guid>(workspace.LeaderPane.SessionEpochId);
+        var messages = await context.Services.LeaderMessageRepository.GetAllAsync(epochId);
+        var report = Assert.Single(messages, message => message.Text.Contains("Worker Session:", StringComparison.Ordinal));
+        Assert.Contains("Worker completed.", report.Text, StringComparison.Ordinal);
+        Assert.Contains(workspace.LeaderPane.Messages, message => message.Text == report.Text);
+
+        var reloaded = new WorkspaceViewModel(
+            workspace.Result,
+            context.Services.ProjectLayoutRepository,
+            () => Task.CompletedTask,
+            context.Time,
+            runtimeRegistry: context.Services.RuntimeRegistry,
+            leaderSessionManager: new Workbench.App.ViewModels.Leader.ProjectLeaderSessionManager(
+                context.Services.ProjectLeaderRepository,
+                context.Services.LeaderSessionEpochRepository,
+                context.Services.LeaderMessageRepository,
+                context.Time),
+            taskRepository: context.Services.TaskRepository,
+            taskRevisionRepository: context.Services.TaskRevisionRepository,
+            workerSessionRouter: context.Services.WorkerSessionRouter,
+            workerRoutingStore: context.Services.WorkerRoutingStore);
+        await reloaded.LeaderPane.InitializeAsync();
+        await reloaded.WorkPane.LoadAsync(workspace.Result.Project.Id);
+        Assert.Equal("Completed", Assert.Single(reloaded.WorkPane.Workers).Status);
+        Assert.Contains(reloaded.LeaderPane.Messages, message => message.Text == report.Text);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => workspace.LeaderPane.ConfirmDraftAsync());
         Assert.Single(await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id));

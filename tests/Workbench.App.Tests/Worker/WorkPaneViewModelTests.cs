@@ -46,6 +46,33 @@ public sealed class WorkPaneViewModelTests
     }
 
     [Fact]
+    public async Task Projects_the_latest_worker_handoff_status_over_the_started_session()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var projectDirectory = new TemporaryDirectory();
+        var project = (await context.Services.ProjectOpenService.OpenAsync(projectDirectory.Path)).Project;
+        var runtime = new FakeAgentRuntime();
+        var profile = Profile(runtime);
+        var startedAt = DateTimeOffset.Parse("2026-08-13T10:15:00.0000000+00:00");
+        var completedAt = startedAt.AddMinutes(2);
+        var taskId = Guid.NewGuid();
+        var revision = new TaskRevision(taskId, 1, "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, "initial", TaskRevisionApprover.User, startedAt, null);
+        await context.Services.TaskRepository.CreateAsync(project.Id, new TaskDraft(taskId, "Read smoke context", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, startedAt, revision));
+        var session = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", "C:/Project", "session", AgentSessionStatus.Ready, startedAt, startedAt);
+        var store = new TaskEventWorkerRoutingStore(new TaskEventRepository(context.Services.Database));
+        await store.SaveSessionAsync(new WorkerSessionRecord(project.Id, taskId, "Read smoke context", session, profile, "Worker", startedAt));
+        await store.AppendHandoffAsync(new WorkerHandoff(project.Id, taskId, session.Id, "Worker", AgentSessionStatus.Running, "Intermediate", startedAt.AddMinutes(1)));
+        await store.AppendHandoffAsync(new WorkerHandoff(project.Id, taskId, session.Id, "Worker", AgentSessionStatus.Completed, "Final report", completedAt));
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, new TaskEventWorkerRoutingStore(new TaskEventRepository(context.Services.Database)), new AgentRuntimeRegistry());
+
+        await pane.LoadAsync(project.Id);
+
+        var card = Assert.Single(pane.Workers);
+        Assert.Equal("Completed", card.Status);
+        Assert.Equal(completedAt.LocalDateTime.ToString("g"), card.LastActiveAtText);
+    }
+
+    [Fact]
     public async Task Loads_persisted_worker_cards_with_task_profile_status_and_completed_sessions_retained()
     {
         var store = new InMemoryWorkerRoutingStore();
