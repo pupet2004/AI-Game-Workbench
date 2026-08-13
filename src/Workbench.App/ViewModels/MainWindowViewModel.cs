@@ -106,6 +106,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             scheduleMemorySynthesis: _scheduleMemorySynthesis,
             bootContextBuilder: _services.LeaderBootContextBuilder,
             taskRepository: _services.TaskRepository,
+            taskRevisionRepository: _services.TaskRevisionRepository,
             workerRoutingStore: _services.WorkerRoutingStore);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();

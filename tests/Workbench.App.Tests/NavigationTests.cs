@@ -2,6 +2,7 @@ using Workbench.App.Tests.Support;
 using Workbench.App.ViewModels;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
+using Microsoft.Data.Sqlite;
 
 namespace Workbench.App.Tests;
 
@@ -28,6 +29,39 @@ public sealed class NavigationTests
         await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
 
         Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+    }
+
+    [Fact]
+    public async Task Production_workspace_composition_shows_draft_confirmation_for_a_leader_proposal()
+    {
+        using var folder = new TemporaryDirectory();
+        var runtime = new FakeAgentRuntime();
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: RegistryWith(runtime));
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(
+                AgentSessionId.New(),
+                AgentSessionStatus.Completed,
+                "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Read smoke context\",\"goal\":\"Read the smoke context file\",\"scope\":\"Read one file\",\"outOfScope\":\"Do not modify files\",\"acceptance\":[\"Report the marker\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}",
+                null),
+            DateTimeOffset.UtcNow));
+        workspace.LeaderPane.DraftMessage = "Delegate the smoke context read.";
+
+        await workspace.LeaderPane.SendAsync();
+
+        var task = Assert.Single(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Single(await context.Services.TaskRevisionRepository.ListAsync(workspace.Result.Project.Id, task.TaskId));
+        Assert.NotNull(workspace.LeaderPane.DraftConfirmation);
+        Assert.True(workspace.LeaderPane.HasDraftConfirmation);
+        await using var connection = context.Services.Database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM worker_executions WHERE project_id = $projectId";
+        command.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
+        Assert.Equal(0L, (long)(await command.ExecuteScalarAsync())!);
     }
 
     [Fact]
