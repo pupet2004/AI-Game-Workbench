@@ -10,10 +10,25 @@
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="No workers yet." FontSize="18" />
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="Leader-created worker sessions will appear here." TextWrapping="Wrap" Foreground="#667085" />
             <TextBlock IsVisible="{Binding OpenError}" Text="{Binding OpenError}" TextWrapping="Wrap" Foreground="#B42318" />
+            <Border IsVisible="{Binding HasPendingWorkerRemoval}" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="4">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="从 Workbench 移除此 Worker？原始会话和历史将保留。" TextWrapping="Wrap" />
+                    <TextBlock IsVisible="{Binding RemovalError}" Text="{Binding RemovalError}" TextWrapping="Wrap" Foreground="#B42318" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="取消" Command="{Binding CancelWorkerRemovalCommand}" />
+                        <Button Content="确认移除" Command="{Binding ConfirmWorkerRemovalCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
             <ListBox IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}" SelectedItem="{Binding SelectedWorker}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
                         <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="4" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="从 Workbench 移除" Command="{Binding #WorkRoot.DataContext.RequestWorkerRemovalCommand}" CommandParameter="{Binding}" />
+                                </ContextMenu>
+                            </Border.ContextMenu>
                             <StackPanel Spacing="3"><TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" /><TextBlock Text="{Binding WorkerLabel}" /><TextBlock Text="{Binding Profile}" Foreground="#667085" /><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid><Button Content="Open" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" /></StackPanel>
                         </Border>
                     </DataTemplate>

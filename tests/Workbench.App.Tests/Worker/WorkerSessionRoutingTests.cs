@@ -161,6 +161,8 @@ internal sealed class TestTaskEventStore(WorkbenchDatabase database) : IWorkerRo
         Task.FromResult(_sessions.LastOrDefault(x => x.ProjectId == projectId && x.TaskId == taskId && x.Session.Id == sessionId));
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) =>
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), handoff.ProjectId, handoff.TaskId, null, "WorkerToLeaderHandoff", JsonSerializer.Serialize(handoff), handoff.CreatedAt), cancellationToken);
+    public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) =>
+        _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), removal.ProjectId, removal.TaskId, null, "WorkerRemoved", JsonSerializer.Serialize(removal), removal.RemovedAt), cancellationToken);
 }
 
 internal static class WorkerRoutingEvent

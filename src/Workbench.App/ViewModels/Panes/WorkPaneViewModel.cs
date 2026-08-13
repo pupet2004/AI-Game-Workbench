@@ -13,12 +13,16 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
     private readonly IWorkerRoutingStore? _store;
     private readonly AgentRuntimeRegistry? _runtimes;
     private readonly IAgentInteractiveSessionLauncher? _interactiveLauncher;
-    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; }
+    private readonly WorkerRemovalService? _removalService;
+    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null, WorkerRemovalService? removalService = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; _removalService = removalService ?? (store is not null && runtimes is not null ? new WorkerRemovalService(runtimes, store, TimeProvider.System) : null); }
     public ObservableCollection<WorkerSessionCardViewModel> Workers { get; } = [];
     public ObservableCollection<WorkerTranscriptLineViewModel> Transcript { get; } = [];
     public bool HasWorkers => Workers.Count > 0;
     [ObservableProperty] public partial WorkerSessionCardViewModel? SelectedWorker { get; set; }
     [ObservableProperty] public partial string? OpenError { get; set; }
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasPendingWorkerRemoval))] public partial WorkerSessionCardViewModel? PendingWorkerRemoval { get; set; }
+    [ObservableProperty] public partial string? RemovalError { get; set; }
+    public bool HasPendingWorkerRemoval => PendingWorkerRemoval is not null;
     public async Task LoadAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         Workers.Clear(); if (_store is null) return;
@@ -51,6 +55,36 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
         OpenWorkerAsync(worker, cancellationToken);
 
     [RelayCommand] private Task OpenWorker(WorkerSessionCardViewModel worker) => OpenWorkerAsync(worker);
+    [RelayCommand] private void RequestWorkerRemoval(WorkerSessionCardViewModel worker)
+    {
+        PendingWorkerRemoval = worker;
+        RemovalError = null;
+    }
+    [RelayCommand] private void CancelWorkerRemoval()
+    {
+        PendingWorkerRemoval = null;
+        RemovalError = null;
+    }
+    [RelayCommand] private async Task ConfirmWorkerRemoval()
+    {
+        if (PendingWorkerRemoval is not { } worker || _removalService is null)
+        {
+            return;
+        }
+
+        RemovalError = null;
+        var result = await _removalService.RemoveAsync(worker.Record);
+        if (!result.Succeeded)
+        {
+            RemovalError = result.Error;
+            return;
+        }
+
+        Workers.Remove(worker);
+        if (SelectedWorker == worker) SelectedWorker = null;
+        PendingWorkerRemoval = null;
+        OnPropertyChanged(nameof(HasWorkers));
+    }
     [RelayCommand] private Task Focus() => _focus();
     private static int Rank(AgentSessionStatus status) => status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => 0, AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => 1, AgentSessionStatus.Completed => 2, _ => 3 };
 }

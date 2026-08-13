@@ -37,12 +37,19 @@ public sealed record WorkerHandoff(
     string Message,
     DateTimeOffset CreatedAt);
 
+public sealed record WorkerRemoval(
+    Guid ProjectId,
+    Guid TaskId,
+    AgentSessionId WorkerSessionId,
+    DateTimeOffset RemovedAt);
+
 public interface IWorkerRoutingStore
 {
     Task SaveSessionAsync(WorkerSessionRecord session, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default);
     Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default);
+    Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default);
 }
 
 public sealed class TaskEventWorkerRoutingStore(TaskEventRepository events) : IWorkerRoutingStore
@@ -56,6 +63,13 @@ public sealed class TaskEventWorkerRoutingStore(TaskEventRepository events) : IW
     public async Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default)
     {
         var events = await _events.ListAsync(projectId, taskId, 200, cancellationToken);
+        if (events.Where(item => item.Type == "WorkerRemoved")
+            .Select(item => JsonSerializer.Deserialize<WorkerRemoval>(item.Payload))
+            .Any(item => item?.WorkerSessionId == sessionId))
+        {
+            return null;
+        }
+
         return events.Where(item => item.Type == "WorkerSessionStarted")
             .Select(item => JsonSerializer.Deserialize<StoredSession>(item.Payload)?.ToRecord())
             .LastOrDefault(item => item?.Session.Id == sessionId);
@@ -66,8 +80,11 @@ public sealed class TaskEventWorkerRoutingStore(TaskEventRepository events) : IW
         var started = (await _events.ListForProjectAsync(projectId, "WorkerSessionStarted", 200, cancellationToken))
             .Select(item => JsonSerializer.Deserialize<StoredSession>(item.Payload)?.ToRecord())
             .Where(item => item is not null).Cast<WorkerSessionRecord>().ToArray();
+        var removed = (await _events.ListForProjectAsync(projectId, "WorkerRemoved", 200, cancellationToken))
+            .Select(item => JsonSerializer.Deserialize<WorkerRemoval>(item.Payload))
+            .Where(item => item is not null).Select(item => item!.WorkerSessionId).ToHashSet();
         var sessions = new List<WorkerSessionRecord>(started.Length);
-        foreach (var session in started)
+        foreach (var session in started.Where(item => !removed.Contains(item.Session.Id)))
         {
             var handoff = (await _events.ListAsync(projectId, session.TaskId, 200, cancellationToken))
                 .Where(item => item.Type == "WorkerToLeaderHandoff")
@@ -86,6 +103,10 @@ public sealed class TaskEventWorkerRoutingStore(TaskEventRepository events) : IW
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) =>
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), handoff.ProjectId, handoff.TaskId, null,
             "WorkerToLeaderHandoff", JsonSerializer.Serialize(handoff), handoff.CreatedAt), cancellationToken);
+
+    public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) =>
+        _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), removal.ProjectId, removal.TaskId, null,
+            "WorkerRemoved", JsonSerializer.Serialize(removal), removal.RemovedAt), cancellationToken);
 }
 
 internal sealed record StoredSession(Guid ProjectId, Guid TaskId, string TaskTitle, Guid SessionId, Guid AccountId, string ProviderId,

@@ -164,6 +164,94 @@ public sealed class WorkPaneViewModelTests
     }
 
     [Fact]
+    public async Task Confirmed_removal_hides_the_worker_after_reconstructing_the_store_without_deleting_its_history()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var projectDirectory = new TemporaryDirectory();
+        var project = (await context.Services.ProjectOpenService.OpenAsync(projectDirectory.Path)).Project;
+        var runtime = new FakeAgentRuntime();
+        var profile = Profile(runtime);
+        var startedAt = DateTimeOffset.Parse("2026-08-14T10:15:00.0000000+00:00");
+        var taskId = Guid.NewGuid();
+        var revision = new TaskRevision(taskId, 1, "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, "initial", TaskRevisionApprover.User, startedAt, null);
+        await context.Services.TaskRepository.CreateAsync(project.Id, new TaskDraft(taskId, "Preserve history", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, startedAt, revision));
+        var session = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", project.RootPath, "thread-preserved", AgentSessionStatus.Completed, startedAt, startedAt);
+        var record = new WorkerSessionRecord(project.Id, taskId, "Preserve history", session, profile, "Worker", startedAt);
+        var events = new TaskEventRepository(context.Services.Database);
+        var store = new TaskEventWorkerRoutingStore(events);
+        await store.SaveSessionAsync(record);
+        await store.AppendHandoffAsync(new WorkerHandoff(project.Id, taskId, session.Id, "Worker", AgentSessionStatus.Completed, "Final report remains", startedAt.AddMinutes(1)));
+
+        var result = await new WorkerRemovalService(new AgentRuntimeRegistry(), store, TimeProvider.System).RemoveAsync(record);
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(await new TaskEventWorkerRoutingStore(new TaskEventRepository(context.Services.Database)).ListSessionsAsync(project.Id));
+        var history = await events.ListAsync(project.Id, taskId, 20);
+        Assert.Contains(history, item => item.Type == "WorkerSessionStarted" && item.Payload.Contains("thread-preserved", StringComparison.Ordinal));
+        Assert.Contains(history, item => item.Type == "WorkerToLeaderHandoff" && item.Payload.Contains("Final report remains", StringComparison.Ordinal));
+        Assert.Contains(history, item => item.Type == "WorkerRemoved");
+    }
+
+    [Fact]
+    public async Task Removing_a_working_worker_stops_active_execution_before_appending_the_removal_fact()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        var store = new InMemoryWorkerRoutingStore();
+        var record = Session(Guid.NewGuid(), Guid.NewGuid(), "Working task", "Worker", AgentSessionStatus.Running, TimeSpan.Zero) with
+        {
+            Session = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", "C:/Project", "thread-working", AgentSessionStatus.Running, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)
+        };
+        await store.SaveSessionAsync(record);
+
+        var result = await new WorkerRemovalService(registry, store, TimeProvider.System).RemoveAsync(record);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(record.Session.Id, Assert.Single(runtime.StoppedSessions).Id);
+        Assert.Single(store.Removals);
+        Assert.Empty(await store.ListSessionsAsync(record.ProjectId));
+    }
+
+    [Fact]
+    public async Task Failed_stop_keeps_a_working_worker_visible_and_does_not_append_removal()
+    {
+        var runtime = new FakeAgentRuntime { StopException = new InvalidOperationException("stop failed") };
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        var store = new InMemoryWorkerRoutingStore();
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Working task",
+            new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", "C:/Project", "thread-working", AgentSessionStatus.Running, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+            Profile(runtime), "Worker", DateTimeOffset.UtcNow);
+        await store.SaveSessionAsync(record);
+
+        var result = await new WorkerRemovalService(registry, store, TimeProvider.System).RemoveAsync(record);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("stop failed", result.Error);
+        Assert.Empty(store.Removals);
+        Assert.Single(await store.ListSessionsAsync(record.ProjectId));
+    }
+
+    [Fact]
+    public async Task Cancelling_removal_keeps_the_worker_visible_without_appending_a_removal_fact()
+    {
+        var runtime = new FakeAgentRuntime();
+        var store = new InMemoryWorkerRoutingStore();
+        var record = Session(Guid.NewGuid(), Guid.NewGuid(), "Keep task", "Worker", AgentSessionStatus.Completed, TimeSpan.Zero);
+        await store.SaveSessionAsync(record);
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, new AgentRuntimeRegistry());
+        await pane.LoadAsync(record.ProjectId);
+
+        pane.RequestWorkerRemovalCommand.Execute(Assert.Single(pane.Workers));
+        pane.CancelWorkerRemovalCommand.Execute(null);
+
+        Assert.Null(pane.PendingWorkerRemoval);
+        Assert.Single(pane.Workers);
+        Assert.Empty(store.Removals);
+    }
+
+    [Fact]
     public void Worker_card_markup_activates_on_left_click_without_intercepting_the_open_button()
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
@@ -173,6 +261,17 @@ public sealed class WorkPaneViewModelTests
         Assert.Contains("PointerPressed=\"OnWorkerCardPointerPressed\"", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("OnOpenButtonPointerPressed", markup, StringComparison.Ordinal);
         Assert.Contains("FindAncestorOfType<Button>()", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Worker_card_markup_offers_a_right_click_removal_confirmation_without_card_activation()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var markup = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "WorkPaneView.axaml"));
+
+        Assert.Contains("从 Workbench 移除", markup, StringComparison.Ordinal);
+        Assert.Contains("ConfirmWorkerRemovalCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("CancelWorkerRemovalCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -242,9 +341,11 @@ internal sealed class RecordingInteractiveSessionLauncher : IAgentInteractiveSes
 internal sealed class InMemoryWorkerRoutingStore : IWorkerRoutingStore
 {
     private readonly List<WorkerSessionRecord> _sessions = [];
+    public List<WorkerRemoval> Removals { get; } = [];
     public Guid ProjectId => _sessions.First().ProjectId;
     public Task SaveSessionAsync(WorkerSessionRecord session, CancellationToken cancellationToken = default) { _sessions.Add(session); return Task.CompletedTask; }
-    public Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<WorkerSessionRecord>>(_sessions.Where(item => item.ProjectId == projectId).ToArray());
+    public Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<WorkerSessionRecord>>(_sessions.Where(item => item.ProjectId == projectId && !Removals.Any(removed => removed.WorkerSessionId == item.Session.Id)).ToArray());
     public Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) => Task.FromResult(_sessions.LastOrDefault(item => item.ProjectId == projectId && item.TaskId == taskId && item.Session.Id == sessionId));
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) { Removals.Add(removal); return Task.CompletedTask; }
 }
