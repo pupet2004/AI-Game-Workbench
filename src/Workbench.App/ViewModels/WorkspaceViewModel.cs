@@ -44,6 +44,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         Action<Guid>? scheduleMemorySynthesis = null,
         ILeaderBootContextBuilder? bootContextBuilder = null,
         TaskRepository? taskRepository = null,
+        TaskRevisionRepository? taskRevisionRepository = null,
+        WorkerSessionRouter? workerSessionRouter = null,
         IWorkerRoutingStore? workerRoutingStore = null,
         ProjectLibraryRepository? projectLibraryRepository = null)
     {
@@ -66,7 +68,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             messageRepository,
             scheduleMemorySynthesis,
             bootContextBuilder,
-            taskRepository: taskRepository);
+            taskRepository: taskRepository,
+            taskRevisionRepository: taskRevisionRepository,
+            workerSessionRouter: workerSessionRouter);
         WorkPane = new WorkPaneViewModel(FocusWorkAsync, workerRoutingStore, runtimeRegistry);
         LibraryPane = new LibraryPaneViewModel(
             result,

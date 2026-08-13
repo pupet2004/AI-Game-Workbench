@@ -4,6 +4,8 @@ using System.Text.Json;
 
 namespace Workbench.App.Leader;
 
+public sealed record LeaderExecutionRecommendation(string? ProviderHint, string? ModelHint, string? RuntimeHint);
+
 public sealed record LeaderDraftProposal(
     Guid ProjectId,
     string Title,
@@ -12,7 +14,7 @@ public sealed record LeaderDraftProposal(
     string OutOfScope,
     IReadOnlyList<string> Acceptance,
     TaskRiskLevel RiskLevel,
-    ExecutionProfile RecommendedExecutionProfile);
+    LeaderExecutionRecommendation Recommendation);
 
 public sealed record LeaderDraftProposalResult(bool Succeeded, Guid? TaskId, string? Error)
 {
@@ -45,11 +47,10 @@ public sealed record LeaderStructuredResponse(string Response, LeaderDraftPropos
                 draft.GetProperty("outOfScope").GetString() ?? string.Empty,
                 draft.GetProperty("acceptance").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray(),
                 Enum.Parse<TaskRiskLevel>(draft.GetProperty("riskLevel").GetString() ?? string.Empty, true),
-                ExecutionProfile.Create(
-                    profile.GetProperty("providerId").GetString() ?? string.Empty,
-                    profile.GetProperty("providerAccountId").GetString() ?? string.Empty,
-                    profile.GetProperty("modelProfileId").GetString() ?? string.Empty,
-                    profile.GetProperty("agentRuntimeId").GetString() ?? string.Empty));
+                new LeaderExecutionRecommendation(
+                    profile.TryGetProperty("providerHint", out var provider) ? provider.GetString() : null,
+                    profile.TryGetProperty("modelHint", out var model) ? model.GetString() : null,
+                    profile.TryGetProperty("runtimeHint", out var runtime) ? runtime.GetString() : null));
             result = new LeaderStructuredResponse(response.GetString() ?? string.Empty, proposal);
             return true;
         }
@@ -82,12 +83,11 @@ public static class LeaderResponseSchema
                     "recommendedExecutionProfile": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": ["providerId", "providerAccountId", "modelProfileId", "agentRuntimeId"],
+                      "required": ["providerHint", "modelHint", "runtimeHint"],
                       "properties": {
-                        "providerId": { "type": "string" },
-                        "providerAccountId": { "type": "string" },
-                        "modelProfileId": { "type": "string" },
-                        "agentRuntimeId": { "type": "string" }
+                        "providerHint": { "type": ["string", "null"] },
+                        "modelHint": { "type": ["string", "null"] },
+                        "runtimeHint": { "type": ["string", "null"] }
                       }
                     }
                   }
@@ -104,6 +104,7 @@ public sealed class LeaderDraftProposalBuilder(Guid projectId, TaskRepository ta
 {
     public async Task<LeaderDraftProposalResult> CreateDraftAsync(
         LeaderDraftProposal proposal,
+        ExecutionProfile candidateProfile,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(proposal);
@@ -117,8 +118,7 @@ public sealed class LeaderDraftProposalBuilder(Guid projectId, TaskRepository ta
             string.IsNullOrWhiteSpace(proposal.Scope) ||
             string.IsNullOrWhiteSpace(proposal.OutOfScope) ||
             proposal.Acceptance is null || proposal.Acceptance.Count == 0 ||
-            proposal.Acceptance.Any(string.IsNullOrWhiteSpace) ||
-            proposal.RecommendedExecutionProfile is null)
+            proposal.Acceptance.Any(string.IsNullOrWhiteSpace) || candidateProfile is null)
         {
             return LeaderDraftProposalResult.Rejected("Proposal is missing required fields.");
         }
@@ -126,11 +126,11 @@ public sealed class LeaderDraftProposalBuilder(Guid projectId, TaskRepository ta
         var taskId = Guid.NewGuid();
         var revision = new TaskRevision(
             taskId, 1, proposal.Goal, proposal.Scope, proposal.OutOfScope,
-            proposal.Acceptance, proposal.RiskLevel, proposal.RecommendedExecutionProfile,
+            proposal.Acceptance, proposal.RiskLevel, candidateProfile,
             "Leader proposal", TaskRevisionApprover.User, DateTimeOffset.UtcNow, null);
         var draft = new TaskDraft(
             taskId, proposal.Title, proposal.Goal, proposal.Scope, proposal.OutOfScope,
-            proposal.Acceptance, proposal.RiskLevel, proposal.RecommendedExecutionProfile,
+            proposal.Acceptance, proposal.RiskLevel, candidateProfile,
             revision.CreatedAt, revision);
 
         try

@@ -71,10 +71,11 @@ public sealed class LeaderDraftProposalTests
     public void Structured_envelope_parses_without_provider_specific_fields()
     {
         var projectId = Guid.NewGuid();
-        var json = "{\"response\":\"I drafted this task.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerId\":\"p\",\"providerAccountId\":\"a\",\"modelProfileId\":\"m\",\"agentRuntimeId\":\"r\"}}}";
+        var json = "{\"response\":\"I drafted this task.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"Codex\",\"modelHint\":\"GPT-5.6-Sol\",\"runtimeHint\":\"codex-app-server\"}}}";
         Assert.True(LeaderStructuredResponse.TryParse(json, projectId, out var parsed));
         Assert.Equal("I drafted this task.", parsed.Response);
         Assert.Equal(projectId, parsed.Proposal!.ProjectId);
+        Assert.Equal("Codex", parsed.Proposal.Recommendation.ProviderHint);
     }
     [Fact]
     public async Task Valid_provider_neutral_proposal_persists_one_project_scoped_draft_and_revision()
@@ -88,9 +89,10 @@ public sealed class LeaderDraftProposalTests
             "Billing and account recovery",
             ["A new user can complete onboarding"],
             TaskRiskLevel.Medium,
-            ExecutionProfile.Create("provider", "account", "model", "runtime"));
+            new LeaderExecutionRecommendation("Provider", "model", "runtime"));
 
-        var result = await fixture.Builder.CreateDraftAsync(proposal);
+        var profile = ExecutionProfile.Create("provider", "account", "model", "runtime");
+        var result = await fixture.Builder.CreateDraftAsync(proposal, profile);
 
         Assert.True(result.Succeeded);
         Assert.NotEqual(Guid.Empty, result.TaskId);
@@ -104,7 +106,7 @@ public sealed class LeaderDraftProposalTests
         Assert.Equal(proposal.OutOfScope, revision.OutOfScope);
         Assert.Equal(proposal.Acceptance, revision.Acceptance);
         Assert.Equal(proposal.RiskLevel, revision.RiskLevel);
-        Assert.Equal(proposal.RecommendedExecutionProfile, revision.RecommendedExecutionProfile);
+        Assert.Equal(profile, revision.RecommendedExecutionProfile);
     }
 
     [Fact]
@@ -113,9 +115,9 @@ public sealed class LeaderDraftProposalTests
         await using var fixture = await Fixture.CreateAsync();
         var proposal = new LeaderDraftProposal(
             fixture.ProjectId, "", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low,
-            ExecutionProfile.Create("provider", "account", "model", "runtime"));
+            new LeaderExecutionRecommendation(null, null, null));
 
-        var result = await fixture.Builder.CreateDraftAsync(proposal);
+        var result = await fixture.Builder.CreateDraftAsync(proposal, ExecutionProfile.Create("provider", "account", "model", "runtime"));
 
         Assert.False(result.Succeeded);
         Assert.Empty(await fixture.Tasks.ListAsync(fixture.ProjectId));
@@ -127,9 +129,9 @@ public sealed class LeaderDraftProposalTests
         await using var fixture = await Fixture.CreateAsync();
         var proposal = new LeaderDraftProposal(
             Guid.NewGuid(), "Title", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low,
-            ExecutionProfile.Create("provider", "account", "model", "runtime"));
+            new LeaderExecutionRecommendation(null, null, null));
 
-        var result = await fixture.Builder.CreateDraftAsync(proposal);
+        var result = await fixture.Builder.CreateDraftAsync(proposal, ExecutionProfile.Create("provider", "account", "model", "runtime"));
 
         Assert.False(result.Succeeded);
         Assert.Empty(await fixture.Tasks.ListAsync(fixture.ProjectId));
@@ -142,9 +144,9 @@ public sealed class LeaderDraftProposalTests
         await fixture.RejectRevisionInsertsAsync();
         var proposal = new LeaderDraftProposal(
             fixture.ProjectId, "Title", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low,
-            ExecutionProfile.Create("provider", "account", "model", "runtime"));
+            new LeaderExecutionRecommendation(null, null, null));
 
-        var result = await fixture.Builder.CreateDraftAsync(proposal);
+        var result = await fixture.Builder.CreateDraftAsync(proposal, ExecutionProfile.Create("provider", "account", "model", "runtime"));
 
         Assert.False(result.Succeeded);
         Assert.Empty(await fixture.Tasks.ListAsync(fixture.ProjectId));
@@ -161,7 +163,7 @@ public sealed class LeaderDraftProposalTests
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
         runtime.QueueTurn(new AgentTurnCompleted(
             new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
-                "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerId\":\"p\",\"providerAccountId\":\"a\",\"modelProfileId\":\"m\",\"agentRuntimeId\":\"r\"}}}", null),
+                "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}", null),
             DateTimeOffset.UtcNow));
         await workspace.LeaderPane.InitializeAsync();
         workspace.LeaderPane.DraftMessage = "Plan onboarding";
@@ -173,6 +175,60 @@ public sealed class LeaderDraftProposalTests
         var transcript = await context.Services.LeaderMessageRepository.GetAllAsync(workspace.LeaderPane.SessionEpochId!.Value);
         Assert.Equal("Draft ready.", transcript.Last().Text);
         Assert.DoesNotContain("draft_proposal", transcript.Last().Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Draft_confirmation_binds_candidate_creates_immutable_override_and_starts_one_worker()
+    {
+        var provider = new Workbench.Runtime.Providers.ProviderId("fake-provider");
+        var runtime = new FakeAgentRuntime("Fake Provider", "Fake Account", null,
+            new Workbench.Runtime.Providers.ModelProfile(provider, "model-a", "Model A", Workbench.Runtime.Agents.AgentCapability.StructuredEvents),
+            new Workbench.Runtime.Providers.ModelProfile(provider, "model-b", "Model B", Workbench.Runtime.Agents.AgentCapability.StructuredEvents));
+        var registry = new AgentRuntimeRegistry(); registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+            "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}", null), DateTimeOffset.UtcNow));
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Worker complete", null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.SelectedModel = workspace.LeaderPane.AvailableModels[0];
+        workspace.LeaderPane.DraftMessage = "delegate";
+
+        await workspace.LeaderPane.SendAsync();
+
+        Assert.Equal("Draft ready.", workspace.LeaderPane.Messages.Last().Text);
+        Assert.True(workspace.LeaderPane.HasDraftConfirmation);
+        Assert.Single(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Single(runtime.CreateRequests);
+        var p2 = workspace.LeaderPane.WorkerResources.Single(item => item.ModelProfileId == "model-b");
+        await workspace.LeaderPane.ChangeWorkerResourceAsync(p2);
+        var task = (await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id)).Single();
+        var revisions = await context.Services.TaskRevisionRepository.ListAsync(workspace.Result.Project.Id, task.TaskId);
+        Assert.Equal(2, revisions.Count);
+        Assert.Equal("model-a", revisions[0].RecommendedExecutionProfile.ModelProfileId);
+        Assert.Equal("model-b", revisions[1].RecommendedExecutionProfile.ModelProfileId);
+
+        await workspace.LeaderPane.ConfirmDraftAsync();
+
+        Assert.Equal(2, runtime.CreateRequests.Count);
+        Assert.Equal("model-b", runtime.CreateRequests.Last().ModelId);
+    }
+
+    [Fact]
+    public async Task Invalid_structured_response_is_not_shown_as_raw_json()
+    {
+        var runtime = new FakeAgentRuntime(); var registry = new AgentRuntimeRegistry(); registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "{\"draft_proposal\":true}", null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync(); workspace.LeaderPane.DraftMessage = "delegate";
+
+        await workspace.LeaderPane.SendAsync();
+
+        Assert.DoesNotContain(workspace.LeaderPane.Messages, message => message.Text.Contains("draft_proposal", StringComparison.Ordinal));
+        Assert.Contains(workspace.LeaderPane.Messages, message => message.Text == "Leader response could not be processed.");
+        Assert.False(workspace.LeaderPane.HasDraftConfirmation);
+        Assert.Empty(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
     }
 
     private sealed class Fixture : IAsyncDisposable

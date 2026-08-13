@@ -3,6 +3,7 @@
              xmlns:vm="using:Workbench.App.ViewModels.Panes"
              xmlns:leader="using:Workbench.App.ViewModels.Leader"
              x:Class="Workbench.App.Views.Panes.LeaderPaneView"
+             x:Name="Root"
              x:DataType="vm:LeaderPaneViewModel">
     <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
         <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12">
@@ -142,6 +143,30 @@
             </Grid>
 
             <StackPanel Grid.Row="3" Spacing="8">
+                <Border IsVisible="{Binding HasDraftConfirmation}"
+                        Padding="12"
+                        BorderBrush="#84ADFF"
+                        BorderThickness="1"
+                        Background="#EEF4FF"
+                        CornerRadius="6">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Draft confirmation" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding DraftConfirmation.Title}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding DraftConfirmation.Goal}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding DraftConfirmation.Scope}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding CurrentWorkerProfile}" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding WorkerResources}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding ModelDisplayName}"
+                                            Command="{Binding DataContext.ChangeWorkerResourceCommand, ElementName=Root}"
+                                            CommandParameter="{Binding}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="Confirm / Start Worker" Command="{Binding ConfirmDraftCommand}" />
+                    </StackPanel>
+                </Border>
                 <Border IsVisible="{Binding HasPendingRotationDecision}"
                         Padding="12"
                         BorderBrush="#84ADFF"

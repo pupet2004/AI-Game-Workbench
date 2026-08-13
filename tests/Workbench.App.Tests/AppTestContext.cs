@@ -91,6 +91,8 @@ internal sealed class AppTestContext : IAsyncDisposable
             projectMemoryService: Services.ProjectMemoryService,
             bootContextBuilder: Services.LeaderBootContextBuilder,
             taskRepository: Services.TaskRepository,
+            taskRevisionRepository: Services.TaskRevisionRepository,
+            workerSessionRouter: Services.WorkerSessionRouter,
             workerRoutingStore: Services.WorkerRoutingStore,
             projectLibraryRepository: Services.ProjectLibraryRepository);
 

@@ -8,6 +8,8 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Tasks;
+using Workbench.App.Worker;
+using Workbench.Core.Tasks;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ViewModels.Panes;
@@ -25,6 +27,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly Action<Guid>? _scheduleMemorySynthesis;
     private readonly ILeaderBootContextBuilder? _bootContextBuilder;
     private readonly LeaderDraftProposalBuilder? _draftProposalBuilder;
+    private readonly TaskRevisionRepository? _taskRevisions;
+    private readonly WorkerSessionRouter? _workerSessionRouter;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -40,7 +44,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         LeaderMessageRepository? messageRepository = null,
         Action<Guid>? scheduleMemorySynthesis = null,
         ILeaderBootContextBuilder? bootContextBuilder = null,
-        TaskRepository? taskRepository = null)
+        TaskRepository? taskRepository = null,
+        TaskRevisionRepository? taskRevisionRepository = null,
+        WorkerSessionRouter? workerSessionRouter = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -53,6 +59,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _scheduleMemorySynthesis = scheduleMemorySynthesis;
         _bootContextBuilder = bootContextBuilder;
         _draftProposalBuilder = taskRepository is null ? null : new LeaderDraftProposalBuilder(project.Id, taskRepository);
+        _taskRevisions = taskRevisionRepository;
+        _workerSessionRouter = workerSessionRouter;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -72,6 +80,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public ObservableCollection<LeaderModelOptionViewModel> AvailableModels => _conversation.AvailableModels;
 
     public ObservableCollection<LeaderMessageViewModel> Messages => _conversation.Messages;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDraftConfirmation), nameof(CurrentWorkerProfile))]
+    public partial LeaderDraftConfirmation? DraftConfirmation { get; set; }
+
+    public bool HasDraftConfirmation => DraftConfirmation is not null;
+    public string? CurrentWorkerProfile => DraftConfirmation is null ? null : $"{DraftConfirmation.Resource.DisplayLabel} · {DraftConfirmation.Resource.ModelDisplayName}";
+    public ObservableCollection<WorkerResource> WorkerResources { get; } = [];
 
     public LeaderEpochHistoryViewModel? History { get; }
 
@@ -496,8 +512,33 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             finalText = structured.Response;
                             if (structured.Proposal is not null)
                             {
-                                await _draftProposalBuilder.CreateDraftAsync(structured.Proposal, cancellationToken);
+                                var resources = await _runtimeRegistry.GetWorkerResourcesAsync(cancellationToken);
+                                var candidate = SelectCandidate(resources, structured.Proposal.Recommendation);
+                                if (candidate is null)
+                                {
+                                    AddErrorMessage("No Worker resource is available for this draft.");
+                                }
+                                else
+                                {
+                                    var created = await _draftProposalBuilder.CreateDraftAsync(structured.Proposal, candidate.CreateExecutionProfile(), cancellationToken);
+                                    if (created.Succeeded && _taskRevisions is not null)
+                                    {
+                                        var revision = (await _taskRevisions.ListAsync(_project.Id, created.TaskId!.Value, cancellationToken)).Single();
+                                        WorkerResources.Clear();
+                                        foreach (var resource in resources.Where(resource => resource.IsReady)) WorkerResources.Add(resource);
+                                        DraftConfirmation = new LeaderDraftConfirmation(created.TaskId.Value, structured.Proposal.Title, structured.Proposal.Goal, structured.Proposal.Scope, structured.Proposal.Acceptance, structured.Proposal.RiskLevel, structured.Proposal.Recommendation, candidate, revision);
+                                    }
+                                    else if (!created.Succeeded)
+                                    {
+                                        AddErrorMessage("Leader response could not be processed.");
+                                    }
+                                }
                             }
+                        }
+                        else if (_draftProposalBuilder is not null && !string.IsNullOrWhiteSpace(finalText) && finalText.TrimStart().StartsWith('{'))
+                        {
+                            finalText = string.Empty;
+                            AddErrorMessage("Leader response could not be processed.");
                         }
                         if (assistant is null && !string.IsNullOrWhiteSpace(finalText))
                         {
@@ -789,8 +830,45 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(ProjectLeaderId));
         OnPropertyChanged(nameof(SessionEpochId));
         OnPropertyChanged(nameof(HasHistory));
+        OnPropertyChanged(nameof(HasDraftConfirmation));
+        OnPropertyChanged(nameof(CurrentWorkerProfile));
         NotifyCommandState();
     }
+
+    public async Task ChangeWorkerResourceAsync(WorkerResource resource, CancellationToken cancellationToken = default)
+    {
+        var confirmation = DraftConfirmation ?? throw new InvalidOperationException("No draft confirmation is active.");
+        if (_taskRevisions is null || !resource.IsReady) return;
+        var successor = new TaskRevision(confirmation.TaskId, confirmation.Revision.RevisionNumber + 1, confirmation.Revision.Goal,
+            confirmation.Revision.Scope, confirmation.Revision.OutOfScope, confirmation.Revision.Acceptance, confirmation.Revision.RiskLevel,
+            resource.CreateExecutionProfile(), "Worker profile changed", TaskRevisionApprover.User, DateTimeOffset.UtcNow, confirmation.Revision.Id);
+        if (await _taskRevisions.CreateSuccessorAsync(_project.Id, confirmation.TaskId, confirmation.Revision.Id, successor, cancellationToken))
+        {
+            DraftConfirmation = confirmation with { Resource = resource, Revision = successor };
+        }
+    }
+
+    public async Task ConfirmDraftAsync(CancellationToken cancellationToken = default)
+    {
+        var confirmation = DraftConfirmation ?? throw new InvalidOperationException("No draft confirmation is active.");
+        if (_workerSessionRouter is null) return;
+        var result = await _workerSessionRouter.StartAsync(new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Title,
+            confirmation.Revision.RecommendedExecutionProfile, confirmation.Goal, null, "Worker"), cancellationToken);
+        if (!result.Succeeded) AddErrorMessage("Worker could not be started.");
+    }
+
+    [RelayCommand]
+    private Task ConfirmDraft() => ConfirmDraftAsync();
+
+    [RelayCommand]
+    private Task ChangeWorkerResource(WorkerResource resource) => ChangeWorkerResourceAsync(resource);
+
+    private static WorkerResource? SelectCandidate(IReadOnlyList<WorkerResource> resources, LeaderExecutionRecommendation recommendation) =>
+        resources.FirstOrDefault(resource => resource.IsReady &&
+            (string.IsNullOrWhiteSpace(recommendation.ProviderHint) || string.Equals(resource.ProviderId, recommendation.ProviderHint, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(recommendation.ModelHint) || string.Equals(resource.ModelProfileId, recommendation.ModelHint, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrWhiteSpace(recommendation.RuntimeHint) || string.Equals(resource.AgentRuntimeId.Split(':')[0], recommendation.RuntimeHint, StringComparison.OrdinalIgnoreCase)))
+        ?? resources.FirstOrDefault(resource => resource.IsReady);
 
     private void NotifyCommandState()
     {

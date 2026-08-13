@@ -41,6 +41,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderBootContextBuilder leaderBootContextBuilder,
         LeaderSessionRolloverService leaderSessionRolloverService,
         TaskRepository taskRepository,
+        TaskRevisionRepository taskRevisionRepository,
         ProjectLibraryRepository projectLibraryRepository,
         WorkerSessionRouter workerSessionRouter,
         IWorkerRoutingStore workerRoutingStore,
@@ -63,6 +64,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderBootContextBuilder = leaderBootContextBuilder;
         LeaderSessionRolloverService = leaderSessionRolloverService;
         TaskRepository = taskRepository;
+        TaskRevisionRepository = taskRevisionRepository;
         ProjectLibraryRepository = projectLibraryRepository;
         WorkerSessionRouter = workerSessionRouter;
         WorkerRoutingStore = workerRoutingStore;
@@ -95,6 +97,7 @@ public sealed class AppServices : IAsyncDisposable
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
     public TaskRepository TaskRepository { get; }
+    public TaskRevisionRepository TaskRevisionRepository { get; }
     public ProjectLibraryRepository ProjectLibraryRepository { get; }
     public WorkerSessionRouter WorkerSessionRouter { get; }
     public IWorkerRoutingStore WorkerRoutingStore { get; }
@@ -160,6 +163,7 @@ public sealed class AppServices : IAsyncDisposable
                 leaderMessages,
                 effectiveTimeProvider),
             new TaskRepository(database),
+            new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider),
             new TaskEventWorkerRoutingStore(new TaskEventRepository(database)),
