@@ -88,6 +88,20 @@ public sealed class LeaderPersistenceRepositoryTests
         Assert.Equal(epoch, restored);
         Assert.NotEqual(epoch.Id, epoch.AgentSessionId);
         Assert.NotEqual(epoch.Id.ToString(), epoch.ExternalSessionId);
+        Assert.Null(restored!.BootContextDeliveredAt);
+    }
+
+    [Fact]
+    public async Task Boot_delivery_is_a_one_way_persisted_transition()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        var epoch = context.CreateEpoch(context.ProjectA.Id);
+        await context.CreateCurrentEpochAsync(epoch);
+
+        await context.Epochs.MarkBootContextDeliveredAsync(epoch.Id, context.T1);
+        await context.Epochs.MarkBootContextDeliveredAsync(epoch.Id, context.T0);
+
+        Assert.Equal(context.T1, (await context.Epochs.GetAsync(epoch.Id))!.BootContextDeliveredAt);
     }
 
     [Fact]

@@ -131,17 +131,40 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
             INSERT INTO leader_session_epochs (
                 id, project_id, provider_id, provider_account_id, model_id,
                 agent_session_id, external_session_id, working_directory,
-                started_at, last_active_at, ended_at, rollover_reason, handoff_summary)
+                started_at, last_active_at, ended_at, rollover_reason, handoff_summary,
+                boot_context_delivered_at)
             VALUES (
                 $id, $projectId, $providerId, $providerAccountId, $modelId,
                 $agentSessionId, $externalSessionId, $workingDirectory,
-                $startedAt, $lastActiveAt, $endedAt, $rolloverReason, $handoffSummary)
+                $startedAt, $lastActiveAt, $endedAt, $rolloverReason, $handoffSummary,
+                $bootContextDeliveredAt)
             ON CONFLICT(id) DO UPDATE SET
                 last_active_at = excluded.last_active_at;
             """;
         AddParameters(command, epoch);
         await command.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task MarkBootContextDeliveredAsync(
+        Guid epochId,
+        DateTimeOffset deliveredAt,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE leader_session_epochs
+            SET boot_context_delivered_at = COALESCE(boot_context_delivered_at, $deliveredAt)
+            WHERE id = $id AND ended_at IS NULL;
+            """;
+        command.Parameters.AddWithValue("$id", epochId.ToString());
+        command.Parameters.AddWithValue("$deliveredAt", Format(deliveredAt));
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("Boot context can only be delivered to an active Leader epoch.");
+        }
     }
 
     public async Task ArchiveAsync(
@@ -197,7 +220,8 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
     private const string SelectSql = """
         SELECT id, project_id, provider_id, provider_account_id, model_id,
                agent_session_id, external_session_id, working_directory,
-               started_at, last_active_at, ended_at, rollover_reason, handoff_summary
+               started_at, last_active_at, ended_at, rollover_reason, handoff_summary,
+               boot_context_delivered_at
         FROM leader_session_epochs
         """;
 
@@ -216,6 +240,9 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
         command.Parameters.AddWithValue("$endedAt", epoch.EndedAt is null ? DBNull.Value : Format(epoch.EndedAt.Value));
         command.Parameters.AddWithValue("$rolloverReason", (object?)epoch.RolloverReason ?? DBNull.Value);
         command.Parameters.AddWithValue("$handoffSummary", (object?)epoch.HandoffSummary ?? DBNull.Value);
+        command.Parameters.AddWithValue("$bootContextDeliveredAt", epoch.BootContextDeliveredAt is null
+            ? DBNull.Value
+            : Format(epoch.BootContextDeliveredAt.Value));
     }
 
     private static StoredLeaderSessionEpoch Read(SqliteDataReader reader) =>
@@ -227,7 +254,8 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
             Parse(reader.GetString(8)), Parse(reader.GetString(9)),
             reader.IsDBNull(10) ? null : Parse(reader.GetString(10)),
             reader.IsDBNull(11) ? null : reader.GetString(11),
-            reader.IsDBNull(12) ? null : reader.GetString(12));
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.IsDBNull(13) ? null : Parse(reader.GetString(13)));
 
     private static string Format(DateTimeOffset value) => value.ToString("O", CultureInfo.InvariantCulture);
     private static DateTimeOffset Parse(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);

@@ -338,7 +338,7 @@ public sealed class LeaderSessionRolloverServiceTests
     }
 
     [Fact]
-    public async Task Boot_context_uses_only_immediate_predecessor_once_and_is_not_persisted()
+    public async Task Unified_boot_context_uses_immediate_predecessor_and_is_not_persisted()
     {
         await using var context = await PersistentLeaderContext.CreateAsync();
         var runtime = context.CreateRuntime();
@@ -355,17 +355,16 @@ public sealed class LeaderSessionRolloverServiceTests
         var service = CreateService(context, registry);
         var rollover = await service.RolloverAsync(context.ProjectA, pane.Session!, first!, false, "Manual");
 
-        var firstRequest = await service.CreateUserRequestAsync(context.ProjectA, rollover.NewEpoch, "real user text");
+        var firstRequest = await context.CreateBootBuilder().BuildAsync(context.ProjectA, "real user text");
         await context.Messages.AppendAsync(rollover.NewEpoch.Id, "user", "real user text", context.T1);
-        var secondRequest = await service.CreateUserRequestAsync(context.ProjectA, rollover.NewEpoch, "second text");
 
-        Assert.Contains("WORKBENCH SESSION HANDOFF", firstRequest.Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH PROJECT CONTEXT", firstRequest.Text, StringComparison.Ordinal);
         Assert.Contains("IMMEDIATE_MARKER", firstRequest.Text, StringComparison.Ordinal);
-        Assert.Contains("CURRENT USER MESSAGE\nreal user text", firstRequest.Text, StringComparison.Ordinal);
-        Assert.Equal("second text", secondRequest.Text);
+        Assert.Contains("CURRENT USER MESSAGE", firstRequest.Text, StringComparison.Ordinal);
+        Assert.EndsWith("real user text", firstRequest.Text, StringComparison.Ordinal);
         var persisted = Assert.Single(await context.Messages.GetAllAsync(rollover.NewEpoch.Id));
         Assert.Equal("real user text", persisted.Text);
-        Assert.DoesNotContain("WORKBENCH SESSION HANDOFF", persisted.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("WORKBENCH PROJECT CONTEXT", persisted.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -396,5 +395,5 @@ public sealed class LeaderSessionRolloverServiceTests
     private static LeaderSessionRolloverService CreateService(
         PersistentLeaderContext context,
         AgentRuntimeRegistry registry) =>
-        new(registry, context.Leaders, context.Epochs, context.Messages, context.Time);
+        new(registry, context.Leaders, context.Messages, context.Time);
 }

@@ -35,6 +35,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectMemoryService projectMemoryService,
         ProjectMemorySynthesisRepository projectMemorySynthesisRepository,
         ProjectMemorySynthesisCoordinator projectMemorySynthesisCoordinator,
+        LeaderBootContextBuilder leaderBootContextBuilder,
         LeaderSessionRolloverService leaderSessionRolloverService,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
@@ -52,6 +53,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectMemoryService = projectMemoryService;
         ProjectMemorySynthesisRepository = projectMemorySynthesisRepository;
         ProjectMemorySynthesisCoordinator = projectMemorySynthesisCoordinator;
+        LeaderBootContextBuilder = leaderBootContextBuilder;
         LeaderSessionRolloverService = leaderSessionRolloverService;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
@@ -78,6 +80,7 @@ public sealed class AppServices : IAsyncDisposable
     public ProjectMemoryService ProjectMemoryService { get; }
     public ProjectMemorySynthesisRepository ProjectMemorySynthesisRepository { get; }
     public ProjectMemorySynthesisCoordinator ProjectMemorySynthesisCoordinator { get; }
+    public LeaderBootContextBuilder LeaderBootContextBuilder { get; }
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
 
@@ -135,10 +138,10 @@ public sealed class AppServices : IAsyncDisposable
                 leaderMessages,
                 memoryRepository,
                 effectiveTimeProvider),
+            new LeaderBootContextBuilder(memoryRepository, leaderEpochs),
             new LeaderSessionRolloverService(
                 effectiveRuntimeRegistry,
                 projectLeaders,
-                leaderEpochs,
                 leaderMessages,
                 effectiveTimeProvider),
             effectiveRuntimeRegistry,

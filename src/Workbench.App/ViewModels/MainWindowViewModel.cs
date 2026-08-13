@@ -103,7 +103,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             messageRepository: _services.LeaderMessageRepository,
             projectMemoryService: _services.ProjectMemoryService,
             memorySynthesisRepository: _services.ProjectMemorySynthesisRepository,
-            scheduleMemorySynthesis: _scheduleMemorySynthesis);
+            scheduleMemorySynthesis: _scheduleMemorySynthesis,
+            bootContextBuilder: _services.LeaderBootContextBuilder);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await workspace.LibraryPane.InitializeAsync();

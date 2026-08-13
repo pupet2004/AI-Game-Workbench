@@ -1,5 +1,4 @@
 using System.Text;
-using Workbench.Runtime.Agents;
 using Workbench.Storage.Leaders;
 using CoreProject = Workbench.Core.Projects.Project;
 
@@ -12,7 +11,7 @@ public static class LeaderHandoffBuilder
     public const string SemanticPrompt = """
         You are writing a shift handoff for a fresh runtime session that will serve the same logical Project Main Leader.
 
-        Use only the user-visible conversation from the current Session Epoch. Ignore any inherited WORKBENCH SESSION HANDOFF envelope from an earlier Epoch; do not summarize or repeat that prior handoff. Do not read files. Do not run commands. Do not use tools. Do not request approval.
+        Use only the user-visible conversation from the current Session Epoch. Ignore any inherited WORKBENCH PROJECT CONTEXT envelope from the Epoch's first turn; do not summarize or repeat inherited project memory or the prior handoff. Do not read files. Do not run commands. Do not use tools. Do not request approval.
 
         Return a concise structured handoff below roughly 1500 tokens using exactly these headings:
         CURRENT FOCUS
@@ -92,32 +91,6 @@ public static class LeaderHandoffBuilder
         }
 
         return prefix + string.Concat(selected);
-    }
-
-    public static AgentRequest BuildBootRequest(CoreProject project, string handoff, string originalUserText)
-    {
-        ArgumentNullException.ThrowIfNull(project);
-        ArgumentException.ThrowIfNullOrWhiteSpace(handoff);
-        ArgumentException.ThrowIfNullOrWhiteSpace(originalUserText);
-        var projectName = LimitUtf8(project.Name, 512);
-        var projectRoot = LimitUtf8(project.RootPath, 1536);
-        return new AgentRequest($"""
-            WORKBENCH SESSION HANDOFF
-
-            You are a fresh runtime session serving the same logical Project Main Leader.
-            The following handoff is from the immediately previous work session.
-            Treat it as continuity context. Do not claim that you personally remember the old runtime session.
-
-            PROJECT
-            Name: {projectName}
-            Root: {projectRoot}
-
-            PREVIOUS SESSION HANDOFF
-            {handoff}
-
-            CURRENT USER MESSAGE
-            {originalUserText}
-            """);
     }
 
     private static string LimitUtf8(string value, int maxBytes)

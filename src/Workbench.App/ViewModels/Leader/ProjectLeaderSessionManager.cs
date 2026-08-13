@@ -161,6 +161,24 @@ public sealed class ProjectLeaderSessionManager
         }
     }
 
+    internal async Task MarkBootContextDeliveredAsync(
+        LeaderConversationState conversation,
+        CancellationToken cancellationToken = default)
+    {
+        if (conversation.Epoch is null || conversation.Epoch.BootContextDeliveredAt is not null)
+        {
+            return;
+        }
+
+        var deliveredAt = _timeProvider.GetUtcNow();
+        if (_epochs is not null)
+        {
+            await _epochs.MarkBootContextDeliveredAsync(conversation.Epoch.Id, deliveredAt, cancellationToken);
+        }
+
+        conversation.Epoch = conversation.Epoch with { BootContextDeliveredAt = deliveredAt };
+    }
+
     public int Count => _conversations.Count;
 
     private StoredLeaderSessionEpoch CreateEpoch(Guid projectId, AgentSession session) =>

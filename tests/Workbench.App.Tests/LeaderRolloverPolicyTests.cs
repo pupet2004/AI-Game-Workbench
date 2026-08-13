@@ -59,7 +59,7 @@ public sealed class LeaderRolloverPolicyTests
         Assert.NotEqual(oldSession.ExternalSessionId, current.ExternalSessionId);
         Assert.Equal(oldSession.Id, runtime.SentSessions[1].Id);
         Assert.Equal(new AgentSessionId(current.AgentSessionId), runtime.SentSessions[2].Id);
-        Assert.Contains("WORKBENCH SESSION HANDOFF", runtime.SentRequests[2].Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH PROJECT CONTEXT", runtime.SentRequests[2].Text, StringComparison.Ordinal);
         Assert.Contains("original next-day text", runtime.SentRequests[2].Text, StringComparison.Ordinal);
         Assert.Equal(["original next-day text", "new answer"],
             (await context.Messages.GetAllAsync(current.Id)).Select(message => message.Text));
@@ -122,6 +122,7 @@ public sealed class LeaderRolloverPolicyTests
 
         Assert.NotEqual(oldEpoch, pane.SessionEpochId);
         Assert.Equal(2, runtime.CreatedSessions.Count);
+        Assert.Contains("WORKBENCH PROJECT CONTEXT", runtime.SentRequests[2].Text, StringComparison.Ordinal);
         Assert.Contains("fresh draft", runtime.SentRequests[2].Text, StringComparison.Ordinal);
         Assert.Equal("WorkdayBoundary", (await context.Epochs.GetAsync(oldEpoch!.Value))!.RolloverReason);
     }
@@ -202,7 +203,7 @@ public sealed class LeaderRolloverPolicyTests
         Assert.Single(restartedRuntime.ResumedSessions);
         Assert.Contains("RESTART_HANDOFF_MARKER", Assert.Single(restartedRuntime.SentRequests).Text, StringComparison.Ordinal);
         Assert.Equal(["what marker?", "marker restored"], restored.Messages.Select(message => message.Text));
-        Assert.DoesNotContain(restored.Messages, message => message.Text.Contains("WORKBENCH SESSION HANDOFF", StringComparison.Ordinal));
+        Assert.DoesNotContain(restored.Messages, message => message.Text.Contains("WORKBENCH PROJECT CONTEXT", StringComparison.Ordinal));
         Assert.Equal(["what marker?", "marker restored"],
             (await context.Messages.GetAllAsync(newEpochId!.Value)).Select(message => message.Text));
     }
@@ -334,5 +335,6 @@ public sealed class LeaderRolloverPolicyTests
             context.CreateManager(),
             () => Task.CompletedTask,
             rotationState: context.CreateRotationStateService(),
-            rolloverService: context.CreateRolloverService(registry));
+            rolloverService: context.CreateRolloverService(registry),
+            bootContextBuilder: context.CreateBootBuilder());
 }

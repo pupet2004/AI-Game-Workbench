@@ -7,6 +7,7 @@ using Workbench.Runtime.Providers;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Database;
 using Workbench.Storage.Leaders;
+using Workbench.Storage.Memory;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
 using Workbench.App.Leader;
@@ -349,6 +350,7 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
         Leaders = new ProjectLeaderRepository(database);
         Epochs = new LeaderSessionEpochRepository(database);
         Messages = new LeaderMessageRepository(database);
+        Memories = new ProjectMemoryRepository(database);
         WorkbenchSettings = new WorkbenchSettingsRepository(database);
         ProjectSettings = new ProjectSettingsRepository(database);
         Time = new MutableTimeProvider(T0);
@@ -362,6 +364,7 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
     public ProjectLeaderRepository Leaders { get; }
     public LeaderSessionEpochRepository Epochs { get; }
     public LeaderMessageRepository Messages { get; }
+    public ProjectMemoryRepository Memories { get; }
     public WorkbenchSettingsRepository WorkbenchSettings { get; }
     public ProjectSettingsRepository ProjectSettings { get; }
     public MutableTimeProvider Time { get; }
@@ -394,13 +397,17 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
         new(WorkbenchSettings, ProjectSettings, Epochs, Time, TimeZoneInfo.Utc);
 
     public LeaderSessionRolloverService CreateRolloverService(AgentRuntimeRegistry registry) =>
-        new(registry, Leaders, Epochs, Messages, Time);
+        new(registry, Leaders, Messages, Time);
+
+    public ILeaderBootContextBuilder CreateBootBuilder() =>
+        new LeaderBootContextBuilder(Memories, Epochs);
 
     public LeaderPaneViewModel CreatePane(
         FakeAgentRuntime runtime,
         bool newManager = false,
         CoreProject? project = null,
-        ProjectLeaderSessionManager? manager = null)
+        ProjectLeaderSessionManager? manager = null,
+        ILeaderBootContextBuilder? bootContextBuilder = null)
     {
         var registry = new AgentRuntimeRegistry();
         registry.Register(runtime);
@@ -408,7 +415,8 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
             project ?? ProjectA,
             registry,
             manager ?? (newManager ? CreateManager() : CreateManager()),
-            () => Task.CompletedTask);
+            () => Task.CompletedTask,
+            bootContextBuilder: bootContextBuilder);
     }
 
     public LeaderPaneViewModel CreatePaneWithoutRuntime() =>

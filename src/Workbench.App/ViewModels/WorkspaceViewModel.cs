@@ -39,7 +39,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         LeaderMessageRepository? messageRepository = null,
         ProjectMemoryService? projectMemoryService = null,
         ProjectMemorySynthesisRepository? memorySynthesisRepository = null,
-        Action<Guid>? scheduleMemorySynthesis = null)
+        Action<Guid>? scheduleMemorySynthesis = null,
+        ILeaderBootContextBuilder? bootContextBuilder = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -58,7 +59,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             rolloverService,
             epochRepository,
             messageRepository,
-            scheduleMemorySynthesis);
+            scheduleMemorySynthesis,
+            bootContextBuilder);
         WorkPane = new WorkPaneViewModel(FocusWorkAsync);
         LibraryPane = new LibraryPaneViewModel(
             result,

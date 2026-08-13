@@ -23,8 +23,8 @@ M1.5 — Project Memory
 M1.5A — Memory Foundation
 Completed
 
-Current:
 M1.5B — Session-Derived Memory Intelligence
+Completed
 
-Planned:
+Current:
 M1.5C — Memory-Aware Leader Boot

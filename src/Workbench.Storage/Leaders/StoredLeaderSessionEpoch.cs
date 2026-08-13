@@ -13,4 +13,5 @@ public sealed record StoredLeaderSessionEpoch(
     DateTimeOffset LastActiveAt,
     DateTimeOffset? EndedAt,
     string? RolloverReason,
-    string? HandoffSummary);
+    string? HandoffSummary,
+    DateTimeOffset? BootContextDeliveredAt = null);

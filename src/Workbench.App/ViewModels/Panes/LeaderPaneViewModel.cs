@@ -22,6 +22,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly LeaderSessionRotationStateService? _rotationState;
     private readonly LeaderSessionRolloverService? _rolloverService;
     private readonly Action<Guid>? _scheduleMemorySynthesis;
+    private readonly ILeaderBootContextBuilder? _bootContextBuilder;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -35,7 +36,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         LeaderSessionRolloverService? rolloverService = null,
         LeaderSessionEpochRepository? epochRepository = null,
         LeaderMessageRepository? messageRepository = null,
-        Action<Guid>? scheduleMemorySynthesis = null)
+        Action<Guid>? scheduleMemorySynthesis = null,
+        ILeaderBootContextBuilder? bootContextBuilder = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -46,6 +48,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _rotationState = rotationState;
         _rolloverService = rolloverService;
         _scheduleMemorySynthesis = scheduleMemorySynthesis;
+        _bootContextBuilder = bootContextBuilder;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -370,6 +373,37 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         _conversation.IsBusy = true;
         _conversation.ApprovalError = null;
+        NotifyAllState();
+
+        var bootPendingDelivery = _bootContextBuilder is not null &&
+                                  (_conversation.Epoch is null ||
+                                   _conversation.Epoch.BootContextDeliveredAt is null);
+        AgentRequest runtimeRequest;
+        if (bootPendingDelivery)
+        {
+            try
+            {
+                runtimeRequest = await _bootContextBuilder!.BuildAsync(_project, text, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _conversation.IsBusy = false;
+                NotifyAllState();
+                throw;
+            }
+            catch
+            {
+                AddErrorMessage("Project memory could not be loaded.");
+                _conversation.IsBusy = false;
+                NotifyAllState();
+                return;
+            }
+        }
+        else
+        {
+            runtimeRequest = new AgentRequest(text);
+        }
+
         DraftMessage = string.Empty;
         Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.User, text));
         NotifyAllState();
@@ -420,9 +454,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 _conversation.RuntimeErrorDetail = null;
             }
 
-            var runtimeRequest = _rolloverService is not null && _conversation.Epoch is not null
-                ? await _rolloverService.CreateUserRequestAsync(_project, _conversation.Epoch, text, cancellationToken)
-                : new AgentRequest(text);
             await _sessionManager.PersistUserMessageAsync(_conversation, text, cancellationToken);
             NotifyAllState();
 
@@ -431,6 +462,12 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                runtimeRequest,
                                cancellationToken))
             {
+                if (bootPendingDelivery)
+                {
+                    await _sessionManager.MarkBootContextDeliveredAsync(_conversation, CancellationToken.None);
+                    bootPendingDelivery = false;
+                }
+
                 switch (agentEvent)
                 {
                     case AgentTextDelta delta:

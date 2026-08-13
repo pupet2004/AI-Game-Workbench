@@ -22,7 +22,7 @@ public sealed class WorkbenchDatabaseTests
     }
 
     [Fact]
-    public async Task Migration_005_sets_user_version_to_5()
+    public async Task Migration_006_sets_user_version_to_6()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,43 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(5L, await command.ExecuteScalarAsync());
+        Assert.Equal(6L, await command.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task Migration_006_backfills_epochs_with_user_messages_but_leaves_zero_message_epochs_pending()
+    {
+        await using var temporary = new TemporaryDatabase();
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+        await database.InitializeAsync();
+        await using (var connection = database.CreateConnection())
+        {
+            await connection.OpenAsync();
+            var setup = connection.CreateCommand();
+            setup.CommandText = """
+                ALTER TABLE leader_session_epochs DROP COLUMN boot_context_delivered_at;
+                INSERT INTO projects VALUES ('00000000-0000-0000-0000-000000000021', 'P', 'C:/Boot', 0, NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+                INSERT INTO project_leaders VALUES ('00000000-0000-0000-0000-000000000021', NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
+                INSERT INTO leader_session_epochs VALUES ('00000000-0000-0000-0000-000000000022', '00000000-0000-0000-0000-000000000021', 'codex', '00000000-0000-0000-0000-000000000023', 'model', '00000000-0000-0000-0000-000000000024', 'old', 'C:/Boot', '2026-01-01T00:00:00+00:00', '2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00', 'Manual', 'handoff');
+                INSERT INTO leader_session_epochs VALUES ('00000000-0000-0000-0000-000000000025', '00000000-0000-0000-0000-000000000021', 'codex', '00000000-0000-0000-0000-000000000023', 'model', '00000000-0000-0000-0000-000000000026', 'fresh', 'C:/Boot', '2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00', NULL, NULL, NULL);
+                UPDATE project_leaders SET current_epoch_id = '00000000-0000-0000-0000-000000000025' WHERE project_id = '00000000-0000-0000-0000-000000000021';
+                INSERT INTO leader_messages (epoch_id, sequence, role, text, created_at) VALUES ('00000000-0000-0000-0000-000000000022', 1, 'user', 'existing', '2026-01-01T00:00:00+00:00');
+                PRAGMA user_version = 5;
+                """;
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        await new WorkbenchDatabase(temporary.DatabasePath).InitializeAsync();
+
+        await using var reopened = database.CreateConnection();
+        await reopened.OpenAsync();
+        var query = reopened.CreateCommand();
+        query.CommandText = "SELECT id, boot_context_delivered_at FROM leader_session_epochs ORDER BY id;";
+        await using var reader = await query.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.False(reader.IsDBNull(1));
+        Assert.True(await reader.ReadAsync());
+        Assert.True(reader.IsDBNull(1));
     }
 
     [Fact]
@@ -51,6 +87,7 @@ public sealed class WorkbenchDatabaseTests
                 INSERT INTO projects VALUES ('00000000-0000-0000-0000-000000000011', 'P', 'C:/Memory', 0, NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
                 INSERT INTO project_memory_items VALUES ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000011', 'Formal', 'Rule', 'Keep me.', 'Active', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
                 DROP TABLE project_memory_synthesis_jobs;
+                ALTER TABLE leader_session_epochs DROP COLUMN boot_context_delivered_at;
                 PRAGMA user_version = 4;
                 """;
             await setup.ExecuteNonQueryAsync();

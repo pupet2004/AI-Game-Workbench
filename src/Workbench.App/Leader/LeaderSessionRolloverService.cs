@@ -21,13 +21,11 @@ public sealed record LeaderSessionRolloverResult(
 public sealed class LeaderSessionRolloverService(
     AgentRuntimeRegistry runtimeRegistry,
     ProjectLeaderRepository leaders,
-    LeaderSessionEpochRepository epochs,
     LeaderMessageRepository messages,
     TimeProvider timeProvider)
 {
     private readonly AgentRuntimeRegistry _runtimeRegistry = runtimeRegistry ?? throw new ArgumentNullException(nameof(runtimeRegistry));
     private readonly ProjectLeaderRepository _leaders = leaders ?? throw new ArgumentNullException(nameof(leaders));
-    private readonly LeaderSessionEpochRepository _epochs = epochs ?? throw new ArgumentNullException(nameof(epochs));
     private readonly LeaderMessageRepository _messages = messages ?? throw new ArgumentNullException(nameof(messages));
     private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
@@ -121,26 +119,6 @@ public sealed class LeaderSessionRolloverService(
         }
 
         return new LeaderSessionRolloverResult(newSession, newEpoch, handoff, source);
-    }
-
-    public async Task<AgentRequest> CreateUserRequestAsync(
-        CoreProject project,
-        StoredLeaderSessionEpoch currentEpoch,
-        string originalUserText,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(project);
-        ArgumentNullException.ThrowIfNull(currentEpoch);
-        ArgumentException.ThrowIfNullOrWhiteSpace(originalUserText);
-        if ((await _messages.GetAllAsync(currentEpoch.Id, cancellationToken)).Count != 0)
-        {
-            return new AgentRequest(originalUserText);
-        }
-
-        var predecessor = await _epochs.GetMostRecentArchivedForProjectAsync(project.Id, cancellationToken);
-        return string.IsNullOrWhiteSpace(predecessor?.HandoffSummary)
-            ? new AgentRequest(originalUserText)
-            : LeaderHandoffBuilder.BuildBootRequest(project, predecessor.HandoffSummary, originalUserText);
     }
 
     private static async Task<string?> TryCreateSemanticHandoffAsync(

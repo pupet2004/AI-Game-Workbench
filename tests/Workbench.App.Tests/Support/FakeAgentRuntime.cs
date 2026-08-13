@@ -57,6 +57,8 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public Exception? SendException { get; set; }
 
+    public Exception? SendExceptionAfterFirstEvent { get; set; }
+
     public Exception? CreateException { get; set; }
 
     public Exception? ResumeException { get; set; }
@@ -169,9 +171,14 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
         }
 
         var events = _turns.Count > 0 ? _turns.Dequeue() : [];
-        foreach (var agentEvent in events)
+        for (var index = 0; index < events.Count; index++)
         {
+            var agentEvent = events[index];
             yield return agentEvent;
+            if (index == 0 && SendExceptionAfterFirstEvent is not null)
+            {
+                throw SendExceptionAfterFirstEvent;
+            }
             if (agentEvent is AgentApprovalRequested)
             {
                 _approvalObserved.TrySetResult();
