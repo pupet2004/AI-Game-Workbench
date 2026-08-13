@@ -2,12 +2,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Workbench.App.ViewModels.Panes"
              x:Class="Workbench.App.Views.Panes.WorkPaneView"
+             x:Name="WorkRoot"
              x:DataType="vm:WorkPaneViewModel">
     <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
-        <StackPanel Spacing="16">
+        <StackPanel Spacing="12">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="WORK" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
-            <TextBlock Text="No active workers." FontSize="18" />
-            <TextBlock Text="Tasks requested by your Leader will appear here." TextWrapping="Wrap" Foreground="#667085" />
+            <TextBlock IsVisible="{Binding !HasWorkers}" Text="No workers yet." FontSize="18" />
+            <TextBlock IsVisible="{Binding !HasWorkers}" Text="Leader-created worker sessions will appear here." TextWrapping="Wrap" Foreground="#667085" />
+            <ListBox IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}" SelectedItem="{Binding SelectedWorker}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
+                        <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="4">
+                            <StackPanel Spacing="3"><TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" /><TextBlock Text="{Binding WorkerLabel}" /><TextBlock Text="{Binding Profile}" Foreground="#667085" /><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid><Button Content="Open" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" /></StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <ItemsControl ItemsSource="{Binding Transcript}">
+                <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:WorkerTranscriptLineViewModel"><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
         </StackPanel>
     </Border>
 </UserControl>

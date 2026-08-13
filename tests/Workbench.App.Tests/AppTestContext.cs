@@ -90,7 +90,8 @@ internal sealed class AppTestContext : IAsyncDisposable
             rolloverService: Services.LeaderSessionRolloverService,
             projectMemoryService: Services.ProjectMemoryService,
             bootContextBuilder: Services.LeaderBootContextBuilder,
-            taskRepository: Services.TaskRepository);
+            taskRepository: Services.TaskRepository,
+            workerRoutingStore: Services.WorkerRoutingStore);
 
     public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
     {

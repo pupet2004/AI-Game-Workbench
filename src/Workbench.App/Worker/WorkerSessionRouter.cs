@@ -21,6 +21,7 @@ public sealed record WorkerStartResult(bool Succeeded, AgentSession? WorkerSessi
 public sealed record WorkerSessionRecord(
     Guid ProjectId,
     Guid TaskId,
+    string TaskTitle,
     AgentSession Session,
     ExecutionProfile Profile,
     string Label,
@@ -38,6 +39,7 @@ public sealed record WorkerHandoff(
 public interface IWorkerRoutingStore
 {
     Task SaveSessionAsync(WorkerSessionRecord session, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default);
     Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default);
 }
@@ -58,22 +60,29 @@ public sealed class TaskEventWorkerRoutingStore(TaskEventRepository events) : IW
             .LastOrDefault(item => item?.Session.Id == sessionId);
     }
 
+    public async Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var events = await _events.ListForProjectAsync(projectId, "WorkerSessionStarted", 200, cancellationToken);
+        return events.Select(item => JsonSerializer.Deserialize<StoredSession>(item.Payload)?.ToRecord())
+            .Where(item => item is not null).Cast<WorkerSessionRecord>().ToArray();
+    }
+
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) =>
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), handoff.ProjectId, handoff.TaskId, null,
             "WorkerToLeaderHandoff", JsonSerializer.Serialize(handoff), handoff.CreatedAt), cancellationToken);
 }
 
-internal sealed record StoredSession(Guid ProjectId, Guid TaskId, Guid SessionId, Guid AccountId, string ProviderId,
+internal sealed record StoredSession(Guid ProjectId, Guid TaskId, string TaskTitle, Guid SessionId, Guid AccountId, string ProviderId,
     string ModelId, string? WorkingDirectory, string? ExternalSessionId, AgentSessionStatus Status,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string RecommendedProviderId, string RecommendedAccountId,
     string RecommendedModelId, string RecommendedRuntimeId, string Label, DateTimeOffset LastActiveAt)
 {
-    public static StoredSession From(WorkerSessionRecord value) => new(value.ProjectId, value.TaskId, value.Session.Id.Value,
+    public static StoredSession From(WorkerSessionRecord value) => new(value.ProjectId, value.TaskId, value.TaskTitle, value.Session.Id.Value,
         value.Session.AccountId.Value, value.Session.ProviderId.Value, value.Session.ModelId, value.Session.WorkingDirectory,
         value.Session.ExternalSessionId, value.Session.Status, value.Session.CreatedAt, value.Session.UpdatedAt,
         value.Profile.ProviderId, value.Profile.ProviderAccountId, value.Profile.ModelProfileId, value.Profile.AgentRuntimeId,
         value.Label, value.LastActiveAt);
-    public WorkerSessionRecord ToRecord() => new(ProjectId, TaskId,
+    public WorkerSessionRecord ToRecord() => new(ProjectId, TaskId, TaskTitle,
         new AgentSession(new AgentSessionId(SessionId), new Workbench.Runtime.Providers.ProviderAccountId(AccountId),
             new Workbench.Runtime.Providers.ProviderId(ProviderId), ModelId, WorkingDirectory, ExternalSessionId, Status, CreatedAt, UpdatedAt),
         ExecutionProfile.Create(RecommendedProviderId, RecommendedAccountId, RecommendedModelId, RecommendedRuntimeId), Label, LastActiveAt);
@@ -94,7 +103,7 @@ public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRo
                 runtime.Account.Id, request.ExecutionProfile.ModelProfileId, request.Project.RootPath), cancellationToken);
             try
             {
-                await store.SaveSessionAsync(new WorkerSessionRecord(request.Project.Id, request.TaskId, session,
+                await store.SaveSessionAsync(new WorkerSessionRecord(request.Project.Id, request.TaskId, request.TaskTitle, session,
                     request.ExecutionProfile, request.WorkerLabel, time.GetUtcNow()), cancellationToken);
             }
             catch (Exception exception)

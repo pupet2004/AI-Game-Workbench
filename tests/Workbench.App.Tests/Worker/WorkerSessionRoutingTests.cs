@@ -37,7 +37,7 @@ public sealed class WorkerSessionRoutingTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var worker = fixture.CreateExistingWorker();
-        await fixture.Events.SaveSessionAsync(new WorkerSessionRecord(fixture.Project.Id, fixture.Task.TaskId, worker, fixture.Profile, "Worker 1", DateTimeOffset.UtcNow));
+        await fixture.Events.SaveSessionAsync(new WorkerSessionRecord(fixture.Project.Id, fixture.Task.TaskId, fixture.Task.Title, worker, fixture.Profile, "Worker 1", DateTimeOffset.UtcNow));
         fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(worker.Id, AgentSessionStatus.Completed, "Worker result B", null), DateTimeOffset.UtcNow));
 
         var result = await fixture.Router.StartAsync(fixture.NewRequest("Leader correction B", worker.Id));
@@ -143,6 +143,8 @@ internal sealed class TestTaskEventStore(WorkbenchDatabase database) : IWorkerRo
         _sessions.Add(session);
         return _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), session.ProjectId, session.TaskId, null, "WorkerSessionStarted", JsonSerializer.Serialize(session.Label), session.LastActiveAt), cancellationToken);
     }
+    public Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<WorkerSessionRecord>>(_sessions.Where(item => item.ProjectId == projectId).ToArray());
     public Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) =>
         Task.FromResult(_sessions.LastOrDefault(x => x.ProjectId == projectId && x.TaskId == taskId && x.Session.Id == sessionId));
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) =>
@@ -152,5 +154,5 @@ internal sealed class TestTaskEventStore(WorkbenchDatabase database) : IWorkerRo
 internal static class WorkerRoutingEvent
 {
     public static StoredTaskEvent SessionStarted(Guid projectId, Guid taskId, AgentSession session, ExecutionProfile profile, string label, DateTimeOffset at) =>
-        new(Guid.NewGuid(), projectId, taskId, null, "WorkerSessionStarted", JsonSerializer.Serialize(new WorkerSessionRecord(projectId, taskId, session, profile, label, at)), at);
+        new(Guid.NewGuid(), projectId, taskId, null, "WorkerSessionStarted", JsonSerializer.Serialize(new WorkerSessionRecord(projectId, taskId, "Task", session, profile, label, at)), at);
 }

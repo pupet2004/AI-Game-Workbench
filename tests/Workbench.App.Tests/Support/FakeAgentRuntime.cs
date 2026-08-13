@@ -48,6 +48,8 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
     public List<AgentSession> ResumedSessions { get; } = [];
 
     public List<AgentRequest> SentRequests { get; } = [];
+    public List<AgentSession> TranscriptRequests { get; } = [];
+    public IReadOnlyList<AgentEvent> Transcript { get; set; } = [];
 
     public List<AgentApprovalDecision> ApprovalDecisions { get; } = [];
 
@@ -223,10 +225,11 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
         CancellationToken cancellationToken = default) =>
         Task.FromResult(session.Status);
 
-    public Task<IReadOnlyList<AgentEvent>> GetTranscriptAsync(
-        AgentSession session,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<AgentEvent>>([]);
+    public Task<IReadOnlyList<AgentEvent>> GetTranscriptAsync(AgentSession session, CancellationToken cancellationToken = default)
+    {
+        TranscriptRequests.Add(session);
+        return Task.FromResult(Transcript);
+    }
 
     public ValueTask DisposeAsync()
     {

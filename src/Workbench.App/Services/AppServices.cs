@@ -42,6 +42,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderSessionRolloverService leaderSessionRolloverService,
         TaskRepository taskRepository,
         WorkerSessionRouter workerSessionRouter,
+        IWorkerRoutingStore workerRoutingStore,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -62,6 +63,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderSessionRolloverService = leaderSessionRolloverService;
         TaskRepository = taskRepository;
         WorkerSessionRouter = workerSessionRouter;
+        WorkerRoutingStore = workerRoutingStore;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -92,6 +94,7 @@ public sealed class AppServices : IAsyncDisposable
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
     public TaskRepository TaskRepository { get; }
     public WorkerSessionRouter WorkerSessionRouter { get; }
+    public IWorkerRoutingStore WorkerRoutingStore { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -155,6 +158,7 @@ public sealed class AppServices : IAsyncDisposable
                 effectiveTimeProvider),
             new TaskRepository(database),
             new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider),
+            new TaskEventWorkerRoutingStore(new TaskEventRepository(database)),
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);

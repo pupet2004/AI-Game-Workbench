@@ -105,9 +105,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             memorySynthesisRepository: _services.ProjectMemorySynthesisRepository,
             scheduleMemorySynthesis: _scheduleMemorySynthesis,
             bootContextBuilder: _services.LeaderBootContextBuilder,
-            taskRepository: _services.TaskRepository);
+            taskRepository: _services.TaskRepository,
+            workerRoutingStore: _services.WorkerRoutingStore);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
+        await workspace.WorkPane.LoadAsync(result.Project.Id);
         await workspace.LibraryPane.InitializeAsync();
         _scheduleMemorySynthesis(result.Project.Id);
     }
