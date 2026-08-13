@@ -8,8 +8,11 @@ namespace Workbench.Runtime.Tests;
 internal sealed class FakeAgentRuntime(
     ProviderDescriptor provider,
     ProviderAccountSummary account,
-    IReadOnlyList<ModelProfile> models) : IAgentRuntime
+    IReadOnlyList<ModelProfile> models,
+    string runtimeKind = "fake-runtime") : IAgentRuntime
 {
+    public string RuntimeKind { get; } = runtimeKind;
+
     public ProviderDescriptor Provider { get; } = provider;
 
     public ProviderAccountSummary Account { get; } = account;

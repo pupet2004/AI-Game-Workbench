@@ -5,6 +5,8 @@ namespace Workbench.Runtime.Runtime;
 
 public interface IAgentRuntime
 {
+    string RuntimeKind { get; }
+
     ProviderDescriptor Provider { get; }
 
     ProviderAccountSummary Account { get; }

@@ -33,6 +33,8 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public ProviderDescriptor Provider { get; }
 
+    public string RuntimeKind => "codex-app-server";
+
     public ProviderAccountSummary Account { get; }
 
     public AgentCapability Capabilities { get; } =

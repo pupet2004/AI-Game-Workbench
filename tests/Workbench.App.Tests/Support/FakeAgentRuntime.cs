@@ -29,6 +29,8 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public ProviderDescriptor Provider { get; }
 
+    public string RuntimeKind => "fake-runtime";
+
     public ProviderAccountSummary Account { get; }
 
     public AgentCapability Capabilities { get; } =

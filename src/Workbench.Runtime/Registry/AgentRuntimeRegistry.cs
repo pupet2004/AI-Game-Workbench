@@ -45,4 +45,47 @@ public sealed class AgentRuntimeRegistry
 
         return availableModels;
     }
+
+    public async Task<IReadOnlyList<WorkerResource>> GetWorkerResourcesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var resources = new List<WorkerResource>();
+
+        foreach (var runtime in _runtimes.Values)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!runtime.Account.IsConnected)
+            {
+                continue;
+            }
+
+            IReadOnlyList<ModelProfile> models;
+            try
+            {
+                models = await runtime.GetModelsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                continue;
+            }
+
+            var runtimeIdentity = WorkerResource.CreateRuntimeIdentity(runtime);
+            resources.AddRange(models
+                .Where(model => model.ProviderId == runtime.Provider.Id)
+                .Select(model => new WorkerResource(
+                    runtime.Provider.Id.Value,
+                    runtime.Account.Id.Value.ToString(),
+                    runtimeIdentity,
+                    $"{runtime.Provider.DisplayName} · {runtime.Account.DisplayName}",
+                    model.ModelId,
+                    model.DisplayName,
+                    true)));
+        }
+
+        return resources;
+    }
 }
