@@ -10,7 +10,9 @@ using Workbench.App.Leader;
 using Workbench.Storage.Memory;
 using Workbench.Storage.Tasks;
 using Workbench.App.Memory;
+using Workbench.App.Worker;
 using System.Collections.Concurrent;
+using Workbench.Storage.Workers;
 
 namespace Workbench.App.Services;
 
@@ -39,6 +41,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderBootContextBuilder leaderBootContextBuilder,
         LeaderSessionRolloverService leaderSessionRolloverService,
         TaskRepository taskRepository,
+        WorkerSessionRouter workerSessionRouter,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -58,6 +61,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderBootContextBuilder = leaderBootContextBuilder;
         LeaderSessionRolloverService = leaderSessionRolloverService;
         TaskRepository = taskRepository;
+        WorkerSessionRouter = workerSessionRouter;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -87,6 +91,7 @@ public sealed class AppServices : IAsyncDisposable
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
     public TaskRepository TaskRepository { get; }
+    public WorkerSessionRouter WorkerSessionRouter { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -149,6 +154,7 @@ public sealed class AppServices : IAsyncDisposable
                 leaderMessages,
                 effectiveTimeProvider),
             new TaskRepository(database),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider),
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);
