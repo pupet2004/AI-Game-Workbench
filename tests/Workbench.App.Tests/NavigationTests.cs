@@ -65,6 +65,49 @@ public sealed class NavigationTests
     }
 
     [Fact]
+    public async Task Production_workspace_composition_confirms_a_draft_into_one_persisted_worker()
+    {
+        using var folder = new TemporaryDirectory();
+        var runtime = new FakeAgentRuntime();
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: RegistryWith(runtime));
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(
+                AgentSessionId.New(),
+                AgentSessionStatus.Completed,
+                "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Read smoke context\",\"goal\":\"Read the smoke context file\",\"scope\":\"Read one file\",\"outOfScope\":\"Do not modify files\",\"acceptance\":[\"Report the marker\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}",
+                null),
+            DateTimeOffset.UtcNow));
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Worker completed.", null),
+            DateTimeOffset.UtcNow));
+        workspace.LeaderPane.DraftMessage = "Delegate the smoke context read.";
+
+        await workspace.LeaderPane.SendAsync();
+        Assert.True(workspace.LeaderPane.HasDraftConfirmation);
+
+        await workspace.LeaderPane.ConfirmDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, runtime.CreatedSessions.Count);
+        Assert.Equal("model-a", runtime.CreatedSessions.Last().ModelId);
+        Assert.Equal("Read the smoke context file", runtime.SentRequests.Last().Text);
+        var sessions = await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id);
+        var session = Assert.Single(sessions);
+        Assert.Equal("model-a", session.Profile.ModelProfileId);
+        await workspace.WorkPane.LoadAsync(workspace.Result.Project.Id);
+        Assert.Single(workspace.WorkPane.Workers);
+        await using var connection = context.Services.Database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM task_events WHERE project_id = $projectId AND event_type = 'WorkerSessionStarted'";
+        command.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
+        Assert.Equal(1L, (long)(await command.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
     public async Task Back_to_projects_refreshes_recent_list()
     {
         using var folder = new TemporaryDirectory();

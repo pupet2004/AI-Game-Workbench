@@ -107,6 +107,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             bootContextBuilder: _services.LeaderBootContextBuilder,
             taskRepository: _services.TaskRepository,
             taskRevisionRepository: _services.TaskRevisionRepository,
+            workerSessionRouter: _services.WorkerSessionRouter,
             workerRoutingStore: _services.WorkerRoutingStore);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
