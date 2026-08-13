@@ -11,6 +11,14 @@ public sealed record StoredTask(Guid TaskId, Guid ProjectId, string Title, TaskL
 public sealed class TaskRepository(WorkbenchDatabase database)
 {
     private readonly WorkbenchDatabase _database = database;
+    public async Task<IReadOnlyList<StoredTask>> ListAsync(Guid projectId, CancellationToken ct = default)
+    {
+        await using var c = _database.CreateConnection(); await c.OpenAsync(ct);
+        var q = c.CreateCommand(); q.CommandText = "SELECT id,project_id,title,status,current_revision_id,created_at,updated_at,cancelled_at FROM tasks WHERE project_id=$p ORDER BY created_at"; q.Parameters.AddWithValue("$p", projectId.ToString());
+        await using var rd = await q.ExecuteReaderAsync(ct); var list = new List<StoredTask>();
+        while (await rd.ReadAsync(ct)) list.Add(new StoredTask(Guid.Parse(rd.GetString(0)), Guid.Parse(rd.GetString(1)), rd.GetString(2), Enum.Parse<TaskLifecycleStatus>(rd.GetString(3)), Guid.Parse(rd.GetString(4)), DateTimeOffset.Parse(rd.GetString(5)), DateTimeOffset.Parse(rd.GetString(6)), rd.IsDBNull(7) ? null : DateTimeOffset.Parse(rd.GetString(7))));
+        return list;
+    }
     public async Task CreateAsync(Guid projectId, TaskDraft task, CancellationToken ct = default)
     {
         await using var c = _database.CreateConnection(); await c.OpenAsync(ct); await using var tx = await c.BeginTransactionAsync(ct);

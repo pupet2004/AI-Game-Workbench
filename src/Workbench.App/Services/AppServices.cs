@@ -8,6 +8,7 @@ using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
 using Workbench.App.Leader;
 using Workbench.Storage.Memory;
+using Workbench.Storage.Tasks;
 using Workbench.App.Memory;
 using System.Collections.Concurrent;
 
@@ -37,6 +38,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectMemorySynthesisCoordinator projectMemorySynthesisCoordinator,
         LeaderBootContextBuilder leaderBootContextBuilder,
         LeaderSessionRolloverService leaderSessionRolloverService,
+        TaskRepository taskRepository,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -55,6 +57,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectMemorySynthesisCoordinator = projectMemorySynthesisCoordinator;
         LeaderBootContextBuilder = leaderBootContextBuilder;
         LeaderSessionRolloverService = leaderSessionRolloverService;
+        TaskRepository = taskRepository;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -83,6 +86,7 @@ public sealed class AppServices : IAsyncDisposable
     public LeaderBootContextBuilder LeaderBootContextBuilder { get; }
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
+    public TaskRepository TaskRepository { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -144,6 +148,7 @@ public sealed class AppServices : IAsyncDisposable
                 projectLeaders,
                 leaderMessages,
                 effectiveTimeProvider),
+            new TaskRepository(database),
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);

@@ -7,6 +7,7 @@ using Workbench.Core.Leaders;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Leaders;
+using Workbench.Storage.Tasks;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ViewModels.Panes;
@@ -23,6 +24,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly LeaderSessionRolloverService? _rolloverService;
     private readonly Action<Guid>? _scheduleMemorySynthesis;
     private readonly ILeaderBootContextBuilder? _bootContextBuilder;
+    private readonly LeaderDraftProposalBuilder? _draftProposalBuilder;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -37,7 +39,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         LeaderSessionEpochRepository? epochRepository = null,
         LeaderMessageRepository? messageRepository = null,
         Action<Guid>? scheduleMemorySynthesis = null,
-        ILeaderBootContextBuilder? bootContextBuilder = null)
+        ILeaderBootContextBuilder? bootContextBuilder = null,
+        TaskRepository? taskRepository = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -49,6 +52,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _rolloverService = rolloverService;
         _scheduleMemorySynthesis = scheduleMemorySynthesis;
         _bootContextBuilder = bootContextBuilder;
+        _draftProposalBuilder = taskRepository is null ? null : new LeaderDraftProposalBuilder(project.Id, taskRepository);
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -486,6 +490,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                     case AgentTurnCompleted completed:
                         turnCompleted = true;
                         var finalText = completed.Result.FinalText;
+                        if (_draftProposalBuilder is not null && LeaderStructuredResponse.TryParse(finalText, _project.Id, out var structured))
+                        {
+                            finalText = structured.Response;
+                            if (structured.Proposal is not null)
+                            {
+                                await _draftProposalBuilder.CreateDraftAsync(structured.Proposal, cancellationToken);
+                            }
+                        }
                         if (assistant is null && !string.IsNullOrWhiteSpace(finalText))
                         {
                             assistant = AddAssistantMessage();

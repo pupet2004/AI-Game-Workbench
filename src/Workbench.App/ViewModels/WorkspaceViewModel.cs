@@ -11,6 +11,7 @@ using Workbench.Storage.Settings;
 using Workbench.App.Leader;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
+using Workbench.Storage.Tasks;
 
 namespace Workbench.App.ViewModels;
 
@@ -40,7 +41,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ProjectMemoryService? projectMemoryService = null,
         ProjectMemorySynthesisRepository? memorySynthesisRepository = null,
         Action<Guid>? scheduleMemorySynthesis = null,
-        ILeaderBootContextBuilder? bootContextBuilder = null)
+        ILeaderBootContextBuilder? bootContextBuilder = null,
+        TaskRepository? taskRepository = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -60,7 +62,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             epochRepository,
             messageRepository,
             scheduleMemorySynthesis,
-            bootContextBuilder);
+            bootContextBuilder,
+            taskRepository: taskRepository);
         WorkPane = new WorkPaneViewModel(FocusWorkAsync);
         LibraryPane = new LibraryPaneViewModel(
             result,
