@@ -47,6 +47,9 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
         OpenError = result.Error;
     }
 
+    public Task ActivateWorkerCardAsync(WorkerSessionCardViewModel worker, CancellationToken cancellationToken = default) =>
+        OpenWorkerAsync(worker, cancellationToken);
+
     [RelayCommand] private Task OpenWorker(WorkerSessionCardViewModel worker) => OpenWorkerAsync(worker);
     [RelayCommand] private Task Focus() => _focus();
     private static int Rank(AgentSessionStatus status) => status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => 0, AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => 1, AgentSessionStatus.Completed => 2, _ => 3 };

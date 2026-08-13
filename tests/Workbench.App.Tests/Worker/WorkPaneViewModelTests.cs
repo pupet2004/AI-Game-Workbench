@@ -138,6 +138,44 @@ public sealed class WorkPaneViewModelTests
     }
 
     [Fact]
+    public async Task Card_activation_opens_the_worker_once_with_its_existing_session_identity()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(), runtime.Account.Id, new Workbench.Runtime.Providers.ProviderId("codex"),
+            "gpt-5.6-sol", "C:/Project", "thread-card", AgentSessionStatus.Interrupted,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Card task", session,
+            ExecutionProfile.Create("codex", runtime.Account.Id.Value.ToString(), "gpt-5.6-sol", "codex-app-server"),
+            "Worker", DateTimeOffset.UtcNow);
+        var store = new InMemoryWorkerRoutingStore();
+        await store.SaveSessionAsync(record);
+        var launcher = new RecordingInteractiveSessionLauncher();
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, new AgentRuntimeRegistry(), launcher);
+        await pane.LoadAsync(record.ProjectId);
+
+        await pane.ActivateWorkerCardAsync(Assert.Single(pane.Workers));
+
+        var opened = Assert.Single(launcher.Opened);
+        Assert.Equal(record.Session.Id, opened.Session.Id);
+        Assert.Equal("thread-card", opened.Session.ExternalSessionId);
+        Assert.Equal("Interrupted", pane.Workers.Single().Status);
+        Assert.Empty(runtime.CreatedSessions);
+    }
+
+    [Fact]
+    public void Worker_card_markup_activates_on_left_click_without_intercepting_the_open_button()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var markup = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "WorkPaneView.axaml"));
+        var codeBehind = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "WorkPaneView.axaml.cs"));
+
+        Assert.Contains("PointerPressed=\"OnWorkerCardPointerPressed\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnOpenButtonPointerPressed", markup, StringComparison.Ordinal);
+        Assert.Contains("FindAncestorOfType<Button>()", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Codex_launcher_rejects_non_codex_workers_without_starting_a_window()
     {
         var runtime = new FakeAgentRuntime();
