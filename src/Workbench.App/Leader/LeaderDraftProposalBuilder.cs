@@ -59,7 +59,45 @@ public sealed record LeaderStructuredResponse(string Response, LeaderDraftPropos
 
 public static class LeaderResponseSchema
 {
-    public const string Json = "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"response\",\"draft_proposal\"],\"properties\":{\"response\":{\"type\":\"string\"},\"draft_proposal\":{\"type\":[\"object\",\"null\"],\"additionalProperties\":false,\"required\":[\"title\",\"goal\",\"scope\",\"outOfScope\",\"acceptance\",\"riskLevel\",\"recommendedExecutionProfile\"],\"properties\":{\"title\":{\"type\":\"string\"},\"goal\":{\"type\":\"string\"},\"scope\":{\"type\":\"string\"},\"outOfScope\":{\"type\":\"string\"},\"acceptance\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"riskLevel\":{\"type\":\"string\",\"enum\":[\"Low\",\"Medium\",\"High\"]},\"recommendedExecutionProfile\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"providerId\",\"providerAccountId\",\"modelProfileId\",\"agentRuntimeId\"],\"properties\":{\"providerId\":{\"type\":\"string\"},\"providerAccountId\":{\"type\":\"string\"},\"modelProfileId\":{\"type\":\"string\"},\"agentRuntimeId\":{\"type\":\"string\"}}}}}}";
+    public const string Json = """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["response", "draft_proposal"],
+          "properties": {
+            "response": { "type": "string" },
+            "draft_proposal": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["title", "goal", "scope", "outOfScope", "acceptance", "riskLevel", "recommendedExecutionProfile"],
+                  "properties": {
+                    "title": { "type": "string" },
+                    "goal": { "type": "string" },
+                    "scope": { "type": "string" },
+                    "outOfScope": { "type": "string" },
+                    "acceptance": { "type": "array", "items": { "type": "string" } },
+                    "riskLevel": { "type": "string", "enum": ["Low", "Medium", "High"] },
+                    "recommendedExecutionProfile": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["providerId", "providerAccountId", "modelProfileId", "agentRuntimeId"],
+                      "properties": {
+                        "providerId": { "type": "string" },
+                        "providerAccountId": { "type": "string" },
+                        "modelProfileId": { "type": "string" },
+                        "agentRuntimeId": { "type": "string" }
+                      }
+                    }
+                  }
+                },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+        """;
 }
 
 public sealed class LeaderDraftProposalBuilder(Guid projectId, TaskRepository tasks)

@@ -9,11 +9,22 @@ using Workbench.App.Tests.Support;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Microsoft.Data.Sqlite;
+using System.Text.Json;
 
 namespace Workbench.App.Tests.Worker;
 
 public sealed class LeaderDraftProposalTests
 {
+    [Fact]
+    public void Leader_schema_closes_every_object_branch_for_codex_nullable_validation()
+    {
+        using var document = JsonDocument.Parse(LeaderResponseSchema.Json);
+        var draft = document.RootElement.GetProperty("properties").GetProperty("draft_proposal");
+        var objectBranch = draft.GetProperty("anyOf").EnumerateArray().Single(item => item.GetProperty("type").GetString() == "object");
+        Assert.False(objectBranch.GetProperty("additionalProperties").GetBoolean());
+        var profile = objectBranch.GetProperty("properties").GetProperty("recommendedExecutionProfile");
+        Assert.False(profile.GetProperty("additionalProperties").GetBoolean());
+    }
     [Fact]
     public async Task Leader_turn_request_carries_output_schema_but_worker_request_does_not()
     {
