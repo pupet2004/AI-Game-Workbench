@@ -51,6 +51,17 @@ public sealed class LeaderPaneViewTests
     }
 
     [Fact]
+    public void Draft_confirmation_uses_theme_resources_for_dark_theme_contrast()
+    {
+        var markup = ReadLeaderView();
+
+        Assert.Contains("Background=\"{DynamicResource SystemControlBackgroundBaseLowBrush}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Foreground=\"{DynamicResource SystemControlForegroundBaseHighBrush}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Foreground=\"{DynamicResource SystemControlForegroundBaseLowBrush}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Background=\"{DynamicResource SystemControlBackgroundAccentBrush}\"", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Rollover_controls_are_inline_and_bind_to_single_view_model_commands()
     {
         var markup = ReadLeaderView();

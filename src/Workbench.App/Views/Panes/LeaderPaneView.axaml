@@ -145,26 +145,44 @@
             <StackPanel Grid.Row="3" Spacing="8">
                 <Border IsVisible="{Binding HasDraftConfirmation}"
                         Padding="12"
-                        BorderBrush="#84ADFF"
+                        BorderBrush="{DynamicResource SystemControlBackgroundAccentBrush}"
                         BorderThickness="1"
-                        Background="#EEF4FF"
+                        Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
                         CornerRadius="6">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Draft confirmation" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding DraftConfirmation.Title}" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding DraftConfirmation.Goal}" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding DraftConfirmation.Scope}" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding CurrentWorkerProfile}" TextWrapping="Wrap" />
+                        <TextBlock Text="Draft confirmation"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                        <TextBlock Text="{Binding DraftConfirmation.Title}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                        <TextBlock Text="{Binding DraftConfirmation.Goal}"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding DraftConfirmation.Scope}"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                   TextWrapping="Wrap" />
+                        <Border Background="{DynamicResource SystemControlBackgroundAccentBrush}" CornerRadius="4" Padding="6,3">
+                            <TextBlock Text="{Binding CurrentWorkerProfile}"
+                                       Foreground="{DynamicResource SystemControlForegroundAltHighBrush}"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap" />
+                        </Border>
                         <ItemsControl ItemsSource="{Binding WorkerResources}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Content="{Binding ModelDisplayName}"
+                                            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                                            Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
                                             Command="{Binding DataContext.ChangeWorkerResourceCommand, ElementName=Root}"
                                             CommandParameter="{Binding}" />
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button Content="Confirm / Start Worker" Command="{Binding ConfirmDraftCommand}" />
+                        <Button Content="Confirm / Start Worker"
+                                Background="{DynamicResource SystemControlBackgroundAccentBrush}"
+                                Foreground="{DynamicResource SystemControlForegroundAltHighBrush}"
+                                Command="{Binding ConfirmDraftCommand}" />
                     </StackPanel>
                 </Border>
                 <Border IsVisible="{Binding HasPendingRotationDecision}"
