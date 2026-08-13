@@ -8,6 +8,16 @@ namespace Workbench.App.Tests;
 
 public sealed class LeaderBootContextBuilderTests
 {
+    [Fact]
+    public void Boot_context_requires_structured_delegation_proposals_and_confirmation()
+    {
+        var text = LeaderBootContextBuilder.Build(
+            Project, [], [], null, "Please delegate this task.").Text;
+
+        Assert.Contains("draft_proposal", text, StringComparison.Ordinal);
+        Assert.Contains("wait for user confirmation", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("do not claim a Worker started, executed", text, StringComparison.OrdinalIgnoreCase);
+    }
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-08-13T00:00:00+00:00");
     private static readonly CoreProject Project = new(
         Guid.Parse("10000000-0000-4000-8000-000000000001"),

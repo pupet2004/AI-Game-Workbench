@@ -15,6 +15,22 @@ namespace Workbench.App.Tests.Worker;
 public sealed class LeaderDraftProposalTests
 {
     [Fact]
+    public async Task Leader_turn_request_carries_output_schema_but_worker_request_does_not()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry(); registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "{\"response\":\"ok\",\"draft_proposal\":null}", null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.DraftMessage = "ordinary";
+        await workspace.LeaderPane.SendAsync();
+        Assert.NotNull(runtime.SentRequests.Single().OutputSchema);
+        Assert.Contains("draft_proposal", runtime.SentRequests.Single().OutputSchema!, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("outputSchema", new AgentRequest("worker").Text, StringComparison.Ordinal);
+    }
+    [Fact]
     public async Task Ordinary_structured_response_creates_no_draft_or_execution_side_effect()
     {
         var runtime = new FakeAgentRuntime();

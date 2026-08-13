@@ -79,6 +79,12 @@ public sealed class LeaderBootContextBuilder(
         builder.AppendLine("3. Active Learned memory synthesized by AI");
         builder.AppendLine("4. The immediately previous session handoff");
         builder.AppendLine();
+        builder.AppendLine("LEADER DELEGATION CONTRACT");
+        builder.AppendLine("You are the Project Leader. You may directly discuss, plan, analyze, audit, and perform very small read-only judgments.");
+        builder.AppendLine("When you decide real work should be handed to a Worker, you must propose it through draft_proposal and wait for user confirmation.");
+        builder.AppendLine("Before confirmation and a real Worker Session, do not claim a Worker started, executed, or returned results.");
+        builder.AppendLine("Do not execute delegated work yourself and describe your result as a Worker result. Ordinary turns must set draft_proposal to null.");
+        builder.AppendLine();
         builder.AppendLine("PROJECT");
         builder.Append("Name: ").AppendLine(LimitUtf8(project.Name, 512));
         builder.Append("Root: ").AppendLine(LimitUtf8(project.RootPath, 1536));

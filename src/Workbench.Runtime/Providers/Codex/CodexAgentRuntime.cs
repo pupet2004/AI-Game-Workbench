@@ -193,6 +193,7 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                 {
                     threadId = session.ExternalSessionId,
                     input = new[] { new { type = "text", text = request.Text } },
+                    outputSchema = request.OutputSchema is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(request.OutputSchema),
                     cwd = session.WorkingDirectory,
                     approvalPolicy = "on-request",
                     sandboxPolicy = new { type = "readOnly", networkAccess = false }

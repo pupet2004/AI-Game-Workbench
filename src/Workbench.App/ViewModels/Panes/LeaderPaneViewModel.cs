@@ -388,6 +388,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             try
             {
                 runtimeRequest = await _bootContextBuilder!.BuildAsync(_project, text, cancellationToken);
+                runtimeRequest = new AgentRequest(runtimeRequest.Text, LeaderResponseSchema.Json);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -405,7 +406,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
         else
         {
-            runtimeRequest = new AgentRequest(text);
+            runtimeRequest = new AgentRequest(text, LeaderResponseSchema.Json);
         }
 
         DraftMessage = string.Empty;
