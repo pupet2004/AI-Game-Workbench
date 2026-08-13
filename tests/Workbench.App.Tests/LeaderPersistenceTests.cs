@@ -169,7 +169,7 @@ public sealed class LeaderPersistenceTests
     }
 
     [Fact]
-    public async Task Restored_session_connects_and_resumes_lazily_on_first_send()
+    public async Task Restored_session_connects_at_initialize_and_resumes_lazily_on_first_send()
     {
         await using var context = await PersistentLeaderContext.CreateAsync();
         var firstRuntime = context.CreateRuntime();
@@ -196,8 +196,9 @@ public sealed class LeaderPersistenceTests
             });
 
         await restored.InitializeAsync();
-        Assert.Equal(0, reconnectCalls);
+        Assert.Equal(1, reconnectCalls);
         Assert.Equal(["before", "before"], restored.Messages.Select(message => message.Text));
+        Assert.Empty(resumedRuntime.ResumedSessions);
         restored.DraftMessage = "after";
         await restored.SendAsync();
 

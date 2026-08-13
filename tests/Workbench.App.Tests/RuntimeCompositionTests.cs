@@ -1,13 +1,73 @@
 using Workbench.App.Services;
 using Workbench.App.Tests.Support;
 using Workbench.App.ViewModels;
+using Workbench.App.ViewModels.Leader;
+using Workbench.App.ViewModels.Panes;
+using Workbench.Runtime.Agents;
 using Workbench.Runtime.Providers;
+using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
 
 namespace Workbench.App.Tests;
 
 public sealed class RuntimeCompositionTests
 {
+    [Fact]
+    public async Task Opening_a_project_with_a_persisted_leader_session_connects_its_runtime_without_retry()
+    {
+        using var directory = new TemporaryDirectory("runtime-restore");
+        using var projectDirectory = new TemporaryDirectory("runtime-restore-project");
+        var accountId = ProviderAccountId.New();
+        var firstRuntime = new FakeAgentRuntime(
+            accountId: accountId,
+            models: [new ModelProfile(new ProviderId("fake-provider"), "model-a", "Model A", AgentCapability.Resume)]);
+        var firstRegistry = new AgentRuntimeRegistry();
+        firstRegistry.Register(firstRuntime);
+        var firstServices = AppServices.CreateForDatabasePath(
+            Path.Combine(directory.Path, "workbench.db"),
+            runtimeRegistry: firstRegistry);
+        await firstServices.InitializeAsync();
+        var opened = await firstServices.ProjectOpenService.OpenAsync(projectDirectory.Path);
+        var firstPane = new LeaderPaneViewModel(
+            opened.Project,
+            firstRegistry,
+            new ProjectLeaderSessionManager(
+                firstServices.ProjectLeaderRepository,
+                firstServices.LeaderSessionEpochRepository,
+                firstServices.LeaderMessageRepository),
+            () => Task.CompletedTask);
+        await firstPane.InitializeAsync();
+        firstPane.DraftMessage = "Persist this Leader session.";
+        await firstPane.SendAsync();
+        var originalSession = firstPane.Session!;
+        var originalEpoch = firstPane.SessionEpochId;
+        await firstServices.DisposeAsync();
+
+        var restoredRuntime = new FakeAgentRuntime(
+            accountId: accountId,
+            models: [new ModelProfile(new ProviderId("fake-provider"), "model-a", "Model A", AgentCapability.Resume)]);
+        var restoredServices = AppServices.CreateForDatabasePath(
+            Path.Combine(directory.Path, "workbench.db"),
+            runtimeFactory: _ => Task.FromResult<IAgentRuntime>(restoredRuntime));
+        var main = new MainWindowViewModel(restoredServices, new TestFolderPickerService(null));
+        await main.InitializeAsync();
+        var home = Assert.IsType<HomeViewModel>(main.CurrentPage);
+
+        await home.OpenRecentProjectAsync(Assert.Single(home.RecentProjects));
+
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        var restoredSession = workspace.LeaderPane.Session!;
+        Assert.Same(restoredRuntime, Assert.Single(restoredServices.RuntimeRegistry.Runtimes));
+        Assert.True(workspace.LeaderPane.IsRuntimeAvailable);
+        Assert.False(workspace.LeaderPane.CanRetryRuntime);
+        Assert.Equal(originalEpoch, workspace.LeaderPane.SessionEpochId);
+        Assert.Equal(originalSession.Id, restoredSession.Id);
+        Assert.Equal(originalSession.ExternalSessionId, restoredSession.ExternalSessionId);
+        Assert.Empty(restoredRuntime.CreatedSessions);
+        Assert.Empty(restoredRuntime.ResumedSessions);
+        await main.DisposeAsync();
+    }
+
     [Fact]
     public void Local_codex_account_id_is_stable_across_composition_instances()
     {

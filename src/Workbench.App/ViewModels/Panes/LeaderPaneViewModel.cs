@@ -209,6 +209,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         {
             try
             {
+                if (_runtimeRegistry.Runtimes.Count == 0 && _reconnectRuntime is not null)
+                {
+                    await _reconnectRuntime(cancellationToken);
+                }
+
                 _runtimeRegistry.GetByAccount(_conversation.Session.AccountId);
                 _conversation.RuntimeAccountAvailable = true;
                 _conversation.ModelsLoaded = true;
