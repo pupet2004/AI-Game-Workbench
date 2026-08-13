@@ -1,219 +1,120 @@
-# M2-01 - Leader Can Hire Design Specification
+# M2-01 Leader Can Hire Design Spec
 
-Status: **Approved design, M2-01 scope only**
-Date: 2026-08-13
-Predecessors: M1 - Leader Lives (sealed); M1.5 - Project Memory (sealed)
+## 1. Product Core
 
-## 1. Status / Scope
+AI Game Workbench is an Agent Session Router, not a development execution engine, Git control plane, Agent sandbox, or OS security layer.
 
-M2-01 enables the Main Leader to prepare a development task and, after an explicit user action, hire one isolated Worker to execute it. The slice ends when the Worker submits a Final Report and Workbench records deterministic Git evidence, placing the execution in `CompletedPendingReview`.
+The product core is:
 
-This document is a behavioral and data contract for a later implementation plan. It does not prescribe classes, migrations, SQL, provider adapters, or coding tasks.
+1. Project identity.
+2. A long-lived Main Leader session for discussion, planning, judgment, audit, and Worker selection.
+3. Worker sessions with clear Task, Provider/Model/Agent, status, and activity labels.
+4. Durable routing of Leader prompts, Worker reports, and follow-up instructions.
+5. Project Library browsing and persistence.
 
-## 2. Product Goal
+The product rule is: **Agent 负责工作，Workbench 负责交接.** Workbench routes and records handoffs; the selected Agent/CLI performs implementation, builds, tests, shell work, file edits, and any Git workflow requested by the Leader.
 
-The minimum complete path is:
+## 2. Scope And Boundaries
 
-`User goal -> Leader creates Draft Task -> user reviews/edits -> Start Worker -> freeze ExecutionStartRevision/BaseCommit/TargetBranch/ProviderAccount/ExecutionProfile -> create branch/worktree -> start Worker AgentSession -> Worker edits and may commit -> Workbench records events/evidence -> Final Report -> CompletedPendingReview`.
+Workbench knows the current Project, Leader Session, Worker Sessions, Task labels, routing relationships, timestamps, and resumable session identities. It does not independently choose a model, infer whether to reuse a Worker, validate a commit, interpret a Worker report, manage worktrees, enforce filesystem containment, stage or commit Git, merge, or provide OS/provider security.
 
-Leader plans and coordinates; Worker executes. Workbench is the control plane and policy authority; the runtime is the execution engine. The main project working tree remains protected throughout.
+The Leader Skill may decide when to open or reuse a Worker, how to phrase the Prompt, whether the Agent should create a worktree, whether to commit, when to close a Session, and what Library note to record. The user may edit the Leader recommendation and must explicitly confirm `Start Worker`.
 
-## 3. Non-Goals
+Provider/runtime approvals remain provider concerns. Workbench records approval and routing events but does not treat them as a security boundary.
 
-M2-01 does not include Independent Auditor, `Verified`, `ReadyToMerge`, merge or auto-merge, push, same-project parallel write Workers, automatic replacement of a Worker brain, Worker-to-Worker collaboration, task dependency graphs, semantic task retrieval, RAG, embeddings, vector databases, complex Library integration, periodic background progress summaries, or automatic approval of high-risk actions. M2-01 does not expand Project Memory: a Worker result is not directly Formal Memory.
+## 3. Completed History
 
-## 4. Architecture Principles
+M2-01 Tasks 1, 2, and 3 remain completed historical work. Task 2's WorkerExecution, TaskRevision, Permission, TaskGrant, TaskEvent, CompletionPackage, and Evidence-related storage are retained and remain covered by existing tests.
 
-- Reproducibility is defined by the immutable `ExecutionStartRevision`, frozen full `BaseCommit`, frozen `ProviderAccount` binding and `ExecutionProfile`, `TargetBranch`, and owned Worker branch/worktree. A later acknowledged revision changes the active contract without changing that execution identity.
-- Worker history may grow in durable storage; Leader attention and boot context remain bounded.
-- A Worker does not self-verify. Its report is narrative evidence from the executor, not an authoritative verification result.
-- All Worker filesystem and Git writes are constrained by Workbench to the assigned worktree path; prompts are not a security boundary.
-- Core task/orchestration code depends on provider-neutral `IAgentRuntime`, never directly on a Codex adapter.
+Those records are now an **Optional Reliability Layer**. They may preserve interruption, routing, report, or evidence detail, but they do not have to drive every Worker handoff and do not block the MVP session loop. No migration rollback or storage deletion is part of this revision.
 
-### Thin architecture boundaries
+The Task 4A containment spike is closed as architectural exploration after product simplification. Do not continue Windows sandbox, `writableRoots`, ACL, `CreateProcessAsUserW`, or Git-containment work in this M2-01 route.
 
-These are responsibility boundaries, not mandatory class names:
-
-- **TaskService / TaskRepository / TaskRevisionRepository:** create and edit Drafts, persist immutable contract snapshots, enforce lifecycle and revision rules, and expose bounded task views.
-- **WorkspaceManager / GitWorktreeService:** inspect main-worktree cleanliness and full HEAD, create and own the Worker branch/worktree, validate path/branch ownership, and retain or explicitly clean up the workspace. They do not interpret Task semantics, build prompts, or audit results.
-- **WorkerExecutionService / Coordinator:** orchestrate the Start sequence, Task Packet, runtime lifecycle, state transitions, requests, ACKs, completion, and recovery without provider-specific calls.
-- **ExecutionProfile / provider-neutral `IAgentRuntime`:** select Provider, ModelProfile, and AgentRuntime and expose session create/resume primitives. Runtime executes; it does not decide Workbench permissions or Task meaning.
-- **Worker Session persistence:** retain the identity needed for same-session interruption recovery.
-- **PermissionPolicy / PermissionRequest / TaskGrant:** enforce hard boundaries, route structured requests, and issue expiring Task-scoped grants.
-- **TaskClarification:** carry contract questions separately from capability requests and route them through Leader/user decision boundaries.
-- **LeaderInbox:** project actionable, bounded attention items from the event store; it is not a transcript sink.
-- **EvidenceCollector:** collect deterministic Git facts from the owned worktree and package them with the Worker report; it does not declare verification or merge readiness.
-
-## 5. Domain Model
+## 4. Domain Model
 
 ### Project
 
-The repository identity and protected main worktree. At most one `Active Write Worker` execution may exist for a Project. Different Projects may each have one.
+The selected repository/project identity and its Library.
+
+### Leader Session
+
+A persistent Main Leader conversation scoped to a Project. It produces structured Draft proposals and receives routed Worker reports.
+
+### Worker Session
+
+An Agent Session selected by the Leader Skill and confirmed by the user. It is a first-class object separate from Task. A Worker Session may continue the same Task revision, perform Leader-audited rework, or handle tightly related follow-up work when the Leader explicitly selects reuse.
 
 ### Task
 
-Stable `TaskId`, title, current immutable revision, lifecycle status, timestamps, and execution identity when started. A Task has one current contract revision; old revisions remain queryable.
+A lightweight Project-scoped label for what the Leader and a Worker are discussing or executing. It minimally carries Title, Goal/Prompt context, LeaderSession, WorkerSession, status, and timestamps. Its value is label, routing relation, and history, not control of how an Agent works.
+
+Use the existing Task lifecycle contract and map it to the target UI meanings `Draft`, `Working`, `WaitingForLeader`, `Completed`, `Interrupted`, and `Closed` without adding a new enum in this documentation revision.
 
 ### Task Revision
 
-An immutable, complete contract snapshot stored in SQLite: `TaskId`, `RevisionNumber`, `Goal`, `Scope`, `OutOfScope`, `Acceptance`, `RiskLevel`, `RecommendedExecutionProfile`, `ChangeReason`, `ApprovedBy`, `CreatedAt`, and optional `PreviousRevisionId`. Revisions are snapshots, not delta chains and not task-vN files.
-
-### Worker Execution
-
-The execution record freezes one `ExecutionStartRevision` at Start and tracks a `CurrentAcknowledgedRevision`, initially equal to `ExecutionStartRevision`. After the user approves a new Task Revision and the Worker emits a successful `TaskRevisionAck`, only `CurrentAcknowledgedRevision` advances. The same Worker Execution, `BaseCommit`, `TargetBranch`, frozen `ProviderAccount`, `ExecutionProfile`, `WorkerBranch`, `WorkerWorktreePath`, and resumable Worker Session remain unchanged. A Running execution must have both revision pointers and all other frozen identities plus a successfully started session.
+Existing immutable revision snapshots remain valid where already implemented. A revision identifies the contract context the Leader and Worker are discussing; it is not a Workbench execution lock. Material changes can be recorded as a new user-approved revision, but M2-01 no longer requires a BaseCommit freeze, worktree freeze, deterministic evidence, or a Workbench-managed execution identity.
 
 ### ExecutionProfile
 
-Three separate concepts are frozen together at Start: `Provider`, `ModelProfile`, and `AgentRuntime` (for example, GPT-5.6 via Codex). The frozen execution identity also includes the selected `ProviderAccount` binding (or `ProviderAccountId`) used by that Provider. The contract remains provider-neutral and can later represent other providers/runtimes.
+The Leader recommends Provider, frozen ProviderAccount binding, ModelProfile, Reasoning, and AgentRuntime. The user may edit the recommendation before Start. Once a Worker Session starts, the selected account/session identity is persisted for resume; Workbench must not silently switch account or session.
 
-### Task Packet
+## 5. Draft And Start
 
-Structured input to the Worker containing TaskId, the applicable Task Revision, complete contract, BaseCommit, TargetBranch, WorkerBranch, WorkerWorktreePath, frozen profile and ProviderAccount binding, permission boundaries, all relevant Formal Project Memory, and a small bounded selection of relevant Learned Memory. The initial packet uses `ExecutionStartRevision`; an acknowledged revision update advances the same execution to `CurrentAcknowledgedRevision`. Project Memory authority is explicit: `Formal > Learned`; a normalized Formal topic suppresses a Learned item on that topic. Pending Candidate, Rejected, and Superseded memory are excluded. M2-01 uses deterministic bounded selection only; no semantic retrieval. Full Leader transcript, all Worker histories, all Project Memory, and all Library content are not injected by default.
+The Main Leader may emit an internal structured Draft proposal containing at least `Title`, `Goal`, `Scope`, `OutOfScope`, `Acceptance`, `RiskLevel`, and `RecommendedExecutionProfile`. Workbench validates and persists one complete Project-scoped Draft and renders a Draft Card. The structured envelope does not pollute the visible Leader transcript. Invalid proposals create no partial Draft and never start a Worker.
 
-## 6. Task Draft / Revision Model
+`Start Worker` is the only execution-side-effect action and always requires explicit user confirmation. After confirmation, Workbench either creates a new Agent Session or reuses the exact Worker Session named by the Leader proposal. It sends the Leader Prompt to that session and records the Task-to-Session relation. WorkingDirectory is the Project directory unless the Leader/Agent manages a worktree in its own Prompt and runtime.
 
-The Leader may generate a Draft automatically. Draft creation has no execution side effect: it does not freeze BaseCommit, create a branch/worktree, start an Agent, or consume Worker runtime. A Draft includes TaskId, Title, Goal, Scope, OutOfScope, AcceptanceCriteria, RiskLevel, RecommendedExecutionProfile, Status, CreatedAt, and CurrentRevision. The user may view, edit, or cancel it.
+Start does not create a Worktree, freeze BaseCommit, enforce OS containment, stage/commit Git, collect deterministic Git evidence, merge, or automatically select a Provider/Model/Worker.
 
-`Start Worker` is the only transition that begins execution and requires explicit user action. That action simultaneously approves execution, freezes the current Task Revision as `ExecutionStartRevision`, freezes BaseCommit, TargetBranch, ProviderAccount, and ExecutionProfile, and grants Level 2 capability only within the current Task and Worker worktree. At Start, `CurrentAcknowledgedRevision == ExecutionStartRevision`. Material changes to Goal, Scope, Acceptance, or an architecture/product decision require a new user-approved Task Revision; the old snapshot is never overwritten. Non-material terminology or boundary explanations are interactions/events only and do not create a revision.
+## 6. Handoff And Routing
 
-When a new revision is created, the Worker must emit an explicit `TaskRevisionAck` before it is treated as using that contract. Only a successful ACK advances `CurrentAcknowledgedRevision`; until then, execution remains governed by the previous acknowledged revision and the dependent path may be Blocked. Evidence and Final Report must identify `ExecutedAgainstRevision`. Leader clarification may explain the existing contract using Active Formal Memory (user-certified / authoritative) and Active Learned Memory (AI-synthesized / provisional), but may not silently rewrite it. Material ambiguity is escalated to the user. If a revision change is large enough to require a different BaseCommit, the user must decide to terminate the current execution and create a new Task; M2-01 does not rebase or change its BaseCommit.
+Workbench is the routing record point so every handoff retains sender, receiver, Task, Worker Session, timestamp, and active/closed status. The normal flow is:
 
-## 7. Start Worker Flow
+`Leader conversation -> Draft proposal -> user confirmation -> Worker Session -> Worker report -> Leader conversation`.
 
-On the user's `Start Worker` action, Workbench, in one recoverable operation:
+The Work area shows the Worker transcript and session card. A Leader follow-up is routed to the same session only when the Leader Skill explicitly selects reuse; otherwise Workbench opens the specified new session. Workbench does not judge whether a report, commit hash, test count, or diff is correct.
 
-1. Reject if the Project main worktree is dirty. No stash, snapshot, auto-commit, or ignored changes are allowed. UI explains that Worker execution starts only from committed HEAD.
-2. Enforce the one-active-write-Worker-per-Project rule.
-3. Read and persist the complete current Git HEAD as `BaseCommit`; read and persist `TargetBranch`.
-4. Freeze the selected `ProviderAccount` binding and ExecutionProfile, freeze the current Task Revision as `ExecutionStartRevision`, and initialize `CurrentAcknowledgedRevision` to the same revision.
-5. Create and record a unique WorkerBranch and WorkerWorktreePath from BaseCommit, validating ownership and non-conflict with the main branch.
-6. Build the Task Packet and create the provider-neutral Worker AgentSession in the assigned worktree.
-7. Only after all required identities exist and the runtime starts, expose the execution as `Running`.
+Worker completion may be ordinary Agent text such as `TASK_COMPLETE`, a commit hash, tests, and a report. V1 records the report and routes it back to the Leader without requiring Workbench verification. Existing Evidence/Completion infrastructure remains available as optional reliability detail and must not block this loop.
 
-Start is also a Workbench-level, Task-scoped and worktree-scoped Level 2 execution grant. It approves normal in-task reading, editing in the assigned worktree, build/test commands, local Git commands, and commits to the Worker branch without per-step prompts. It never approves hard-boundary capabilities.
+## 7. Session States And Reliability
 
-## 8. Git / Worktree Model
+Use existing session/task contracts and labels; the target semantics are Working, WaitingForLeader, Completed, Interrupted, and Closed. A runtime create followed by persistence failure receives best-effort `StopAsync`. After restart, an unclear Worker is marked Interrupted/Unknown and left to user or Leader choice: resume, reuse, close, or create a new session. Do not implement session discovery or exactly-once replacement prevention in this simplification.
 
-Each execution owns exactly one unique, traceable WorkerBranch and one WorkerWorktreePath created from frozen BaseCommit. The Worker may read the project, modify only its worktree, run normal build/test/local Git commands, and commit to its branch. It may not write the main worktree, merge, push, or write outside the project/worktree scope. The main branch is never the Worker checkout.
+Leader may recommend termination. A formal terminal abandonment decision for a Task remains an explicit user decision; Workbench does not independently declare the work failed.
 
-`TargetBranch` is metadata for a future merge destination (normally `master`); it is not the Worker checkout. Main branch drift during execution does not change BaseCommit. M2-01 performs no automatic rebase or merge. Branch and worktree remain retained after completion until Audit, Merge, or Discard; `CompletedPendingReview` is not cleanup.
+## 8. Project Library
 
-## 9. ExecutionProfile
+Project Library is a lightweight index that helps an Agent quickly find the right design, implementation record, rule, object, decision, or history. It supports category, topic, time, short summary, source reference, browsing, and search. It is not a knowledge graph, full-history replacement, automatic project auditor, or automatic semantic retrieval system.
 
-The Draft contains a recommendation. The user may edit it. At Start, the chosen Provider, ProviderAccount binding, ModelProfile, and AgentRuntime are persisted as an immutable execution freeze. The account cannot be silently switched after Start; any account change requires a new execution. Workbench-level approval is distinct from provider/runtime approval; any provider-specific prompt must be mapped through Workbench policy and existing Task grants, never blanket auto-approved.
+Leader/Worker Skills create concise high-quality notes, for example: “听牌茶盏正式改为连续听牌累计机制。实现 commit abc123。” Workbench stores, classifies, timestamps, links, displays, and searches those notes; intelligence and synthesis belong to the Skills.
 
-## 10. Worker Session / Resume
+## 9. UI Minimum
 
-Persistence must retain enough identity to resume: Provider, frozen ProviderAccount binding, Model, Runtime selection, AgentSessionId, ExternalSessionId, WorkingDirectory, TaskId, `ExecutionStartRevision`, and `CurrentAcknowledgedRevision`. On interruption (runtime crash, provider/network interruption, Workbench restart, or process loss), resume the same AgentSession with the same ProviderAccount, worktree, branch, BaseCommit, TargetBranch, and current acknowledged revision. If the runtime explicitly cannot resume, stop and request a user decision; do not silently create a replacement session, switch accounts, or switch brains. Cross-session continuation is out of scope.
+Keep the three-column layout: `LEADER | WORK | PROJECT LIBRARY`.
 
-## 11. Permission Model
+- Leader: Main Leader conversation and a small set of Worker statuses needing attention.
+- Work: Worker Session cards showing Task, Provider/Model/Profile, status, and LastActiveAt; open, peek, or attach to the transcript.
+- Project Library: category, topic, time browsing and search.
 
-Workbench Policy defines hard boundaries first. A Worker that knows the action but lacks capability emits a structured `PermissionRequest` containing TaskId, Revision, RequestedCapability, Scope, AccessMode, Reason, Risk, and RequestedDuration. Routing is `Worker -> Workbench Policy -> Leader-Decidable Zone -> Main Leader -> User if needed`.
+Do not add an Agent graph, org chart, workflow dashboard, enterprise control plane, or complex multi-agent chat.
 
-Leader approval is permitted only for low-risk, reversible, clearly task-scoped capabilities. Every extra approval is represented as `capability + scope + TaskId` and expires when that Task lifecycle ends; no permanent Project grant is allowed. A request blocks only dependent execution paths; unrelated in-scope work may continue. The Worker must never execute first and seek approval later.
+## 10. Testable Invariants
 
-Hard boundaries that cannot be Leader-approved include merge, push, main-worktree writes, project-external writes or deletion, credentials/accounts, system settings, global software/dependency installation, irreversible destructive actions, and material product/architecture/contract changes. These require user escalation (or remain disallowed by policy).
+- Draft persistence is Project-scoped, atomic, side-effect-free, and never starts a Worker.
+- `Start Worker` requires explicit user confirmation.
+- The selected ProviderAccount and Worker Session identity are retained for resume; no silent account/session switch.
+- Task and Worker Session are distinct; reuse occurs only when explicitly selected by the Leader Skill.
+- Every routed message identifies sender, receiver, Task, Worker Session, and timestamp.
+- Worker reports are routed to the Leader without Workbench claiming verification.
+- Runtime persistence failure gets best-effort stop; uncertain restart state is surfaced for user/Leader decision.
+- Worker status and Task label remain understandable after restart.
+- Library records retain category, topic, time, summary, and source reference.
+- Workbench does not require worktree creation, BaseCommit freeze, containment, Git commit/evidence, or merge for the core handoff loop.
 
-## 12. Clarification Model
+## 11. M2-02 Boundary
 
-`TaskClarificationRequest` is distinct from a PermissionRequest and means the Worker cannot determine what the Task contract requires: goal ambiguity, scope/acceptance conflict, BaseCommit contradicting assumptions, or a necessary architecture decision. It routes first to Main Leader. The Leader may clarify terms and existing boundaries from the Task, Active Formal Memory (user-certified / authoritative), and Active Learned Memory (AI-synthesized / provisional), but cannot change Goal, Acceptance, materially expand Scope, or decide architecture/product direction on the user's behalf. Material changes require a new user-approved revision.
-
-## 13. Worker State Machine
-
-Task states: `Draft`, `ReadyToStart`. Execution states: `Running`, `Blocked`, `Interrupted`, `CompletedPendingReview`, `Failed`.
-
-- `Draft -> ReadyToStart`: draft is complete and available for review; no execution side effects.
-- `ReadyToStart -> Running`: explicit Start succeeds, including clean main worktree, frozen identity, worktree, and session.
-- `Running -> Blocked`: a PermissionRequest, TaskClarificationRequest, User Decision, or required Revision ACK blocks a critical path. A pending revision does not advance `CurrentAcknowledgedRevision`. Blocked is not Failed.
-- `Blocked -> Running`: the blocking decision is resolved. For a revision change, this transition requires successful `TaskRevisionAck`; it advances only `CurrentAcknowledgedRevision` and keeps the same execution identity.
-- `Running -> Interrupted`: external runtime/process/provider interruption; contract is not considered failed and Resume is expected.
-- `Interrupted -> Running`: same-session resume succeeds with the same ProviderAccount, worktree, branch, BaseCommit, TargetBranch, and current acknowledged revision.
-- `Running -> CompletedPendingReview`: Worker submits Final Report and Workbench collects deterministic evidence.
-- `Running` or `Interrupted` -> `Failed`: only after the user explicitly decides to abandon the current Task contract, whether because Acceptance is reported impossible or same-session Resume cannot continue. The Leader may recommend termination and record rationale, but cannot unilaterally make the terminal Failed decision.
-
-No M2-01 transition reaches Verified, ReadyToMerge, or a merge operation.
-
-## 14. Task Event Store
-
-Durable structured Task/Worker Events record state transitions, starts, permission requests/grants, clarifications, revision ACKs/mismatches, interruptions/resumes, runtime failures, and final completion. The store is a durable event history, not a new high-scale event-sourcing framework. Full Worker transcript, tool events, test attempts, runtime events, progress, internal logs, and permission/clarification history belong in the Task Archive and are not automatically promoted to Leader context.
-
-## 15. Leader Inbox / Attention Budget
-
-Workbench is the message and state bus; the Leader is not a transcript bus. Only actionable structured events enter Leader Inbox: PermissionRequest, TaskClarificationRequest, revision ACK/mismatch, Interrupted, Blocked, and CompletedPendingReview. Periodic summaries (time-based, tool-count-based, or percentage progress) are prohibited.
-
-The default attention view is bounded: Active, Blocked, Interrupted, Pending Review, and recent relevant results. Completed results appear as a Result Digest with Task, Revision, Result Status, BaseCommit, Worker HEAD, changed-file count, commit count, Worker self-report, evidence status, and next action. Full report/evidence is on demand. Leader boot and normal operation must not scan all history linearly even when Projects contain thousands of Tasks; the schema must leave room for future retrieval without implementing semantic retrieval now.
-
-## 16. Final Report / Deterministic Evidence
-
-The Worker submits a concise narrative Final Report containing Summary, What Changed, Why, Tests Run, Known Limitations, Unresolved Issues, and ExecutedAgainstRevision. It may self-report PASS or tests passed, but that is not verification.
-
-Workbench independently collects deterministic evidence: BaseCommit, Worker final HEAD, Worker branch, Worker worktree, changed files, `git diff --stat`, `git status`, commit list, and `ExecutedAgainstRevision`. These facts cannot be accepted solely from Worker prose. Structured test/build reruns and verdicts are M2-02 concerns.
-
-The CompletedPendingReview package is exactly Final Report plus Workbench Deterministic Evidence. It is input to a future Auditor, not a Verified or Done result.
-
-## 17. Error / Recovery Semantics
-
-| Condition | Required result |
-|---|---|
-| Dirty main worktree | Reject Start; no branch/worktree/runtime side effect; remain ReadyToStart. |
-| Existing active write Worker | Reject Start; remain ReadyToStart. |
-| Branch/worktree creation failure | Do not start runtime or mark Running; clean up only identifiable partial artifacts; retain a retryable pre-running Task state. |
-| Runtime creation failure after worktree success | Do not mark Running; retain execution ownership and workspace identity for retry or explicit cleanup; do not silently delete diagnostic workspace. |
-| Permission request | Enter Blocked for dependent path; route structured request; never execute without grant. |
-| Clarification request | Enter Blocked for dependent path; route to Leader then user when material. |
-| Revision pending ACK | Worker remains governed by the previous CurrentAcknowledgedRevision; no new-contract evidence until explicit ACK. |
-| Runtime interruption | Enter Interrupted; preserve session, ProviderAccount, worktree, branch, BaseCommit, TargetBranch, ExecutionStartRevision, and CurrentAcknowledgedRevision; allow same-session Resume. |
-| Resume failure | Do not auto-replace Worker or account; request user decision and allow Failed only after the user explicitly abandons the current Task contract. |
-| Final evidence collection failure | Do not claim CompletedPendingReview; retain Worker result/worktree and surface a recoverable evidence error for retry or user decision. |
-
-Start atomicity invariant: no externally visible `Running` execution exists without complete frozen configuration, including ProviderAccount and `ExecutionStartRevision == CurrentAcknowledgedRevision`, owned branch/worktree, and (once started) Worker Session identity. A later acknowledged revision may advance only `CurrentAcknowledgedRevision`; it never changes the execution identity. Recovery may reconcile durable intermediate records without inventing a different execution identity.
-
-## 18. Security Boundaries
-
-Workbench validates that Worker `WorkingDirectory == assigned WorkerWorktreePath` before filesystem/Git operations and enforces path ownership on every operation. Start grants Workbench capabilities only; provider/runtime approvals are separately policy-mapped. User escalation is mandatory for merge, push, main-worktree or external writes, credentials/accounts, software/global installation, system configuration, irreversible destruction, material contract changes, and unresolved architecture/product decisions. Leader cannot bypass these boundaries.
-
-## 19. UI Minimum Slice
-
-The UI is intentionally thin:
-
-- Draft Task card: Goal, Scope, Acceptance, Recommended ExecutionProfile; actions Edit and Start Worker.
-- Active Worker area: status, Task Revision, frozen profile, branch/worktree, Stop if supported, and requests needing attention.
-- Completed area: bounded Result Digest, Open Final Report, Open Evidence.
-- Leader Inbox: `Needs Attention` for Permission, Clarification, Blocked, Interrupted; `Results` for Pending Review.
-
-Do not render a complex Kanban, multi-agent map, visual graph, timeline dashboard, or every Task event as Leader chat.
-
-## 20. Persistence Requirements
-
-Persist immutable Task Revisions and their approval metadata; current Task lifecycle; execution freeze (`ExecutionStartRevision`, `CurrentAcknowledgedRevision`, BaseCommit, TargetBranch, frozen ProviderAccount, and ExecutionProfile); branch/worktree ownership; Worker Session identity; Task/Worker Events; PermissionRequests and Task-scoped grants with expiry; Clarification interactions; Final Report with `ExecutedAgainstRevision`; deterministic evidence with `ExecutedAgainstRevision`; and archive references. Preserve worktrees/branches through CompletedPendingReview. Design indexes/queries so Leader Inbox and Active/Pending views are bounded by actionable status/time rather than total Task count. No task-vN files, project copies, or migration design is part of this spec.
-
-## 21. Testable Invariants
-
-- Draft creates no execution side effects.
-- Start requires explicit user action.
-- Dirty main worktree rejects Start.
-- `ExecutionStartRevision`, BaseCommit, TargetBranch, ProviderAccount, and ExecutionProfile freeze at Start.
-- `CurrentAcknowledgedRevision` initially equals `ExecutionStartRevision` and advances only after a user-approved revision receives Worker `TaskRevisionAck`.
-- Acknowledging a new revision does not change execution, BaseCommit, TargetBranch, ProviderAccount, branch, or worktree.
-- One active write Worker per Project.
-- Worker writes only its assigned worktree.
-- Worker cannot merge or push.
-- Grants are capability-, scope-, and TaskId-bound and expire with the Task.
-- Hard-boundary permissions cannot be Leader-approved.
-- Material Task changes require a user-approved immutable Revision.
-- Worker explicitly ACKs a new Revision before executing against it; Evidence and Final Report declare `ExecutedAgainstRevision`.
-- Interrupted resumes the same Session/ProviderAccount/worktree/branch/BaseCommit/TargetBranch with the current acknowledged revision, or asks the user.
-- Terminal `Failed` requires an explicit user decision to abandon the current Task contract; Leader may only recommend termination.
-- Worker progress does not flood Leader context.
-- Worker self-report is not verification.
-- Git evidence is Workbench-collected and deterministic.
-- CompletedPendingReview retains branch/worktree.
-- Leader Inbox contains actionable events, not execution chatter.
-
-## 22. M2-02 Boundary
-
-M2-02 is expected to add the Independent Auditor, expand deterministic verification, define `PASS`/`BASIC_PASS`/`FAIL`/`INSUFFICIENT_EVIDENCE`, and establish the `ReadyToMerge` boundary. Those capabilities are deliberately absent from M2-01; this spec stops at `CompletedPendingReview`.
+M2-02 and future reliability work may add auditing, verification, merge readiness, richer evidence, or optional workspace conveniences. None is required for the M2-01 session-routing MVP.
 
 ## Self-Review
 
-No unresolved implementation-affecting TBD/TODO remains in this design. Naming details for branch paths, exact memory budgets, concrete persistence schema, and cleanup sequencing are implementation-plan concerns only and do not change the behavioral contract above. There is no Codex-specific dependency in the core model, no implicit auto-merge, and no same-Project parallel write Worker path.
+No core route requires Workbench-created worktrees, BaseCommit freeze, containment gates, Workbench Git commit/evidence, Workbench model selection, or Workbench judgment of Library content. Task 4A is recorded as stopped exploration, not a pending blocker. No `TBD` or `TODO` remains.
