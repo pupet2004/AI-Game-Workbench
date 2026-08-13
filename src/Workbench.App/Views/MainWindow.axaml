@@ -9,6 +9,7 @@
         Icon="/Assets/avalonia-logo.ico"
         Title="AI Game Workbench"
         WindowStartupLocation="CenterScreen"
+        WindowState="Normal"
         Width="1400"
         Height="850"
         MinWidth="1280"

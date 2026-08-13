@@ -9,6 +9,7 @@ public sealed class MainWindowViewTests
         var markup = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "MainWindow.axaml"));
 
         Assert.Contains("WindowStartupLocation=\"CenterScreen\"", markup, StringComparison.Ordinal);
+        Assert.Contains("WindowState=\"Normal\"", markup, StringComparison.Ordinal);
         Assert.Contains("Width=\"1400\"", markup, StringComparison.Ordinal);
         Assert.Contains("Height=\"850\"", markup, StringComparison.Ordinal);
     }
