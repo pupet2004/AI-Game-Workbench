@@ -22,7 +22,13 @@
                 <TextBlock Text="Working Tree:" /><TextBlock Text="{Binding WorkingTreeText}" />
                 <TextBlock Text="{Binding StatusMessage}" Foreground="IndianRed" />
             </StackPanel>
-            <TextBlock Text="Project browsing arrives in a later milestone." IsVisible="{Binding IsBrowse}" TextWrapping="Wrap" />
+            <StackPanel IsVisible="{Binding IsBrowse}" Spacing="8">
+                <TextBlock Text="Project Library" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="*,*"><TextBox PlaceholderText="Category" Text="{Binding LibraryCategoryFilter, Mode=TwoWay}" /><TextBox Grid.Column="1" PlaceholderText="Topic" Text="{Binding LibraryTopicFilter, Mode=TwoWay}" /></Grid>
+                <Grid ColumnDefinitions="*,Auto"><TextBox PlaceholderText="Search summaries" Text="{Binding LibraryTextFilter, Mode=TwoWay}" /><Button Grid.Column="1" Content="Filter" Command="{Binding ApplyLibraryFilterCommand}" /></Grid>
+                <TextBlock IsVisible="{Binding !HasLibraryEntries}" Text="Library has no organized entries yet." TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding LibraryEntries}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding Category}" FontWeight="SemiBold" /><TextBlock Text="{Binding Topic}" /><TextBlock Text="{Binding Summary}" TextWrapping="Wrap" /><TextBlock Text="{Binding CreatedAt}" Foreground="#667085" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            </StackPanel>
             <TextBlock Text="Project history arrives in a later milestone." IsVisible="{Binding IsHistory}" TextWrapping="Wrap" />
             <StackPanel IsVisible="{Binding IsProject}" Spacing="8">
                 <TextBlock Text="Project Memory" FontWeight="SemiBold" />

@@ -14,6 +14,28 @@ namespace Workbench.App.Tests;
 public sealed class ProjectMemoryLearningUiTests
 {
     [Fact]
+    public async Task Library_browse_restores_submissions_and_filters_by_category_after_reconstruction()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("library");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var at = DateTimeOffset.Parse("2026-08-13T09:00:00.0000000+00:00");
+        await context.Services.ProjectLibraryRepository.SubmitAsync(new LibrarySubmission(Guid.NewGuid(), opened.Project.Id, Guid.NewGuid(), null, "Design", "Relics", "Tea cup rule.", "docs/relics.md", at));
+        await context.Services.ProjectLibraryRepository.SubmitAsync(new LibrarySubmission(Guid.NewGuid(), opened.Project.Id, Guid.NewGuid(), null, "Implementation", "Relics", "Code note.", "commit abc123", at.AddMinutes(1)));
+
+        var first = new LibraryPaneViewModel(opened, () => Task.CompletedTask, library: context.Services.ProjectLibraryRepository);
+        await first.InitializeAsync();
+        Assert.Equal(2, first.LibraryEntries.Count);
+        var restored = new LibraryPaneViewModel(opened, () => Task.CompletedTask, library: context.Services.ProjectLibraryRepository) { LibraryCategoryFilter = "Design" };
+        await restored.LoadLibraryAsync();
+
+        var entry = Assert.Single(restored.LibraryEntries);
+        Assert.Equal("Design", entry.Category);
+        Assert.Equal("Tea cup rule.", entry.Summary);
+        Assert.Equal("docs/relics.md", entry.SourceReference);
+    }
+
+    [Fact]
     public async Task Library_shows_pending_learning_then_separate_ai_learned_and_session_candidate_source()
     {
         await using var context = await CoordinatorContext.CreateAsync();

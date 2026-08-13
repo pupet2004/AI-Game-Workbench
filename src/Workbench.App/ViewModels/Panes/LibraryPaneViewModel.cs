@@ -29,6 +29,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly LeaderSessionEpochRepository? _epochRepository;
     private readonly Action<Guid>? _scheduleMemorySynthesis;
     private readonly Dictionary<Guid, string> _candidateSourceLabels = [];
+    private readonly ProjectLibraryRepository? _library;
 
     public LibraryPaneViewModel(
         ProjectOpenResult result,
@@ -38,7 +39,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
         ProjectMemoryService? memory = null,
         ProjectMemorySynthesisRepository? synthesisJobs = null,
         LeaderSessionEpochRepository? epochRepository = null,
-        Action<Guid>? scheduleMemorySynthesis = null)
+        Action<Guid>? scheduleMemorySynthesis = null,
+        ProjectLibraryRepository? library = null)
     {
         Result = result;
         _focus = focus;
@@ -48,6 +50,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         _synthesisJobs = synthesisJobs;
         _epochRepository = epochRepository;
         _scheduleMemorySynthesis = scheduleMemorySynthesis;
+        _library = library;
     }
 
     public LibraryPaneViewModel(ProjectOpenResult result)
@@ -112,6 +115,11 @@ public partial class LibraryPaneViewModel : ViewModelBase
     [ObservableProperty] public partial ProjectMemoryItem? SelectedCandidate { get; set; }
     [ObservableProperty] public partial string CandidateEditContent { get; set; } = string.Empty;
     public int PendingCandidateCount => PendingCandidates.Count;
+    public ObservableCollection<ProjectLibraryEntry> LibraryEntries { get; } = [];
+    [ObservableProperty] public partial string? LibraryCategoryFilter { get; set; }
+    [ObservableProperty] public partial string? LibraryTopicFilter { get; set; }
+    [ObservableProperty] public partial string? LibraryTextFilter { get; set; }
+    public bool HasLibraryEntries => LibraryEntries.Count > 0;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -122,7 +130,19 @@ public partial class LibraryPaneViewModel : ViewModelBase
             EffectiveRotationPolicy = state.EffectivePolicy;
         }
         if (_memory is not null) await LoadMemoryAsync(cancellationToken);
+        await LoadLibraryAsync(cancellationToken);
     }
+
+    public async Task LoadLibraryAsync(CancellationToken cancellationToken = default)
+    {
+        if (_library is null) return;
+        LibraryEntries.Clear();
+        foreach (var entry in await _library.BrowseAsync(Result.Project.Id, LibraryCategoryFilter, LibraryTopicFilter, LibraryTextFilter, cancellationToken)) LibraryEntries.Add(entry);
+        OnPropertyChanged(nameof(HasLibraryEntries));
+    }
+
+    [RelayCommand]
+    private Task ApplyLibraryFilter() => LoadLibraryAsync();
 
     public async Task LoadMemoryAsync(CancellationToken cancellationToken=default)
     {

@@ -22,7 +22,7 @@ public sealed class WorkbenchDatabaseTests
     }
 
     [Fact]
-    public async Task Migration_007_sets_user_version_to_7()
+    public async Task Latest_migrations_set_user_version_to_8()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,7 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(7L, await command.ExecuteScalarAsync());
+        Assert.Equal(8L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
