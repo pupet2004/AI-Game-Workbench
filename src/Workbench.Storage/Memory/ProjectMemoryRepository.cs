@@ -19,6 +19,119 @@ public sealed class ProjectMemoryRepository(WorkbenchDatabase database)
     public async Task<IReadOnlyList<ProjectMemoryItem>> GetAsync(Guid projectId,string layer,string status,CancellationToken cancellationToken=default){await using var c=_database.CreateConnection();await c.OpenAsync(cancellationToken);var q=c.CreateCommand();q.CommandText="SELECT id,project_id,layer,topic,content,status,created_at,updated_at,certified_at FROM project_memory_items WHERE project_id=$project AND layer=$layer AND status=$status ORDER BY created_at;";q.Parameters.AddWithValue("$project",projectId.ToString());q.Parameters.AddWithValue("$layer",layer);q.Parameters.AddWithValue("$status",status);await using var r=await q.ExecuteReaderAsync(cancellationToken);var items=new List<ProjectMemoryItem>();while(await r.ReadAsync(cancellationToken))items.Add(Read(r));return items;}
     public async Task<IReadOnlyList<ProjectMemorySource>> GetSourcesAsync(Guid id,CancellationToken cancellationToken=default){await using var c=_database.CreateConnection();await c.OpenAsync(cancellationToken);var q=c.CreateCommand();q.CommandText="SELECT source_type,source_ref FROM project_memory_sources WHERE memory_id=$id;";q.Parameters.AddWithValue("$id",id.ToString());await using var r=await q.ExecuteReaderAsync(cancellationToken);var sources=new List<ProjectMemorySource>();while(await r.ReadAsync(cancellationToken))sources.Add(new(r.GetString(0),r.GetString(1)));return sources;}
     public async Task SetStatusAsync(Guid id,string status,DateTimeOffset updated,CancellationToken cancellationToken=default){await using var c=_database.CreateConnection();await c.OpenAsync(cancellationToken);var q=c.CreateCommand();q.CommandText="UPDATE project_memory_items SET status=$status,updated_at=$updated WHERE id=$id;";q.Parameters.AddWithValue("$id",id.ToString());q.Parameters.AddWithValue("$status",status);q.Parameters.AddWithValue("$updated",updated.ToString("O",CultureInfo.InvariantCulture));await q.ExecuteNonQueryAsync(cancellationToken);}
+    public async Task<ProjectMemoryItem> CertifyCandidateAsync(Guid candidateId, Guid projectId, string? replacementContent, DateTimeOffset certifiedAt, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // First write is the candidate compare-and-set so SQLite write serialization arbitrates the race.
+            var cas = connection.CreateCommand();
+            cas.Transaction = transaction;
+            cas.CommandText = """
+                UPDATE project_memory_items
+                SET status = 'Superseded', updated_at = $updated
+                WHERE id = $id AND project_id = $project
+                  AND layer = 'Candidate' AND status = 'Active';
+                """;
+            cas.Parameters.AddWithValue("$id", candidateId.ToString());
+            cas.Parameters.AddWithValue("$project", projectId.ToString());
+            cas.Parameters.AddWithValue("$updated", Format(certifiedAt));
+            if (await cas.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new MemoryCertificationConflictException("Candidate has already been processed or is not owned by this project.");
+            }
+
+            var read = connection.CreateCommand();
+            read.Transaction = transaction;
+            read.CommandText = "SELECT topic, content FROM project_memory_items WHERE id = $id;";
+            read.Parameters.AddWithValue("$id", candidateId.ToString());
+            string topic;
+            string originalContent;
+            await using (var reader = await read.ExecuteReaderAsync(cancellationToken))
+            {
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException("The certified candidate no longer exists.");
+                }
+
+                topic = reader.GetString(0);
+                originalContent = reader.GetString(1);
+            }
+
+            var formal = new ProjectMemoryItem(
+                Guid.NewGuid(), projectId, "Formal", topic, replacementContent ?? originalContent,
+                "Active", certifiedAt, certifiedAt, certifiedAt);
+            await InsertItemAsync(connection, transaction, formal, cancellationToken);
+            await CopySourcesAsync(connection, transaction, candidateId, formal.Id, cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            return formal;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task RejectCandidateAsync(Guid candidateId, Guid projectId, DateTimeOffset rejectedAt, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var cas = connection.CreateCommand();
+            cas.Transaction = transaction;
+            cas.CommandText = """
+                UPDATE project_memory_items
+                SET status = 'Rejected', updated_at = $updated
+                WHERE id = $id AND project_id = $project
+                  AND layer = 'Candidate' AND status = 'Active';
+                """;
+            cas.Parameters.AddWithValue("$id", candidateId.ToString());
+            cas.Parameters.AddWithValue("$project", projectId.ToString());
+            cas.Parameters.AddWithValue("$updated", Format(rejectedAt));
+            if (await cas.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new MemoryCertificationConflictException("Candidate has already been processed or is not owned by this project.");
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static async Task InsertItemAsync(SqliteConnection connection, SqliteTransaction transaction, ProjectMemoryItem item, CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO project_memory_items VALUES ($id,$project,$layer,$topic,$content,$status,$created,$updated,$certified);";
+        Add(command, item);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task CopySourcesAsync(SqliteConnection connection, SqliteTransaction transaction, Guid sourceMemoryId, Guid targetMemoryId, CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO project_memory_sources (memory_id, source_type, source_ref)
+            SELECT $target, source_type, source_ref
+            FROM project_memory_sources
+            WHERE memory_id = $source;
+            """;
+        command.Parameters.AddWithValue("$target", targetMemoryId.ToString());
+        command.Parameters.AddWithValue("$source", sourceMemoryId.ToString());
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task ApplySynthesisAsync(ProjectMemorySynthesisApplication application, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(application);
