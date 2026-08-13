@@ -16,13 +16,13 @@ public sealed class WorkbenchDatabaseTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages', 'workbench_settings', 'project_settings', 'project_activity_events', 'project_memory_items', 'project_memory_sources', 'project_memory_synthesis_jobs');";
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_layouts', 'project_leaders', 'leader_session_epochs', 'leader_messages', 'workbench_settings', 'project_settings', 'project_activity_events', 'project_memory_items', 'project_memory_sources', 'project_memory_synthesis_jobs', 'tasks', 'task_revisions', 'worker_executions', 'task_events', 'permission_requests', 'task_grants', 'task_clarifications', 'worker_completion_packages');";
 
-        Assert.Equal(11L, await command.ExecuteScalarAsync());
+        Assert.Equal(19L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
-    public async Task Migration_006_sets_user_version_to_6()
+    public async Task Migration_007_sets_user_version_to_7()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,7 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(6L, await command.ExecuteScalarAsync());
+        Assert.Equal(7L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
