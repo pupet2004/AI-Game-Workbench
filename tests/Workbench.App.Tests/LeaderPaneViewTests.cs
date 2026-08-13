@@ -94,7 +94,16 @@ public sealed class LeaderPaneViewTests
         Assert.Contains("Foreground=\"#344054\"", markup, StringComparison.Ordinal);
         Assert.Contains("TextTrimming=\"CharacterEllipsis\"", markup, StringComparison.Ordinal);
         Assert.Contains("MaxLines=\"2\"", markup, StringComparison.Ordinal);
-        Assert.Contains("<TextBlock Text=\"{Binding Text}\" Foreground=\"#101828\" TextWrapping=\"Wrap\" />", markup, StringComparison.Ordinal);
+        Assert.Contains("<SelectableTextBlock Text=\"{Binding Text}\" Foreground=\"#101828\" TextWrapping=\"Wrap\" />", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Conversation_message_bodies_are_selectable_in_current_and_archived_transcripts()
+    {
+        var markup = ReadLeaderView();
+
+        Assert.Equal(2, CountOccurrences(markup, "<SelectableTextBlock Text=\"{Binding Text}\""));
+        Assert.Contains("<SelectableTextBlock IsVisible=\"{Binding IsExpanded}\" Text=\"{Binding FullHandoff}\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]

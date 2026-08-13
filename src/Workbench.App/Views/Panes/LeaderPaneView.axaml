@@ -82,12 +82,12 @@
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate x:DataType="leader:LeaderMessageViewModel">
                                                             <Border Margin="0,0,0,6" Padding="8" Background="#FFFFFF" CornerRadius="4">
-                                                                <StackPanel Spacing="3"><TextBlock Text="{Binding RoleLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#667085" /><TextBlock Text="{Binding Text}" Foreground="#101828" TextWrapping="Wrap" /></StackPanel>
+                                                                <StackPanel Spacing="3"><TextBlock Text="{Binding RoleLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#667085" /><SelectableTextBlock Text="{Binding Text}" Foreground="#101828" TextWrapping="Wrap" /></StackPanel>
                                                             </Border>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
-                                                <TextBlock IsVisible="{Binding IsExpanded}" Text="{Binding FullHandoff}" Foreground="#344054" TextWrapping="Wrap" />
+                                                <SelectableTextBlock IsVisible="{Binding IsExpanded}" Text="{Binding FullHandoff}" Foreground="#344054" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -107,7 +107,7 @@
                                                    FontSize="12"
                                                    FontWeight="SemiBold"
                                                    Foreground="#667085" />
-                                        <TextBlock Text="{Binding Text}"
+                                        <SelectableTextBlock Text="{Binding Text}"
                                                    Foreground="#101828"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
