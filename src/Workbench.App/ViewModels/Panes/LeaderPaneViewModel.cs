@@ -29,6 +29,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly LeaderDraftProposalBuilder? _draftProposalBuilder;
     private readonly TaskRevisionRepository? _taskRevisions;
     private readonly WorkerSessionRouter? _workerSessionRouter;
+    private readonly Func<CancellationToken, Task>? _refreshWorkPane;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -46,7 +47,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         ILeaderBootContextBuilder? bootContextBuilder = null,
         TaskRepository? taskRepository = null,
         TaskRevisionRepository? taskRevisionRepository = null,
-        WorkerSessionRouter? workerSessionRouter = null)
+        WorkerSessionRouter? workerSessionRouter = null,
+        Func<CancellationToken, Task>? refreshWorkPane = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -61,6 +63,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _draftProposalBuilder = taskRepository is null ? null : new LeaderDraftProposalBuilder(project.Id, taskRepository);
         _taskRevisions = taskRevisionRepository;
         _workerSessionRouter = workerSessionRouter;
+        _refreshWorkPane = refreshWorkPane;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -854,7 +857,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         if (_workerSessionRouter is null) return;
         var result = await _workerSessionRouter.StartAsync(new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Title,
             confirmation.Revision.RecommendedExecutionProfile, confirmation.Goal, null, "Worker"), cancellationToken);
-        if (!result.Succeeded) AddErrorMessage("Worker could not be started.");
+        if (!result.Succeeded)
+        {
+            AddErrorMessage("Worker could not be started.");
+            return;
+        }
+
+        if (_refreshWorkPane is not null) await _refreshWorkPane(cancellationToken);
+        DraftConfirmation = null;
     }
 
     [RelayCommand]

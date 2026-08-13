@@ -65,7 +65,7 @@ public sealed class NavigationTests
     }
 
     [Fact]
-    public async Task Production_workspace_composition_confirms_a_draft_into_one_persisted_worker()
+    public async Task Production_workspace_composition_confirms_a_draft_into_one_visible_worker_and_consumes_the_draft()
     {
         using var folder = new TemporaryDirectory();
         var runtime = new FakeAgentRuntime();
@@ -97,14 +97,48 @@ public sealed class NavigationTests
         var sessions = await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id);
         var session = Assert.Single(sessions);
         Assert.Equal("model-a", session.Profile.ModelProfileId);
-        await workspace.WorkPane.LoadAsync(workspace.Result.Project.Id);
         Assert.Single(workspace.WorkPane.Workers);
+        Assert.Null(workspace.LeaderPane.DraftConfirmation);
+        Assert.False(workspace.LeaderPane.HasDraftConfirmation);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => workspace.LeaderPane.ConfirmDraftAsync());
+        Assert.Single(await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id));
+        Assert.Equal(2, runtime.CreatedSessions.Count);
         await using var connection = context.Services.Database.CreateConnection();
         await connection.OpenAsync();
         var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM task_events WHERE project_id = $projectId AND event_type = 'WorkerSessionStarted'";
         command.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
         Assert.Equal(1L, (long)(await command.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Failed_worker_start_keeps_the_draft_confirmation_for_retry()
+    {
+        using var folder = new TemporaryDirectory();
+        var runtime = new FakeAgentRuntime();
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: RegistryWith(runtime));
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(
+                AgentSessionId.New(),
+                AgentSessionStatus.Completed,
+                "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Read smoke context\",\"goal\":\"Read the smoke context file\",\"scope\":\"Read one file\",\"outOfScope\":\"Do not modify files\",\"acceptance\":[\"Report the marker\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}",
+                null),
+            DateTimeOffset.UtcNow));
+        workspace.LeaderPane.DraftMessage = "Delegate the smoke context read.";
+        await workspace.LeaderPane.SendAsync();
+        runtime.CreateException = new InvalidOperationException("worker runtime unavailable");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => workspace.LeaderPane.ConfirmDraftAsync());
+
+        Assert.True(workspace.LeaderPane.HasDraftConfirmation);
+        Assert.NotNull(workspace.LeaderPane.DraftConfirmation);
+        Assert.Empty(workspace.WorkPane.Workers);
+        Assert.Empty(await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id));
     }
 
     [Fact]

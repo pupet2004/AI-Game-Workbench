@@ -55,6 +55,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(350);
         Layout = result.Layout;
+        WorkPane = new WorkPaneViewModel(FocusWorkAsync, workerRoutingStore, runtimeRegistry);
         LeaderPane = new LeaderPaneViewModel(
             result.Project,
             runtimeRegistry ?? new AgentRuntimeRegistry(),
@@ -70,8 +71,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             bootContextBuilder,
             taskRepository: taskRepository,
             taskRevisionRepository: taskRevisionRepository,
-            workerSessionRouter: workerSessionRouter);
-        WorkPane = new WorkPaneViewModel(FocusWorkAsync, workerRoutingStore, runtimeRegistry);
+            workerSessionRouter: workerSessionRouter,
+            refreshWorkPane: cancellationToken => WorkPane.LoadAsync(result.Project.Id, cancellationToken));
         LibraryPane = new LibraryPaneViewModel(
             result,
             FocusLibraryAsync,
