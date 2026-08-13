@@ -9,6 +9,7 @@
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="WORK" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="No workers yet." FontSize="18" />
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="Leader-created worker sessions will appear here." TextWrapping="Wrap" Foreground="#667085" />
+            <TextBlock IsVisible="{Binding OpenError}" Text="{Binding OpenError}" TextWrapping="Wrap" Foreground="#B42318" />
             <ListBox IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}" SelectedItem="{Binding SelectedWorker}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">

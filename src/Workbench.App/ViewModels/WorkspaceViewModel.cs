@@ -55,7 +55,11 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(350);
         Layout = result.Layout;
-        WorkPane = new WorkPaneViewModel(FocusWorkAsync, workerRoutingStore, runtimeRegistry);
+        WorkPane = new WorkPaneViewModel(
+            FocusWorkAsync,
+            workerRoutingStore,
+            runtimeRegistry,
+            new CodexInteractiveSessionLauncher());
         LeaderPane = new LeaderPaneViewModel(
             result.Project,
             runtimeRegistry ?? new AgentRuntimeRegistry(),

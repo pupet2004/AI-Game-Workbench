@@ -12,11 +12,13 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
     private readonly Func<Task> _focus;
     private readonly IWorkerRoutingStore? _store;
     private readonly AgentRuntimeRegistry? _runtimes;
-    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null) { _focus = focus; _store = store; _runtimes = runtimes; }
+    private readonly IAgentInteractiveSessionLauncher? _interactiveLauncher;
+    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; }
     public ObservableCollection<WorkerSessionCardViewModel> Workers { get; } = [];
     public ObservableCollection<WorkerTranscriptLineViewModel> Transcript { get; } = [];
     public bool HasWorkers => Workers.Count > 0;
     [ObservableProperty] public partial WorkerSessionCardViewModel? SelectedWorker { get; set; }
+    [ObservableProperty] public partial string? OpenError { get; set; }
     public async Task LoadAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         Workers.Clear(); if (_store is null) return;
@@ -31,12 +33,27 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
         var events = await runtime.GetTranscriptAsync(worker.Session, cancellationToken);
         foreach (var item in events.OfType<AgentMessage>()) Transcript.Add(new WorkerTranscriptLineViewModel(item.Role.ToString(), item.Text));
     }
-    [RelayCommand] private Task OpenWorker(WorkerSessionCardViewModel worker) => SelectWorkerAsync(worker);
+    public async Task OpenWorkerAsync(WorkerSessionCardViewModel worker, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        OpenError = null;
+        if (_interactiveLauncher is null || !_interactiveLauncher.CanOpen(worker.Record))
+        {
+            OpenError = "This Worker runtime does not support native Codex sessions.";
+            return;
+        }
+
+        var result = await _interactiveLauncher.OpenAsync(worker.Record, cancellationToken);
+        OpenError = result.Error;
+    }
+
+    [RelayCommand] private Task OpenWorker(WorkerSessionCardViewModel worker) => OpenWorkerAsync(worker);
     [RelayCommand] private Task Focus() => _focus();
     private static int Rank(AgentSessionStatus status) => status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => 0, AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => 1, AgentSessionStatus.Completed => 2, _ => 3 };
 }
 public sealed class WorkerSessionCardViewModel(WorkerSessionRecord record)
 {
+    internal WorkerSessionRecord Record => record;
     public string TaskTitle => record.TaskTitle; public string WorkerLabel => record.Label; public string Profile => record.Profile.ModelProfileId; public AgentSession Session => record.Session;
     public string Status => record.Session.Status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => "Working", AgentSessionStatus.Completed => "Completed", AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => "Interrupted", AgentSessionStatus.Stopped or AgentSessionStatus.Archived => "Closed", _ => record.Session.Status.ToString() };
     public string LastActiveAtText => record.LastActiveAt.LocalDateTime.ToString("g");

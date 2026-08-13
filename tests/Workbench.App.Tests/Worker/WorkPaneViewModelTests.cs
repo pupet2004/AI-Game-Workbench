@@ -110,6 +110,73 @@ public sealed class WorkPaneViewModelTests
         Assert.Single(runtime.TranscriptRequests);
     }
 
+    [Fact]
+    public async Task Opening_a_codex_worker_reuses_its_persisted_session_without_changing_its_status()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(), runtime.Account.Id, new Workbench.Runtime.Providers.ProviderId("codex"),
+            "gpt-5.6-sol", "C:/Project", "thread-existing", AgentSessionStatus.Completed,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Read smoke context", session,
+            ExecutionProfile.Create("codex", runtime.Account.Id.Value.ToString(), "gpt-5.6-sol", "codex-app-server"),
+            "Worker", DateTimeOffset.UtcNow);
+        var store = new InMemoryWorkerRoutingStore();
+        await store.SaveSessionAsync(record);
+        var launcher = new RecordingInteractiveSessionLauncher();
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, new AgentRuntimeRegistry(), launcher);
+        await pane.LoadAsync(record.ProjectId);
+
+        await pane.OpenWorkerAsync(Assert.Single(pane.Workers));
+        await pane.OpenWorkerAsync(Assert.Single(pane.Workers));
+
+        Assert.Equal([record.Session.Id, record.Session.Id], launcher.Opened.Select(item => item.Session.Id));
+        Assert.All(launcher.Opened, item => Assert.Equal("thread-existing", item.Session.ExternalSessionId));
+        Assert.All(launcher.Opened, item => Assert.Equal("C:/Project", item.Session.WorkingDirectory));
+        Assert.Equal("Completed", pane.Workers.Single().Status);
+        Assert.Single(await store.ListSessionsAsync(record.ProjectId));
+    }
+
+    [Fact]
+    public async Task Codex_launcher_rejects_non_codex_workers_without_starting_a_window()
+    {
+        var runtime = new FakeAgentRuntime();
+        var record = Session(Guid.NewGuid(), Guid.NewGuid(), "Task", "Worker", AgentSessionStatus.Ready, TimeSpan.Zero);
+        var starts = 0;
+        var launcher = new CodexInteractiveSessionLauncher(_ =>
+        {
+            starts++;
+        });
+
+        var result = await launcher.OpenAsync(record);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("This Worker runtime does not support native Codex sessions.", result.Error);
+        Assert.Equal(0, starts);
+    }
+
+    [Fact]
+    public void Codex_launcher_starts_a_new_native_terminal_that_resumes_the_existing_thread_in_the_project_directory()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(), runtime.Account.Id, new Workbench.Runtime.Providers.ProviderId("codex"),
+            "gpt-5.6-sol", "C:/Project", "thread-existing", AgentSessionStatus.Completed,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Read smoke context", session,
+            ExecutionProfile.Create("codex", runtime.Account.Id.Value.ToString(), "gpt-5.6-sol", "codex-app-server"),
+            "Worker", DateTimeOffset.UtcNow);
+
+        var startInfo = CodexInteractiveSessionLauncher.CreateStartInfo(record);
+
+        Assert.Equal("wt.exe", startInfo.FileName);
+        Assert.Equal(
+            ["-w", "new", "--size", "120,42", "--title", "[Worker] Read smoke context - Codex",
+             "--suppressApplicationTitle", "-d", "C:/Project", "cmd.exe", "/k", "codex", "resume",
+             "thread-existing", "-C", "C:/Project"],
+            startInfo.ArgumentList);
+    }
+
     private static WorkerSessionRecord Session(Guid projectId, Guid taskId, string title, string label, AgentSessionStatus status, TimeSpan age)
     {
         var runtime = new FakeAgentRuntime();
@@ -119,6 +186,19 @@ public sealed class WorkPaneViewModelTests
     }
 
     private static ExecutionProfile Profile(FakeAgentRuntime runtime) => ExecutionProfile.Create(runtime.Provider.Id.Value, runtime.Account.Id.Value.ToString(), "model-a", "runtime");
+}
+
+internal sealed class RecordingInteractiveSessionLauncher : IAgentInteractiveSessionLauncher
+{
+    public List<WorkerSessionRecord> Opened { get; } = [];
+
+    public bool CanOpen(WorkerSessionRecord worker) => true;
+
+    public Task<InteractiveSessionOpenResult> OpenAsync(WorkerSessionRecord worker, CancellationToken cancellationToken = default)
+    {
+        Opened.Add(worker);
+        return Task.FromResult(InteractiveSessionOpenResult.Success());
+    }
 }
 
 internal sealed class InMemoryWorkerRoutingStore : IWorkerRoutingStore
