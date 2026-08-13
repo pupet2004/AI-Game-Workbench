@@ -4,7 +4,9 @@
 
 **Architecture:** Workbench is session routing, labels, persistence, and Project Library. Leader Skill owns orchestration judgment. Agent/CLI owns implementation, files, shell, tests, builds, and any Git workflow described in the Prompt. Existing WorkerExecution/TaskRevision/Permission/TaskGrant/TaskEvent/CompletionPackage/Evidence storage remains available as an Optional Reliability Layer, not a mandatory execution engine.
 
-**Constraints:** Documentation revision only in this file. Tasks 1–3 remain completed history. Task 4A containment exploration is stopped; do not schedule Windows sandbox, `writableRoots`, ACL, `CreateProcessAsUserW`, Git containment, worktree creation, BaseCommit freeze, deterministic evidence, merge, or M2-02.
+**Product boundary:** Ask “这个功能原本的 Agent 自己有吗？” before adding Workbench behavior. Existing Agent abilities are not reimplemented by default. Workbench's cross-Agent, cross-Session, and cross-Project value is Session aggregation, Prompt/handoff routing, Worker labels/status, window management, Project persistence, Project Library indexing, and Agent Resource aggregation. The user-facing core is `Project`, `AgentSession`, `Handoff`, and `LibraryEntry`; existing Task/Revision/WorkerExecution storage remains internal substrate.
+
+**Constraints:** Documentation revision only in this file. Tasks 1–3 remain completed history. Task 4A containment exploration is stopped; do not schedule Windows sandbox, `writableRoots`, ACL, `CreateProcessAsUserW`, Git containment, worktree creation, BaseCommit freeze, deterministic evidence, merge, independent Worker windows, right-click removal, Agent Resource Discovery, login detection, source conversation deletion, or M2-02.
 
 ## Completed History
 
@@ -20,6 +22,10 @@
 - Workbench persists Project, LeaderSession, WorkerSession, Task, status, timestamps, and routing edges. It does not choose a model or Worker itself.
 - Runtime create followed by persistence failure receives best-effort stop. Restart ambiguity is surfaced as Interrupted/Unknown for user/Leader choice; no session-discovery infrastructure is added here.
 - V1 trusts the Worker report. Existing Evidence/Completion records may be attached later and do not block handoff.
+- Leader is one pinned complete Agent Session plus Leader Skill and Project Context, not a special execution engine.
+- Work is a Worker Session card manager. Each card is a normal Agent Session with Task/Label, Agent/Model, Status, and LastActiveAt.
+- Worker's full transcript opens in an independent Agent Conversation Window; `×` hides only the window. Removal is a separate explicit right-click action with confirmation and does not delete the source Agent conversation.
+- Task/Agent status, Window state (`Open`/`Hidden`), and Workbench management (`Present`/`Removed`) are independent dimensions.
 
 ## Task 4: Worker Session Handoff & Routing
 
@@ -44,13 +50,13 @@
 
 ## Task 5: Minimal Work UI
 
-**Outcome:** Preserve the three-column `LEADER | WORK | PROJECT LIBRARY` layout while making Task-to-Session relationships immediately legible.
+**Outcome:** Preserve the three-column `LEADER | WORK | PROJECT LIBRARY` layout while making Project, AgentSession, Handoff, and LibraryEntry relationships immediately legible. In this M2 task, keep Worker cards and the existing session loop; independent Worker Conversation Windows are a subsequent small UI task.
 
 **RED tests:**
 
 - Leader shows the Main Leader conversation and a bounded set of Worker statuses needing attention;
 - Work cards show Task, Provider/Model/Profile, status, and LastActiveAt;
-- open, peek, attach, follow-up, resume, and close controls target the selected Worker Session;
+- card actions preserve the selected Worker Session identity; do not implement independent Worker windows or removal in this M2 task;
 - Draft Card retains Edit, Cancel, and explicit Start Worker actions;
 - restart and interrupted states remain visible without a complex workflow dashboard;
 - no Agent graph, org chart, Kanban, merge button, or every-event Leader chat rendering.
@@ -75,7 +81,7 @@
 
 ## Task 7: End-to-End Real Smoke And M2 Seal
 
-**Outcome:** Validate the complete thin handoff loop with fakes and one opt-in real Agent session in a disposable safe Project.
+**Outcome:** Validate the complete thin handoff loop with fakes and one opt-in real Agent session in a disposable safe Project: Draft -> Confirm -> exactly one Worker -> routed report -> Leader receipt.
 
 **RED tests:**
 
@@ -84,6 +90,7 @@
 - interrupted/unknown runtime state is surfaced for user/Leader choice;
 - no Workbench worktree, BaseCommit, containment, Git commit/evidence, merge, or model-selection assertion blocks the smoke;
 - existing Storage reliability records remain readable and optional.
+- this design-only revision does not expand M2 into Worker windows, removal, resource discovery, login detection, or source conversation deletion.
 
 **GREEN/review:** Run the existing Core, Storage, Project, Runtime, and App suites plus an opt-in disposable real smoke. Do not touch real game projects. Commit the seal independently:
 `test(m2): seal agent handoff workflow`.

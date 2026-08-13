@@ -14,6 +14,10 @@ The product core is:
 
 The product rule is: **Agent 负责工作，Workbench 负责交接.** Workbench routes and records handoffs; the selected Agent/CLI performs implementation, builds, tests, shell work, file edits, and any Git workflow requested by the Leader.
 
+The boundary question for every proposed feature is: **“这个功能原本的 Agent 自己有吗？”** If Codex, Claude Code, OpenCode, Kimi, or another Agent already provides Git, worktrees, shell, file editing, tests, commit, planning, code understanding, or native conversation lifecycle, Workbench does not reimplement it by default. Workbench focuses on cross-Agent, cross-Session, and cross-Project capabilities: session aggregation, prompt/handoff routing, Worker status and labels, window management, Project persistence, Project Library indexing, and aggregation of available Agent resources.
+
+The product core is compressed to `Project`, `AgentSession`, `Handoff`, and `LibraryEntry`. Existing `Task`, `TaskRevision`, `WorkerExecution`, and related Storage records may remain as internal reliability substrate; they are not the center of the user's product model. Do not delete them or roll back migrations.
+
 ## 2. Scope And Boundaries
 
 Workbench knows the current Project, Leader Session, Worker Sessions, Task labels, routing relationships, timestamps, and resumable session identities. It does not independently choose a model, infer whether to reuse a Worker, validate a commit, interpret a Worker report, manage worktrees, enforce filesystem containment, stage or commit Git, merge, or provide OS/provider security.
@@ -38,11 +42,11 @@ The selected repository/project identity and its Library.
 
 ### Leader Session
 
-A persistent Main Leader conversation scoped to a Project. It produces structured Draft proposals and receives routed Worker reports.
+A persistent, pinned Main Leader Agent Session scoped to a Project, with Leader Skill and Project Context. It produces structured Draft proposals and receives routed Worker reports. It is not a special execution engine.
 
 ### Worker Session
 
-An Agent Session selected by the Leader Skill and confirmed by the user. It is a first-class object separate from Task. A Worker Session may continue the same Task revision, perform Leader-audited rework, or handle tightly related follow-up work when the Leader explicitly selects reuse.
+A normal Agent Session selected by the Leader Skill and confirmed by the user. Work manages it as a card with only Task/Label, Agent/Model, Status, and LastActiveAt. A Worker Session may continue the same Task revision, perform Leader-audited rework, or handle tightly related follow-up work when the Leader explicitly selects reuse.
 
 ### Task
 
@@ -84,21 +88,31 @@ Leader may recommend termination. A formal terminal abandonment decision for a T
 
 ## 8. Project Library
 
-Project Library is a lightweight index that helps an Agent quickly find the right design, implementation record, rule, object, decision, or history. It supports category, topic, time, short summary, source reference, browsing, and search. It is not a knowledge graph, full-history replacement, automatic project auditor, or automatic semantic retrieval system.
+Project Library is a Project detail/knowledge index. By default it shows project overview, category, topic, time, and short summary; clicking a category, time, or entry opens the full detail/source. It is not a large knowledge graph, full-history replacement, automatic project auditor, or automatic semantic retrieval system.
 
 Leader/Worker Skills create concise high-quality notes, for example: “听牌茶盏正式改为连续听牌累计机制。实现 commit abc123。” Workbench stores, classifies, timestamps, links, displays, and searches those notes; intelligence and synthesis belong to the Skills.
 
-## 9. UI Minimum
+## 9. Worker Windows And Removal
+
+Clicking a Worker card opens an independent Agent Conversation Window containing that Worker Session's complete conversation. The Work column remains a card manager; it does not expand into an inline full transcript. The unified session shell may host Codex, Claude Code, OpenCode, Kimi, Mimo, DeepSeek harness, or another AgentRuntime without reimplementing the Agent's native abilities.
+
+Clicking the independent window's `×` only closes the foreground window. It does not delete the Session, end the Task, remove the Worker card, or delete the source Agent conversation. The Worker remains in the background and its card remains in Work; clicking the card reopens the same Session window.
+
+Permanent Workbench removal is explicit: Worker card -> right-click -> “从 Workbench 移除” -> confirmation. It removes the Worker from the current Project list, stops Workbench's current run/connection when applicable, and deletes or detaches Workbench's own Session management record. By default it does not delete the source Agent's conversation/thread. V1 does not implement permanent deletion of source Agent conversations.
+
+Keep these dimensions distinct: Task/Agent status (`Working`, `Completed`, `Interrupted`, etc.), Window state (`Open`, `Hidden`), and Workbench management (`Present`, `Removed`). `Completed != Removed`, `Close Window != Close Session`, and `Removed != Delete Source Conversation`.
+
+## 10. UI Minimum
 
 Keep the three-column layout: `LEADER | WORK | PROJECT LIBRARY`.
 
-- Leader: Main Leader conversation and a small set of Worker statuses needing attention.
-- Work: Worker Session cards showing Task, Provider/Model/Profile, status, and LastActiveAt; open, peek, or attach to the transcript.
-- Project Library: category, topic, time browsing and search.
+- Leader: one pinned complete Main Leader Agent Session with Leader Skill and Project Context.
+- Work: Worker Session cards showing Task/Label, Agent/Model, Status, and LastActiveAt; card activation opens the independent Worker Conversation Window.
+- Project Library: project overview plus category, topic, time, summary, and drill-down to detail/source.
 
 Do not add an Agent graph, org chart, workflow dashboard, enterprise control plane, or complex multi-agent chat.
 
-## 10. Testable Invariants
+## 11. Testable Invariants
 
 - Draft persistence is Project-scoped, atomic, side-effect-free, and never starts a Worker.
 - `Start Worker` requires explicit user confirmation.
@@ -110,8 +124,15 @@ Do not add an Agent graph, org chart, workflow dashboard, enterprise control pla
 - Worker status and Task label remain understandable after restart.
 - Library records retain category, topic, time, summary, and source reference.
 - Workbench does not require worktree creation, BaseCommit freeze, containment, Git commit/evidence, or merge for the core handoff loop.
+- Closing a Worker window preserves its Session, Task, card, and source conversation.
+- Removing a Worker is explicit and does not delete the source Agent conversation.
+- Task/Agent status, Window state, and Workbench management state are independent.
 
-## 11. M2-02 Boundary
+## 12. Current M2 Boundary
+
+This revision is design-only. Current M2 remains Draft -> Confirm -> exactly one Worker -> real smoke. Do not begin independent Worker windows, right-click removal, Agent Resource Discovery, login detection, or source conversation deletion in this M2 task. Independent Worker windows are a subsequent small UI task.
+
+## 13. M2-02 Boundary
 
 M2-02 and future reliability work may add auditing, verification, merge readiness, richer evidence, or optional workspace conveniences. None is required for the M2-01 session-routing MVP.
 
