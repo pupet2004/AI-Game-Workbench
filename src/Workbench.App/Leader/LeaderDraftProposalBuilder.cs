@@ -1,7 +1,6 @@
 using Workbench.Core.Tasks;
 using Workbench.Storage.Tasks;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Workbench.App.Leader;
 
@@ -30,8 +29,13 @@ public sealed record LeaderStructuredResponse(string Response, LeaderDraftPropos
         {
             using var json = JsonDocument.Parse(text);
             var root = json.RootElement;
-            if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.String ||
-                !root.TryGetProperty("draft_proposal", out var draft) || draft.ValueKind != JsonValueKind.Object) return false;
+            if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.String) return false;
+            if (!root.TryGetProperty("draft_proposal", out var draft))
+            {
+                result = new LeaderStructuredResponse(response.GetString() ?? string.Empty, null);
+                return true;
+            }
+            if (draft.ValueKind != JsonValueKind.Object) return false;
             var profile = draft.GetProperty("recommendedExecutionProfile");
             var proposal = new LeaderDraftProposal(
                 projectId,

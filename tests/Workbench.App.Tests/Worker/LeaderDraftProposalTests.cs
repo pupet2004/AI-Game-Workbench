@@ -8,11 +8,38 @@ using CoreProject = Workbench.Core.Projects.Project;
 using Workbench.App.Tests.Support;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
+using Microsoft.Data.Sqlite;
 
 namespace Workbench.App.Tests.Worker;
 
 public sealed class LeaderDraftProposalTests
 {
+    [Fact]
+    public async Task Ordinary_structured_response_creates_no_draft_or_execution_side_effect()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+                "{\"response\":\"The project currently has no active worker.\"}", null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.DraftMessage = "Explain the current project state.";
+
+        await workspace.LeaderPane.SendAsync();
+
+        Assert.Equal("The project currently has no active worker.", workspace.LeaderPane.Messages.Last().Text);
+        Assert.Empty(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        await using var connection = context.Services.Database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM worker_executions WHERE project_id = $projectId";
+        command.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
+        Assert.Equal(0L, (long)(await command.ExecuteScalarAsync())!);
+        Assert.Single(runtime.CreatedSessions);
+    }
     [Fact]
     public void Structured_envelope_parses_without_provider_specific_fields()
     {
@@ -43,7 +70,14 @@ public sealed class LeaderDraftProposalTests
         var stored = await fixture.Tasks.GetAsync(fixture.ProjectId, result.TaskId!.Value);
         Assert.NotNull(stored);
         Assert.Equal("Ship onboarding", stored!.Title);
-        Assert.Single(await fixture.Revisions.ListAsync(fixture.ProjectId, result.TaskId.Value));
+        Assert.Equal(TaskLifecycleStatus.Draft, stored.Status);
+        var revision = Assert.Single(await fixture.Revisions.ListAsync(fixture.ProjectId, result.TaskId.Value));
+        Assert.Equal(proposal.Goal, revision.Goal);
+        Assert.Equal(proposal.Scope, revision.Scope);
+        Assert.Equal(proposal.OutOfScope, revision.OutOfScope);
+        Assert.Equal(proposal.Acceptance, revision.Acceptance);
+        Assert.Equal(proposal.RiskLevel, revision.RiskLevel);
+        Assert.Equal(proposal.RecommendedExecutionProfile, revision.RecommendedExecutionProfile);
     }
 
     [Fact]
@@ -75,6 +109,22 @@ public sealed class LeaderDraftProposalTests
     }
 
     [Fact]
+    public async Task Revision_insert_failure_rolls_back_the_task_insert()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.RejectRevisionInsertsAsync();
+        var proposal = new LeaderDraftProposal(
+            fixture.ProjectId, "Title", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low,
+            ExecutionProfile.Create("provider", "account", "model", "runtime"));
+
+        var result = await fixture.Builder.CreateDraftAsync(proposal);
+
+        Assert.False(result.Succeeded);
+        Assert.Empty(await fixture.Tasks.ListAsync(fixture.ProjectId));
+        Assert.Equal(0, await fixture.CountRevisionsAsync());
+    }
+
+    [Fact]
     public async Task Leader_turn_persists_proposal_but_keeps_structured_envelope_out_of_transcript()
     {
         var runtime = new FakeAgentRuntime();
@@ -93,6 +143,9 @@ public sealed class LeaderDraftProposalTests
 
         Assert.Equal("Draft ready.", workspace.LeaderPane.Messages.Last().Text);
         Assert.Single(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        var transcript = await context.Services.LeaderMessageRepository.GetAllAsync(workspace.LeaderPane.SessionEpochId!.Value);
+        Assert.Equal("Draft ready.", transcript.Last().Text);
+        Assert.DoesNotContain("draft_proposal", transcript.Last().Text, StringComparison.Ordinal);
     }
 
     private sealed class Fixture : IAsyncDisposable
@@ -120,6 +173,24 @@ public sealed class LeaderDraftProposalTests
             var projectId = Guid.NewGuid();
             await new ProjectRepository(database).UpsertAsync(new CoreProject(projectId, "Test", Path.GetTempPath(), ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
             return new Fixture(path, database, projectId);
+        }
+
+        public async Task RejectRevisionInsertsAsync()
+        {
+            await using var connection = new SqliteConnection($"Data Source={_path};Foreign Keys=True;Pooling=False");
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER reject_task_revision BEFORE INSERT ON task_revisions BEGIN SELECT RAISE(ABORT, 'revision rejected'); END;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        public async Task<int> CountRevisionsAsync()
+        {
+            await using var connection = new SqliteConnection($"Data Source={_path};Foreign Keys=True;Pooling=False");
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM task_revisions";
+            return Convert.ToInt32(await command.ExecuteScalarAsync());
         }
 
         public ValueTask DisposeAsync()
