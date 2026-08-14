@@ -15,10 +15,39 @@ public enum AssignmentStateTransitionResult
 }
 
 public sealed record AssignmentReviewRecoveryState(StoredTask Task, IReadOnlyList<StoredTaskEvent> Events);
+public sealed record LeaderReviewDecisionPersistenceRequest(Guid EventId, Guid ProjectId, Guid TaskId, Guid TaskRevisionId, Guid FinalReportEventId, string Outcome, string ActionLevel, string ReviewDepth, string Summary, string? Issue, string NextAction, string? ImportantNote, DateTimeOffset CreatedAt);
+public sealed record StoredLeaderReviewDecision(Guid EventId, Guid ProjectId, Guid TaskId, Guid TaskRevisionId, Guid FinalReportEventId, string Outcome, string ActionLevel, string ReviewDepth, string Summary, string? Issue, string NextAction, string? ImportantNote, DateTimeOffset CreatedAt);
 
 public sealed class AssignmentReviewStateRepository(WorkbenchDatabase database)
 {
     private readonly WorkbenchDatabase _database = database;
+
+    public async Task<AssignmentStateTransitionResult> TryRecordLeaderReviewDecisionAsync(LeaderReviewDecisionPersistenceRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!IsValid(request)) return AssignmentStateTransitionResult.Conflict;
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var task = await ReadTaskAsync(connection, transaction, request.ProjectId, request.TaskId, cancellationToken);
+        if (task is null) { await transaction.CommitAsync(cancellationToken); return AssignmentStateTransitionResult.NotFound; }
+        if (task.Status != TaskLifecycleStatus.Reviewing || task.CurrentRevisionId != request.TaskRevisionId) { await transaction.CommitAsync(cancellationToken); return AssignmentStateTransitionResult.Conflict; }
+        var source = await ReadEventAsync(connection, transaction, request.FinalReportEventId, cancellationToken);
+        if (source is null || source.ProjectId != request.ProjectId || source.TaskId != request.TaskId || source.Type != "WorkerFinalReportReceived") { await transaction.CommitAsync(cancellationToken); return AssignmentStateTransitionResult.Conflict; }
+        var existing = await ReadEventAsync(connection, transaction, request.EventId, cancellationToken);
+        if (existing is not null) { await transaction.CommitAsync(cancellationToken); return existing.Type == "LeaderReviewDecisionRecorded" ? AssignmentStateTransitionResult.Idempotent : AssignmentStateTransitionResult.Conflict; }
+        var duplicate = connection.CreateCommand(); duplicate.Transaction = transaction; duplicate.CommandText = "SELECT 1 FROM task_events WHERE project_id=$p AND task_id=$t AND event_type='LeaderReviewDecisionRecorded' AND payload_json LIKE $source LIMIT 1;"; duplicate.Parameters.AddWithValue("$p", request.ProjectId.ToString()); duplicate.Parameters.AddWithValue("$t", request.TaskId.ToString()); duplicate.Parameters.AddWithValue("$source", $"%\"FinalReportEventId\":\"{request.FinalReportEventId}\"%");
+        if (await duplicate.ExecuteScalarAsync(cancellationToken) is not null) { await transaction.CommitAsync(cancellationToken); return AssignmentStateTransitionResult.Idempotent; }
+        var payload = System.Text.Json.JsonSerializer.Serialize(new { request.TaskRevisionId, FinalReportEventId = request.FinalReportEventId, request.Outcome, request.ActionLevel, request.ReviewDepth, request.Summary, request.Issue, request.NextAction, request.ImportantNote });
+        var append = connection.CreateCommand(); append.Transaction = transaction; append.CommandText = "INSERT INTO task_events(id,project_id,task_id,execution_id,event_type,payload_json,created_at) VALUES($i,$p,$t,NULL,'LeaderReviewDecisionRecorded',$x,$a);"; append.Parameters.AddWithValue("$i", request.EventId.ToString()); append.Parameters.AddWithValue("$p", request.ProjectId.ToString()); append.Parameters.AddWithValue("$t", request.TaskId.ToString()); append.Parameters.AddWithValue("$x", payload); append.Parameters.AddWithValue("$a", Format(request.CreatedAt)); await append.ExecuteNonQueryAsync(cancellationToken); await transaction.CommitAsync(cancellationToken); return AssignmentStateTransitionResult.Applied;
+    }
+
+    public async Task<StoredLeaderReviewDecision?> GetLeaderReviewDecisionAsync(Guid projectId, Guid taskId, Guid taskRevisionId, Guid finalReportEventId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand(); command.CommandText = "SELECT id,payload_json,created_at FROM task_events WHERE project_id=$p AND task_id=$t AND event_type='LeaderReviewDecisionRecorded' AND payload_json LIKE $s ORDER BY created_at,id LIMIT 1;"; command.Parameters.AddWithValue("$p", projectId.ToString()); command.Parameters.AddWithValue("$t", taskId.ToString()); command.Parameters.AddWithValue("$s", $"%\"TaskRevisionId\":\"{taskRevisionId}\"%\"FinalReportEventId\":\"{finalReportEventId}\"%");
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken); if (!await reader.ReadAsync(cancellationToken)) return null;
+        var payload = System.Text.Json.JsonSerializer.Deserialize<DecisionPayload>(reader.GetString(1))!;
+        return new StoredLeaderReviewDecision(Guid.Parse(reader.GetString(0)), projectId, taskId, payload.TaskRevisionId, payload.FinalReportEventId, payload.Outcome, payload.ActionLevel, payload.ReviewDepth, payload.Summary, payload.Issue, payload.NextAction, payload.ImportantNote, DateTimeOffset.Parse(reader.GetString(2)));
+    }
 
     public async Task<AssignmentStateTransitionResult> TryTransitionAsync(
         Guid projectId,
@@ -186,4 +215,6 @@ public sealed class AssignmentReviewStateRepository(WorkbenchDatabase database)
     }
 
     private static string Format(DateTimeOffset value) => value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+    private static bool IsValid(LeaderReviewDecisionPersistenceRequest value) => value.EventId != Guid.Empty && value.ProjectId != Guid.Empty && value.TaskId != Guid.Empty && value.TaskRevisionId != Guid.Empty && value.FinalReportEventId != Guid.Empty && value.Outcome is "Pass" or "Fix" or "Continue" or "AskUser" && value.ActionLevel is "L1LocalFix" or "L2TaskRework" or "L3DecisionRequired" && value.ReviewDepth is "ReportOnly" or "EvidenceCheck" or "Deep" && !string.IsNullOrWhiteSpace(value.Summary) && value.Summary.Length <= 600 && !string.IsNullOrWhiteSpace(value.NextAction) && value.NextAction.Length <= 600 && (value.Issue is null || value.Issue.Length <= 600) && (value.ImportantNote is null || value.ImportantNote.Length <= 400);
+    private sealed record DecisionPayload(Guid TaskRevisionId, Guid FinalReportEventId, string Outcome, string ActionLevel, string ReviewDepth, string Summary, string? Issue, string NextAction, string? ImportantNote);
 }
