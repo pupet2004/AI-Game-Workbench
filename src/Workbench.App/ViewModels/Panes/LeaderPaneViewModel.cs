@@ -35,6 +35,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly IProjectMemoryApi? _projectMemoryApi;
     private readonly TimeProvider _timeProvider;
     private readonly Func<CancellationToken, Task>? _refreshLibraryPane;
+    private readonly ILeaderReviewUserResponseBinder? _responseBinder;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -56,7 +57,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         Func<CancellationToken, Task>? refreshWorkPane = null,
         IProjectMemoryApi? projectMemoryApi = null,
         TimeProvider? timeProvider = null,
-        Func<CancellationToken, Task>? refreshLibraryPane = null)
+        Func<CancellationToken, Task>? refreshLibraryPane = null,
+        ILeaderReviewUserResponseBinder? responseBinder = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -75,6 +77,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _projectMemoryApi = projectMemoryApi;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _refreshLibraryPane = refreshLibraryPane;
+        _responseBinder = responseBinder;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -451,6 +454,17 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             runtimeRequest = new AgentRequest(text, LeaderResponseSchema.Json);
         }
 
+        if (_responseBinder is not null && await _responseBinder.HasSingletonOpenGateAsync(_project.Id, cancellationToken))
+        {
+            DraftMessage = string.Empty;
+            Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.User, text));
+            var persisted = await _sessionManager.PersistUserMessageAsync(_conversation, text, cancellationToken);
+            if (persisted is not null) await _responseBinder.BindAsync(_project.Id, persisted.Id, cancellationToken);
+            _conversation.IsBusy = false;
+            NotifyAllState();
+            return;
+        }
+
         DraftMessage = string.Empty;
         Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.User, text));
         NotifyAllState();
@@ -500,7 +514,13 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 _conversation.RuntimeErrorDetail = null;
             }
 
-            await _sessionManager.PersistUserMessageAsync(_conversation, text, cancellationToken);
+            var persistedUserMessage = await _sessionManager.PersistUserMessageAsync(_conversation, text, cancellationToken);
+            if (persistedUserMessage is not null && _responseBinder is not null && await _responseBinder.BindAsync(_project.Id, persistedUserMessage.Id, cancellationToken) is not null)
+            {
+                _conversation.IsBusy = false;
+                NotifyAllState();
+                return;
+            }
             NotifyAllState();
 
             await foreach (var agentEvent in runtime.SendAsync(

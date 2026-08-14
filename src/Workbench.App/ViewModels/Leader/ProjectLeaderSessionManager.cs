@@ -116,17 +116,17 @@ public sealed class ProjectLeaderSessionManager
         conversation.Epoch = epoch;
     }
 
-    internal async Task PersistUserMessageAsync(
+    internal async Task<StoredLeaderMessage?> PersistUserMessageAsync(
         LeaderConversationState conversation,
         string text,
         CancellationToken cancellationToken = default)
     {
         if (_messages is null || conversation.Epoch is null)
         {
-            return;
+            return null;
         }
 
-        await _messages.AppendAsync(
+        return await _messages.AppendAsync(
             conversation.Epoch.Id,
             "user",
             text,

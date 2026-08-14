@@ -50,7 +50,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         IWorkerRoutingStore? workerRoutingStore = null,
         ProjectLibraryRepository? projectLibraryRepository = null,
         ProjectLibraryEvolutionRepository? projectLibraryEvolutionRepository = null,
-        IProjectMemoryApi? projectMemoryApi = null)
+         IProjectMemoryApi? projectMemoryApi = null,
+         ILeaderReviewUserResponseBinder? responseBinder = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -93,7 +94,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             refreshWorkPane: cancellationToken => WorkPane.LoadAsync(result.Project.Id, cancellationToken),
             projectMemoryApi: projectMemoryApi,
             timeProvider: _timeProvider,
-            refreshLibraryPane: LibraryPane.LoadLibraryAsync);
+             refreshLibraryPane: LibraryPane.LoadLibraryAsync,
+             responseBinder: responseBinder);
     }
 
     public ProjectOpenResult Result { get; }
