@@ -324,6 +324,22 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         return objects;
     }
 
+    public async Task<IReadOnlyList<ProjectLibraryObject>> ListObjectsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateGuid(projectId, nameof(projectId));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = $"{ObjectSelect} WHERE project_id=$projectId ORDER BY category_key,topic_key,id;";
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var objects = new List<ProjectLibraryObject>();
+        while (await reader.ReadAsync(cancellationToken)) objects.Add(ReadObject(reader));
+        return objects;
+    }
+
     public async Task<IReadOnlyList<ProjectLibraryTimelineNode>> BrowseNodesByDateAsync(
         Guid projectId,
         DateOnly? from = null,

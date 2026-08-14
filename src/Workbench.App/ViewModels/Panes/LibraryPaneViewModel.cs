@@ -14,10 +14,33 @@ namespace Workbench.App.ViewModels.Panes;
 public enum LibrarySection
 {
     Overview,
-    Browse,
-    History,
+    Category,
+    Time,
     Project
 }
+
+public enum LibraryTimelineDirection
+{
+    OldToNew
+}
+
+public sealed record LibraryTimelineNodeView(
+    Guid Id,
+    Guid ObjectId,
+    DateOnly LocalDate,
+    string Content,
+    IReadOnlyList<LibraryMaterialReference> Materials);
+
+public sealed record LibraryTimeGroupView(
+    DateOnly LocalDate,
+    string Category,
+    string Topic,
+    Guid ObjectId,
+    IReadOnlyList<LibraryTimelineNodeView> Nodes);
+
+public sealed record LibraryCategoryGroupView(
+    string Category,
+    IReadOnlyList<ProjectLibraryObject> Objects);
 
 public partial class LibraryPaneViewModel : ViewModelBase
 {
@@ -30,6 +53,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly Action<Guid>? _scheduleMemorySynthesis;
     private readonly Dictionary<Guid, string> _candidateSourceLabels = [];
     private readonly ProjectLibraryRepository? _library;
+    private readonly ProjectLibraryEvolutionRepository? _evolutionLibrary;
 
     public LibraryPaneViewModel(
         ProjectOpenResult result,
@@ -40,7 +64,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
         ProjectMemorySynthesisRepository? synthesisJobs = null,
         LeaderSessionEpochRepository? epochRepository = null,
         Action<Guid>? scheduleMemorySynthesis = null,
-        ProjectLibraryRepository? library = null)
+        ProjectLibraryRepository? library = null,
+        ProjectLibraryEvolutionRepository? evolutionLibrary = null)
     {
         Result = result;
         _focus = focus;
@@ -51,6 +76,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         _epochRepository = epochRepository;
         _scheduleMemorySynthesis = scheduleMemorySynthesis;
         _library = library;
+        _evolutionLibrary = evolutionLibrary;
     }
 
     public LibraryPaneViewModel(ProjectOpenResult result)
@@ -61,14 +87,18 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public ProjectOpenResult Result { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsOverview), nameof(IsBrowse), nameof(IsHistory), nameof(IsProject))]
+    [NotifyPropertyChangedFor(nameof(IsOverview), nameof(IsCategory), nameof(IsTime), nameof(HasCategoryView), nameof(HasTimeView), nameof(IsProject))]
     public partial LibrarySection SelectedSection { get; set; } = LibrarySection.Overview;
 
     public bool IsOverview => SelectedSection == LibrarySection.Overview;
 
-    public bool IsBrowse => SelectedSection == LibrarySection.Browse;
+    public bool IsCategory => SelectedSection == LibrarySection.Category;
 
-    public bool IsHistory => SelectedSection == LibrarySection.History;
+    public bool HasCategoryView => IsCategory;
+
+    public bool IsTime => SelectedSection == LibrarySection.Time;
+
+    public bool HasTimeView => IsTime;
 
     public bool IsProject => SelectedSection == LibrarySection.Project;
 
@@ -121,6 +151,22 @@ public partial class LibraryPaneViewModel : ViewModelBase
     [ObservableProperty] public partial string? LibraryTextFilter { get; set; }
     public bool HasLibraryEntries => LibraryEntries.Count > 0;
 
+    public ObservableCollection<string> LibraryCategories { get; } = [];
+    public ObservableCollection<LibraryCategoryGroupView> CategoryGroups { get; } = [];
+    public ObservableCollection<ProjectLibraryObject> LibraryObjects { get; } = [];
+    public ObservableCollection<LibraryTimelineNodeView> ObjectTimeline { get; } = [];
+    public ObservableCollection<DateOnly> TimeDates { get; } = [];
+    public ObservableCollection<LibraryTimeGroupView> TimeGroups { get; } = [];
+    public LibraryTimelineDirection TimelineDirection => LibraryTimelineDirection.OldToNew;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CurrentOverviewText))]
+    public partial ProjectLibraryObject? SelectedLibraryObject { get; set; }
+
+    public string CurrentOverviewText => string.IsNullOrWhiteSpace(SelectedLibraryObject?.CurrentOverview)
+        ? "No current overview yet."
+        : SelectedLibraryObject.CurrentOverview;
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (_rotationState is not null)
@@ -135,6 +181,12 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     public async Task LoadLibraryAsync(CancellationToken cancellationToken = default)
     {
+        if (_evolutionLibrary is not null)
+        {
+            await LoadEvolutionLibraryAsync(cancellationToken);
+            return;
+        }
+
         if (_library is null) return;
         LibraryEntries.Clear();
         foreach (var entry in await _library.BrowseAsync(Result.Project.Id, LibraryCategoryFilter, LibraryTopicFilter, LibraryTextFilter, cancellationToken)) LibraryEntries.Add(entry);
@@ -143,6 +195,35 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     [RelayCommand]
     private Task ApplyLibraryFilter() => LoadLibraryAsync();
+
+    public async Task ShowCategoryAsync(CancellationToken cancellationToken = default)
+    {
+        SelectedSection = LibrarySection.Category;
+        await LoadLibraryAsync(cancellationToken);
+    }
+
+    public async Task ShowTimeAsync(CancellationToken cancellationToken = default)
+    {
+        SelectedSection = LibrarySection.Time;
+        await LoadLibraryAsync(cancellationToken);
+    }
+
+    public async Task SelectLibraryObjectAsync(Guid objectId, CancellationToken cancellationToken = default)
+    {
+        if (_evolutionLibrary is null) return;
+        var selected = await _evolutionLibrary.GetObjectAsync(Result.Project.Id, objectId, cancellationToken);
+        if (selected is null) return;
+
+        SelectedLibraryObject = selected;
+        ObjectTimeline.Clear();
+        foreach (var node in await _evolutionLibrary.GetTimelineAsync(Result.Project.Id, objectId, cancellationToken))
+        {
+            ObjectTimeline.Add(await CreateTimelineNodeViewAsync(node, cancellationToken));
+        }
+    }
+
+    [RelayCommand]
+    private Task SelectLibraryObject(Guid objectId) => SelectLibraryObjectAsync(objectId);
 
     public async Task LoadMemoryAsync(CancellationToken cancellationToken=default)
     {
@@ -216,10 +297,10 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private void ShowOverview() => SelectedSection = LibrarySection.Overview;
 
     [RelayCommand]
-    private void ShowBrowse() => SelectedSection = LibrarySection.Browse;
+    private Task ShowCategory() => ShowCategoryAsync();
 
     [RelayCommand]
-    private void ShowHistory() => SelectedSection = LibrarySection.History;
+    private Task ShowTime() => ShowTimeAsync();
 
     [RelayCommand]
     private async Task ShowProject()
@@ -231,4 +312,36 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     [RelayCommand]
     private Task Focus() => _focus();
+
+    private async Task LoadEvolutionLibraryAsync(CancellationToken cancellationToken)
+    {
+        var nodes = await _evolutionLibrary!.BrowseNodesByDateAsync(Result.Project.Id, cancellationToken: cancellationToken);
+        var objects = (await _evolutionLibrary.ListObjectsAsync(Result.Project.Id, cancellationToken))
+            .ToDictionary(value => value.Id);
+
+        LibraryCategories.Clear();
+        foreach (var category in objects.Values.Select(value => value.Category).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase)) LibraryCategories.Add(category);
+        LibraryObjects.Clear();
+        foreach (var libraryObject in objects.Values.OrderBy(value => value.CategoryKey).ThenBy(value => value.TopicKey)) LibraryObjects.Add(libraryObject);
+        CategoryGroups.Clear();
+        foreach (var group in LibraryObjects.GroupBy(value => value.Category, StringComparer.OrdinalIgnoreCase))
+        {
+            CategoryGroups.Add(new(group.Key, group.ToArray()));
+        }
+
+        TimeDates.Clear();
+        foreach (var date in nodes.Select(node => node.LocalDate).Distinct()) TimeDates.Add(date);
+        TimeGroups.Clear();
+        foreach (var group in nodes.GroupBy(node => (node.LocalDate, node.ObjectId)))
+        {
+            if (!objects.TryGetValue(group.Key.ObjectId, out var libraryObject)) continue;
+            var views = new List<LibraryTimelineNodeView>();
+            foreach (var node in group) views.Add(await CreateTimelineNodeViewAsync(node, cancellationToken));
+            TimeGroups.Add(new(group.Key.LocalDate, libraryObject.Category, libraryObject.Topic, libraryObject.Id, views));
+        }
+    }
+
+    private async Task<LibraryTimelineNodeView> CreateTimelineNodeViewAsync(ProjectLibraryTimelineNode node, CancellationToken cancellationToken) =>
+        new(node.Id, node.ObjectId, node.LocalDate, node.Content,
+            await _evolutionLibrary!.GetMaterialReferencesAsync(Result.Project.Id, node.Id, cancellationToken));
 }

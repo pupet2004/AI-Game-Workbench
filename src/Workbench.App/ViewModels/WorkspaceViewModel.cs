@@ -49,7 +49,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         TaskRevisionRepository? taskRevisionRepository = null,
         WorkerSessionRouter? workerSessionRouter = null,
         IWorkerRoutingStore? workerRoutingStore = null,
-        ProjectLibraryRepository? projectLibraryRepository = null)
+        ProjectLibraryRepository? projectLibraryRepository = null,
+        ProjectLibraryEvolutionRepository? projectLibraryEvolutionRepository = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -89,7 +90,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             memorySynthesisRepository,
             epochRepository,
             scheduleMemorySynthesis,
-            library: projectLibraryRepository);
+            library: projectLibraryRepository,
+            evolutionLibrary: projectLibraryEvolutionRepository);
     }
 
     public ProjectOpenResult Result { get; }

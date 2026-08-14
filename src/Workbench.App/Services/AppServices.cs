@@ -47,6 +47,7 @@ public sealed class AppServices : IAsyncDisposable
         TaskRepository taskRepository,
         TaskRevisionRepository taskRevisionRepository,
         ProjectLibraryRepository projectLibraryRepository,
+        ProjectLibraryEvolutionRepository projectLibraryEvolutionRepository,
         WorkerSessionRouter workerSessionRouter,
         IWorkerRoutingStore workerRoutingStore,
         AgentRuntimeRegistry runtimeRegistry,
@@ -74,6 +75,7 @@ public sealed class AppServices : IAsyncDisposable
         TaskRepository = taskRepository;
         TaskRevisionRepository = taskRevisionRepository;
         ProjectLibraryRepository = projectLibraryRepository;
+        ProjectLibraryEvolutionRepository = projectLibraryEvolutionRepository;
         WorkerSessionRouter = workerSessionRouter;
         WorkerRoutingStore = workerRoutingStore;
         RuntimeRegistry = runtimeRegistry;
@@ -111,6 +113,7 @@ public sealed class AppServices : IAsyncDisposable
     public TaskRepository TaskRepository { get; }
     public TaskRevisionRepository TaskRevisionRepository { get; }
     public ProjectLibraryRepository ProjectLibraryRepository { get; }
+    public ProjectLibraryEvolutionRepository ProjectLibraryEvolutionRepository { get; }
     public WorkerSessionRouter WorkerSessionRouter { get; }
     public IWorkerRoutingStore WorkerRoutingStore { get; }
 
@@ -186,6 +189,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRepository(database),
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
+            new ProjectLibraryEvolutionRepository(database),
             new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider),
             new TaskEventWorkerRoutingStore(new TaskEventRepository(database)),
             effectiveRuntimeRegistry,

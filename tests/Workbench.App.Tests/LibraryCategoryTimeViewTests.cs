@@ -1,0 +1,107 @@
+using Workbench.App.ViewModels.Panes;
+using Workbench.App.Tests.Support;
+using Workbench.Storage.Memory;
+
+namespace Workbench.App.Tests;
+
+public sealed class LibraryCategoryTimeViewTests
+{
+    [Fact]
+    public async Task Category_and_time_are_symmetric_projections_of_same_library_nodes()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory();
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var library = new ProjectLibraryEvolutionRepository(context.Services.Database);
+        var relics = await library.CreateObjectAsync(opened.Project.Id, "Design", "Relics", context.Time.GetUtcNow());
+        await library.UpdateOverviewAsync(opened.Project.Id, relics.Id, "CURRENT_OVERVIEW", 0, context.Time.GetUtcNow());
+        var old = await library.AddNodeAsync(opened.Project.Id, relics.Id, new DateOnly(2026, 8, 13), "OLD_NODE", [], context.Time.GetUtcNow());
+        var newest = await library.AddNodeAsync(opened.Project.Id, relics.Id, new DateOnly(2026, 8, 14), "NEW_NODE", [new("GitCommit", "abc123", "Implementation")], context.Time.GetUtcNow());
+        var sameDay = await library.AddNodeAsync(opened.Project.Id, relics.Id, new DateOnly(2026, 8, 14), "SAME_DAY_NODE", [], context.Time.GetUtcNow().AddMinutes(1));
+
+        var pane = new LibraryPaneViewModel(opened, () => Task.CompletedTask, evolutionLibrary: library);
+        await pane.InitializeAsync();
+        await pane.ShowCategoryAsync();
+        await pane.SelectLibraryObjectAsync(relics.Id);
+
+        Assert.True(pane.HasCategoryView);
+        Assert.Equal("CURRENT_OVERVIEW", pane.SelectedLibraryObject!.CurrentOverview);
+        Assert.Equal(["SAME_DAY_NODE", "NEW_NODE", "OLD_NODE"], pane.ObjectTimeline.Select(node => node.Content));
+        Assert.Equal(LibraryTimelineDirection.OldToNew, pane.TimelineDirection);
+        Assert.Contains(pane.ObjectTimeline.Single(node => node.Id == newest.Id).Materials, item => item.Label == "Implementation");
+
+        await pane.ShowTimeAsync();
+        Assert.True(pane.HasTimeView);
+        Assert.Equal([new DateOnly(2026, 8, 14), new DateOnly(2026, 8, 13)], pane.TimeDates);
+        Assert.Equal([sameDay.Id, newest.Id], pane.TimeGroups.Single(group => group.LocalDate == new DateOnly(2026, 8, 14) && group.Category == "Design").Nodes.Select(node => node.Id));
+        Assert.Equal(old.Id, pane.ObjectTimeline.Last().Id);
+    }
+
+    [Fact]
+    public async Task Browsing_is_project_isolated_and_does_not_write_continuity_material()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var firstFolder = new TemporaryDirectory("library-first");
+        using var secondFolder = new TemporaryDirectory("library-second");
+        var firstProject = await context.Services.ProjectOpenService.OpenAsync(firstFolder.Path);
+        var secondProject = await context.Services.ProjectOpenService.OpenAsync(secondFolder.Path);
+        var library = context.Services.ProjectLibraryEvolutionRepository;
+        var firstObject = await library.CreateObjectAsync(firstProject.Project.Id, "Design", "First", context.Time.GetUtcNow());
+        await library.AddNodeAsync(firstProject.Project.Id, firstObject.Id, new DateOnly(2026, 8, 14), "FIRST_NODE", [], context.Time.GetUtcNow());
+        var secondObject = await library.CreateObjectAsync(secondProject.Project.Id, "Design", "Second", context.Time.GetUtcNow());
+        await library.AddNodeAsync(secondProject.Project.Id, secondObject.Id, new DateOnly(2026, 8, 15), "SECOND_NODE", [], context.Time.GetUtcNow());
+
+        var pane = new LibraryPaneViewModel(firstProject, () => Task.CompletedTask, evolutionLibrary: library);
+        await pane.InitializeAsync();
+        await pane.ShowCategoryAsync();
+        await pane.SelectLibraryObjectAsync(firstObject.Id);
+        await pane.ShowTimeAsync();
+
+        Assert.Equal([firstObject.Id], pane.LibraryObjects.Select(value => value.Id));
+        Assert.Equal(["FIRST_NODE"], pane.TimeGroups.SelectMany(group => group.Nodes).Select(node => node.Content));
+        Assert.Null(await context.Services.DailySummaryRepository.GetAsync(firstProject.Project.Id, new DateOnly(2026, 8, 14)));
+        var synthesis = await context.Services.ProjectMemorySynthesisRepository.GetStatusAsync(firstProject.Project.Id);
+        Assert.Equal(0, synthesis.PendingCount + synthesis.RunningCount);
+    }
+
+    [Fact]
+    public async Task Category_detail_shows_a_bounded_empty_current_overview()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("library-empty-overview");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var libraryObject = await context.Services.ProjectLibraryEvolutionRepository.CreateObjectAsync(
+            opened.Project.Id, "Design", "Unwritten", context.Time.GetUtcNow());
+
+        var pane = new LibraryPaneViewModel(opened, () => Task.CompletedTask, evolutionLibrary: context.Services.ProjectLibraryEvolutionRepository);
+        await pane.ShowCategoryAsync();
+        Assert.Contains(pane.LibraryObjects, value => value.Id == libraryObject.Id);
+        await pane.SelectLibraryObjectAsync(libraryObject.Id);
+
+        Assert.Equal("No current overview yet.", pane.CurrentOverviewText);
+        Assert.Empty(pane.ObjectTimeline);
+    }
+
+    [Fact]
+    public void Library_markup_exposes_both_axes_and_material_metadata()
+    {
+        var root = FindRepositoryRoot();
+        var markup = File.ReadAllText(Path.Combine(root, "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
+
+        Assert.Contains("Project Library · Category", markup, StringComparison.Ordinal);
+        Assert.Contains("Project Library · Time", markup, StringComparison.Ordinal);
+        Assert.Contains("Current Overview", markup, StringComparison.Ordinal);
+        Assert.Contains("MaterialKind", markup, StringComparison.Ordinal);
+        Assert.Contains("Reference", markup, StringComparison.Ordinal);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AI.Game.Workbench.sln")))
+        {
+            directory = directory.Parent;
+        }
+        return directory?.FullName ?? throw new DirectoryNotFoundException();
+    }
+}
