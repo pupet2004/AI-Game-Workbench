@@ -51,6 +51,7 @@ public sealed class AppServices : IAsyncDisposable
         WorkerSessionRouter workerSessionRouter,
         IWorkerRoutingStore workerRoutingStore,
         ILeaderReviewOrchestrator leaderReviewOrchestrator,
+        LeaderAuthoritySettingsService leaderAuthoritySettings,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -80,6 +81,7 @@ public sealed class AppServices : IAsyncDisposable
         WorkerSessionRouter = workerSessionRouter;
         WorkerRoutingStore = workerRoutingStore;
         LeaderReviewOrchestrator = leaderReviewOrchestrator;
+        LeaderAuthoritySettings = leaderAuthoritySettings;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -119,6 +121,7 @@ public sealed class AppServices : IAsyncDisposable
     public WorkerSessionRouter WorkerSessionRouter { get; }
     public IWorkerRoutingStore WorkerRoutingStore { get; }
     public ILeaderReviewOrchestrator LeaderReviewOrchestrator { get; }
+    public LeaderAuthoritySettingsService LeaderAuthoritySettings { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -166,6 +169,8 @@ public sealed class AppServices : IAsyncDisposable
         var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
             new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
             new LeaderReviewRuntimeAdapter(), reviewState, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider);
+        var leaderAuthoritySettings = new LeaderAuthoritySettingsService(
+            new WorkbenchSettingsRepository(database), new ProjectSettingsRepository(database));
 
         return new AppServices(
             database,
@@ -203,6 +208,7 @@ public sealed class AppServices : IAsyncDisposable
             new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(taskEvents), effectiveTimeProvider, reviewState, leaderReviewOrchestrator),
             new TaskEventWorkerRoutingStore(taskEvents),
             leaderReviewOrchestrator,
+            leaderAuthoritySettings,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);

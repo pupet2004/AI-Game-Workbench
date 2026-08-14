@@ -73,6 +73,10 @@ internal static class MigrationRunner
                 Migration012LeaderReviewState.ApplyAsync,
                 cancellationToken);
         }
+        if (currentVersion < Migration013LeaderAuthoritySettings.Version)
+        {
+            await ApplyAsync(connection, Migration013LeaderAuthoritySettings.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

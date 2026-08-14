@@ -6,6 +6,7 @@ namespace Workbench.Storage.Settings;
 public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
 {
     private const string RotationPolicyKey = "leader_session_rotation_policy";
+    private const string LeaderAuthorityKey = "leader_authority_mode";
     private readonly WorkbenchDatabase _database = database ?? throw new ArgumentNullException(nameof(database));
 
     public async Task<LeaderSessionRotationPolicy> GetLeaderSessionRotationPolicyAsync(
@@ -18,6 +19,22 @@ public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
         command.Parameters.AddWithValue("$key", RotationPolicyKey);
         var value = await command.ExecuteScalarAsync(cancellationToken) as string;
         return value is null ? LeaderSessionRotationPolicy.Auto : ParsePolicy(value);
+    }
+
+    public async Task<LeaderAuthorityMode> GetLeaderAuthorityModeAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand(); command.CommandText = "SELECT value FROM workbench_settings WHERE key = $key;"; command.Parameters.AddWithValue("$key", LeaderAuthorityKey);
+        var value = await command.ExecuteScalarAsync(cancellationToken) as string;
+        return value is null ? LeaderAuthorityMode.Balanced : ParseLeaderAuthorityMode(value);
+    }
+
+    public async Task SaveLeaderAuthorityModeAsync(LeaderAuthorityMode mode, CancellationToken cancellationToken = default)
+    {
+        ValidateLeaderAuthorityMode(mode);
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand(); command.CommandText = "INSERT INTO workbench_settings (key, value) VALUES ($key, $value) ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+        command.Parameters.AddWithValue("$key", LeaderAuthorityKey); command.Parameters.AddWithValue("$value", mode.ToString()); await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task SaveLeaderSessionRotationPolicyAsync(
@@ -53,5 +70,16 @@ public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
         {
             throw new ArgumentOutOfRangeException(nameof(policy));
         }
+    }
+
+    internal static LeaderAuthorityMode ParseLeaderAuthorityMode(string value)
+    {
+        if (!Enum.TryParse<LeaderAuthorityMode>(value, false, out var mode) || !Enum.IsDefined(mode)) throw new InvalidDataException($"Unknown leader authority mode: {value}.");
+        return mode;
+    }
+
+    internal static void ValidateLeaderAuthorityMode(LeaderAuthorityMode mode)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
     }
 }
