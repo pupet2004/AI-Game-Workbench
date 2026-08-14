@@ -6,6 +6,11 @@ public enum TaskLifecycleStatus
 {
     Draft,
     ReadyToStart,
+    Working,
+    NeedsLeaderDecision,
+    Reviewing,
+    NeedsUserDecision,
+    Completed,
     Cancelled
 }
 

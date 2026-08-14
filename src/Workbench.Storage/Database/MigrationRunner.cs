@@ -66,6 +66,13 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration011ProjectLibraryEvolution.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration012LeaderReviewState.Version)
+        {
+            await ApplyWithForeignKeysTemporarilyDisabledAsync(
+                connection,
+                Migration012LeaderReviewState.ApplyAsync,
+                cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(
@@ -83,6 +90,26 @@ internal static class MigrationRunner
         {
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    private static async Task ApplyWithForeignKeysTemporarilyDisabledAsync(
+        SqliteConnection connection,
+        Func<SqliteConnection, SqliteTransaction, CancellationToken, Task> migration,
+        CancellationToken cancellationToken)
+    {
+        var disable = connection.CreateCommand();
+        disable.CommandText = "PRAGMA foreign_keys = OFF;";
+        await disable.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await ApplyAsync(connection, migration, cancellationToken);
+        }
+        finally
+        {
+            var enable = connection.CreateCommand();
+            enable.CommandText = "PRAGMA foreign_keys = ON;";
+            await enable.ExecuteNonQueryAsync(CancellationToken.None);
         }
     }
 }
