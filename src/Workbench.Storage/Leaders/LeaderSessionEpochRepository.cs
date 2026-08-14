@@ -167,6 +167,16 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
         }
     }
 
+    public async Task<StoredLeaderSessionEpoch> SaveActiveHandoffAsync(Guid projectId, Guid epochId, string? content, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "UPDATE leader_session_epochs SET handoff_summary=$content WHERE id=$epochId AND project_id=$projectId AND ended_at IS NULL;";
+        command.Parameters.AddWithValue("$content", (object?)content ?? DBNull.Value); command.Parameters.AddWithValue("$epochId", epochId.ToString()); command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1) throw new InvalidOperationException("Only an active project-owned Leader epoch may update its Handoff.");
+        return (await GetAsync(epochId, cancellationToken))!;
+    }
+
     public async Task ArchiveAsync(
         Guid epochId,
         DateTimeOffset endedAt,

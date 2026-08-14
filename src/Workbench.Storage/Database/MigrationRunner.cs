@@ -58,6 +58,10 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration009MemoryContinuity.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration010LeaderContinuityPlans.Version)
+        {
+            await ApplyAsync(connection, Migration010LeaderContinuityPlans.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

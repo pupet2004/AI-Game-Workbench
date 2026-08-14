@@ -46,11 +46,11 @@ public sealed class DailySummaryRepository(WorkbenchDatabase database)
         await using var connection = _database.CreateConnection();
         await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT s.project_id,s.local_date,s.revision,s.created_at,s.updated_at,COUNT(r.source_ref) FROM project_daily_summaries s LEFT JOIN project_daily_summary_sources r ON r.project_id=s.project_id AND r.local_date=s.local_date WHERE s.project_id=$projectId AND ($from IS NULL OR s.local_date >= $from) AND ($through IS NULL OR s.local_date <= $through) GROUP BY s.project_id,s.local_date,s.revision,s.created_at,s.updated_at ORDER BY s.local_date DESC,s.updated_at DESC;";
+        command.CommandText = "SELECT s.project_id,s.local_date,s.revision,s.created_at,s.updated_at,COUNT(r.source_ref),length(CAST(s.content AS BLOB)) FROM project_daily_summaries s LEFT JOIN project_daily_summary_sources r ON r.project_id=s.project_id AND r.local_date=s.local_date WHERE s.project_id=$projectId AND ($from IS NULL OR s.local_date >= $from) AND ($through IS NULL OR s.local_date <= $through) GROUP BY s.project_id,s.local_date,s.revision,s.created_at,s.updated_at,s.content ORDER BY s.local_date DESC,s.updated_at DESC;";
         AddRange(command, projectId, from, through);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var metadata = new List<DailySummaryMetadata>();
-        while (await reader.ReadAsync(cancellationToken)) metadata.Add(new(Guid.Parse(reader.GetString(0)), DateOnly.ParseExact(reader.GetString(1), "yyyy-MM-dd", CultureInfo.InvariantCulture), reader.GetInt32(2), Parse(reader.GetString(3)), Parse(reader.GetString(4)), reader.GetInt32(5)));
+        while (await reader.ReadAsync(cancellationToken)) metadata.Add(new(Guid.Parse(reader.GetString(0)), DateOnly.ParseExact(reader.GetString(1), "yyyy-MM-dd", CultureInfo.InvariantCulture), reader.GetInt32(2), Parse(reader.GetString(3)), Parse(reader.GetString(4)), reader.GetInt32(5), reader.GetInt32(6)));
         return metadata;
     }
 

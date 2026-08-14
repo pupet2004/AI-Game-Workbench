@@ -1,5 +1,6 @@
 using Workbench.Core.Memory;
 using Workbench.Storage.Memory;
+using Workbench.Storage.Leaders;
 
 namespace Workbench.App.Memory;
 
@@ -10,4 +11,10 @@ public interface IProjectMemoryApi
     Task<IReadOnlyList<DailySummaryMetadata>> ListDailySummaryMetadataAsync(Guid projectId, DateOnly? from = null, DateOnly? through = null, CancellationToken cancellationToken = default);
     Task<ProjectMemoryPreferences> GetPreferencesAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task SavePreferencesAsync(ProjectMemoryPreferences preferences, CancellationToken cancellationToken = default);
+    Task<string?> GetBrainHandoffAsync(Guid projectId, Guid epochId, CancellationToken cancellationToken = default);
+    Task<StoredLeaderSessionEpoch> SaveBrainHandoffAsync(Guid projectId, Guid epochId, string? content, CancellationToken cancellationToken = default);
+    Task<RecentConversationStats> GetRecentConversationStatsAsync(Guid projectId, Guid epochId, CancellationToken cancellationToken = default);
+    Task<RecentConversationSlice> ReadRecentConversationAsync(Guid projectId, Guid epochId, long? beforeSequence, int maxMessages, int maxUtf8Bytes, CancellationToken cancellationToken = default);
+    Task<ContinuityMaterialCatalog> ListContinuityMaterialsAsync(Guid projectId, Guid sourceEpochId, CancellationToken cancellationToken = default);
+    Task<ResolvedContinuityBundle> ResolveContinuityAsync(Guid projectId, LeaderEpochContinuityPlan plan, CancellationToken cancellationToken = default);
 }

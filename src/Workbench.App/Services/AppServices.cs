@@ -169,7 +169,7 @@ public sealed class AppServices : IAsyncDisposable
                 effectiveTimeProvider),
             dailySummaryRepository,
             projectMemoryPreferencesRepository,
-            new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository),
+            new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages),
             new LeaderBootContextBuilder(memoryRepository, leaderEpochs),
             new LeaderSessionRolloverService(
                 effectiveRuntimeRegistry,

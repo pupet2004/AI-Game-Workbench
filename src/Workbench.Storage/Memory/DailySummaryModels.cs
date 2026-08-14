@@ -24,4 +24,5 @@ public sealed record DailySummaryMetadata(
     int Revision,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    int SourceCount);
+    int SourceCount,
+    int Utf8Bytes);
