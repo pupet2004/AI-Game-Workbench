@@ -55,4 +55,34 @@ public sealed class LeaderEpochContinuityRepositoryTests
         Assert.Equal(context.T1, (await context.Epochs.GetAsync(delivered.Id))!.BootContextDeliveredAt);
         Assert.Equal(otherPlan.Selections, (await repository.GetAsync(context.ProjectB.Id, other.Id))!.Selections);
     }
+
+    [Fact]
+    public async Task Delivery_consumes_only_the_selected_archived_handoff_in_the_successor_project()
+    {
+        await using var context = await LeaderStorageContext.CreateAsync();
+        await context.EnsureLeaderAsync(context.ProjectA.Id);
+        await context.EnsureLeaderAsync(context.ProjectB.Id);
+        var selectedSource = context.CreateEpoch(context.ProjectA.Id) with { EndedAt = context.T0, RolloverReason = "Manual", HandoffSummary = "SELECTED" };
+        var unselectedSource = context.CreateEpoch(context.ProjectA.Id) with { EndedAt = context.T0, RolloverReason = "Manual", HandoffSummary = "UNSELECTED" };
+        var foreignSource = context.CreateEpoch(context.ProjectB.Id) with { EndedAt = context.T0, RolloverReason = "Manual", HandoffSummary = "FOREIGN" };
+        await context.Epochs.SaveAsync(selectedSource);
+        await context.Epochs.SaveAsync(unselectedSource);
+        await context.Epochs.SaveAsync(foreignSource);
+        var successor = context.CreateEpoch(context.ProjectA.Id);
+        await context.CreateCurrentEpochAsync(successor);
+        var repository = new LeaderEpochContinuityRepository(context.Database);
+        await repository.SaveAsync(context.ProjectA.Id, new LeaderEpochContinuityPlan(successor.Id, 1000,
+            [
+                new(0, ContinuityMaterialKind.BrainHandoff, $"handoff:{selectedSource.Id}", 500),
+                new(1, ContinuityMaterialKind.BrainHandoff, $"handoff:{foreignSource.Id}", 500)
+            ], context.T0));
+
+        Assert.Equal("SELECTED", (await context.Epochs.GetAsync(selectedSource.Id))!.HandoffSummary);
+        await context.Epochs.MarkBootContextDeliveredAsync(successor.Id, context.T1);
+
+        Assert.Null((await context.Epochs.GetAsync(selectedSource.Id))!.HandoffSummary);
+        Assert.Equal("UNSELECTED", (await context.Epochs.GetAsync(unselectedSource.Id))!.HandoffSummary);
+        Assert.Equal("FOREIGN", (await context.Epochs.GetAsync(foreignSource.Id))!.HandoffSummary);
+        Assert.Empty((await repository.GetAsync(context.ProjectA.Id, successor.Id))!.Selections);
+    }
 }

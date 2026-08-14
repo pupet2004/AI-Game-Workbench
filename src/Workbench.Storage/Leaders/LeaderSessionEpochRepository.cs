@@ -168,6 +168,24 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
             throw new InvalidOperationException("Boot context can only be delivered to an active Leader epoch.");
         }
 
+        var consumeHandoffs = connection.CreateCommand();
+        consumeHandoffs.Transaction = transaction;
+        consumeHandoffs.CommandText = """
+            UPDATE leader_session_epochs
+            SET handoff_summary = NULL
+            WHERE ended_at IS NOT NULL
+              AND project_id = (SELECT project_id FROM leader_session_epochs WHERE id = $successorEpochId)
+              AND id IN (
+                  SELECT substr(material_ref, length('handoff:') + 1)
+                  FROM leader_epoch_continuity_selections
+                  WHERE epoch_id = $successorEpochId
+                    AND material_kind = 'BrainHandoff'
+                    AND material_ref LIKE 'handoff:%'
+              );
+            """;
+        consumeHandoffs.Parameters.AddWithValue("$successorEpochId", epochId.ToString());
+        await consumeHandoffs.ExecuteNonQueryAsync(cancellationToken);
+
         var consumeSelections = connection.CreateCommand();
         consumeSelections.Transaction = transaction;
         consumeSelections.CommandText = "DELETE FROM leader_epoch_continuity_selections WHERE epoch_id = $id;";

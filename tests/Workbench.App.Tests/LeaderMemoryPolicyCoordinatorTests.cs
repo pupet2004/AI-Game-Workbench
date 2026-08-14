@@ -88,6 +88,7 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         Assert.Equal(plan.Selections, (await new LeaderEpochContinuityRepository(context.Services.Database)
             .GetAsync(workspace.Result.Project.Id, epochId))!.Selections);
         Assert.Null((await context.Services.LeaderSessionEpochRepository.GetAsync(epochId))!.BootContextDeliveredAt);
+        Assert.Equal("SELECTED_HANDOFF_MARKER", (await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
 
         runtime.SendException = null;
         runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
@@ -108,6 +109,8 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
             .GetAsync(workspace.Result.Project.Id, epochId))!.Selections);
         Assert.Equal("SELECTED_LIBRARY_OVERVIEW", (await context.Services.ProjectLibraryEvolutionRepository
             .GetObjectAsync(workspace.Result.Project.Id, libraryObject.Id))!.CurrentOverview);
+        Assert.Null((await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
+        Assert.Contains("SELECTED_RAW_MARKER", (await context.Services.LeaderMessageRepository.GetAllAsync(sourceEpoch)).Select(message => message.Text));
     }
 
     private static async Task<long> CountSynthesisJobsAsync(WorkbenchDatabase database)
