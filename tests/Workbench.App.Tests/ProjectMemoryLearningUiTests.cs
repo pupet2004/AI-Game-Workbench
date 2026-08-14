@@ -83,7 +83,7 @@ public sealed class ProjectMemoryLearningUiTests
     }
 
     [Fact]
-    public async Task Project_open_completed_turn_rollover_and_memory_open_each_schedule_without_awaiting_synthesis()
+    public async Task Project_open_completed_turn_and_rollover_do_not_schedule_legacy_synthesis()
     {
         await using var appContext = await AppTestContext.CreateAsync();
         using var projectFolder = new TemporaryDirectory("open-trigger");
@@ -95,7 +95,7 @@ public sealed class ProjectMemoryLearningUiTests
             _ => openSchedules++);
         await main.InitializeAsync();
         await ((HomeViewModel)main.CurrentPage).OpenProjectFolderAsync();
-        Assert.Equal(1, openSchedules);
+        Assert.Equal(0, openSchedules);
 
         await using var leaderContext = await PersistentLeaderContext.CreateAsync();
         var runtime = leaderContext.CreateRuntime();
@@ -116,13 +116,11 @@ public sealed class ProjectMemoryLearningUiTests
         await pane.InitializeAsync();
         pane.DraftMessage = "first question";
         await pane.SendAsync();
-        Assert.Equal(1, leaderSchedules);
-        Assert.False(leaderBusyWhenScheduled);
+        Assert.Equal(0, leaderSchedules);
 
         leaderSchedules = 0;
-        runtime.QueueTurn(leaderContext.Completed("CURRENT FOCUS\ncontinue"));
         await pane.StartNewBrainAsync();
-        Assert.Equal(1, leaderSchedules);
+        Assert.Equal(0, leaderSchedules);
     }
 
     [Fact]

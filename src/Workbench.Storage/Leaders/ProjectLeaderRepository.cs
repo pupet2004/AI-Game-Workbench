@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Workbench.Storage.Database;
+using Workbench.Storage.Memory;
 
 namespace Workbench.Storage.Leaders;
 
@@ -173,12 +174,12 @@ public sealed class ProjectLeaderRepository(WorkbenchDatabase database)
         StoredLeaderSessionEpoch newEpoch,
         DateTimeOffset endedAt,
         string rolloverReason,
-        string handoffSummary,
+        string? handoffSummary,
+        LeaderEpochContinuityPlan? continuityPlan = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(newEpoch);
         ArgumentException.ThrowIfNullOrWhiteSpace(rolloverReason);
-        ArgumentException.ThrowIfNullOrWhiteSpace(handoffSummary);
         if (newEpoch.ProjectId != projectId || newEpoch.Id == oldEpochId || newEpoch.EndedAt is not null)
         {
             throw new InvalidOperationException("The successor must be a distinct active epoch owned by the same Project Leader.");
@@ -186,6 +187,12 @@ public sealed class ProjectLeaderRepository(WorkbenchDatabase database)
         if (newEpoch.StartedAt != endedAt || newEpoch.LastActiveAt != endedAt)
         {
             throw new InvalidOperationException("The successor epoch must start at the rollover timestamp.");
+        }
+        if (continuityPlan is not null &&
+            (continuityPlan.EpochId != newEpoch.Id || continuityPlan.TotalMaxUtf8Bytes <= 0 ||
+             continuityPlan.Selections.Count == 0 || continuityPlan.Selections.Any(item => item.MaxUtf8Bytes <= 0)))
+        {
+            throw new InvalidOperationException("The continuity plan must belong to the successor and contain explicit positive budgets.");
         }
 
         await using var connection = _database.CreateConnection();
@@ -211,7 +218,7 @@ public sealed class ProjectLeaderRepository(WorkbenchDatabase database)
                 """;
             archive.Parameters.AddWithValue("$endedAt", Format(endedAt));
             archive.Parameters.AddWithValue("$rolloverReason", rolloverReason);
-            archive.Parameters.AddWithValue("$handoffSummary", handoffSummary);
+            archive.Parameters.AddWithValue("$handoffSummary", (object?)handoffSummary ?? DBNull.Value);
             archive.Parameters.AddWithValue("$oldEpochId", oldEpochId.ToString());
             archive.Parameters.AddWithValue("$projectId", projectId.ToString());
             archive.Parameters.AddWithValue("$providerId", newEpoch.ProviderId);
@@ -276,6 +283,30 @@ public sealed class ProjectLeaderRepository(WorkbenchDatabase database)
             queueSynthesis.Parameters.AddWithValue("$projectId", projectId.ToString());
             queueSynthesis.Parameters.AddWithValue("$endedAt", Format(endedAt));
             await queueSynthesis.ExecuteNonQueryAsync(cancellationToken);
+
+            if (continuityPlan is not null)
+            {
+                var insertPlan = connection.CreateCommand();
+                insertPlan.Transaction = transaction;
+                insertPlan.CommandText = "INSERT INTO leader_epoch_continuity_plans (epoch_id,total_max_utf8_bytes,created_at) VALUES ($epochId,$total,$createdAt);";
+                insertPlan.Parameters.AddWithValue("$epochId", newEpoch.Id.ToString());
+                insertPlan.Parameters.AddWithValue("$total", continuityPlan.TotalMaxUtf8Bytes);
+                insertPlan.Parameters.AddWithValue("$createdAt", Format(continuityPlan.CreatedAt));
+                await insertPlan.ExecuteNonQueryAsync(cancellationToken);
+                foreach (var selection in continuityPlan.Selections.OrderBy(item => item.Ordinal))
+                {
+                    var insertSelection = connection.CreateCommand();
+                    insertSelection.Transaction = transaction;
+                    insertSelection.CommandText = "INSERT INTO leader_epoch_continuity_selections (epoch_id,ordinal,material_kind,material_ref,max_utf8_bytes,selector_json) VALUES ($epochId,$ordinal,$kind,$reference,$max,$selector);";
+                    insertSelection.Parameters.AddWithValue("$epochId", newEpoch.Id.ToString());
+                    insertSelection.Parameters.AddWithValue("$ordinal", selection.Ordinal);
+                    insertSelection.Parameters.AddWithValue("$kind", selection.Kind.ToString());
+                    insertSelection.Parameters.AddWithValue("$reference", selection.Reference);
+                    insertSelection.Parameters.AddWithValue("$max", selection.MaxUtf8Bytes);
+                    insertSelection.Parameters.AddWithValue("$selector", (object?)selection.SelectorJson ?? DBNull.Value);
+                    await insertSelection.ExecuteNonQueryAsync(cancellationToken);
+                }
+            }
 
             await transaction.CommitAsync(cancellationToken);
         }

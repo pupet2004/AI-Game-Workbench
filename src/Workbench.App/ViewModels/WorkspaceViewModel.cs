@@ -13,6 +13,7 @@ using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
 using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
+using Workbench.App.Memory;
 
 namespace Workbench.App.ViewModels;
 
@@ -43,6 +44,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ProjectMemorySynthesisRepository? memorySynthesisRepository = null,
         Action<Guid>? scheduleMemorySynthesis = null,
         ILeaderBootContextBuilder? bootContextBuilder = null,
+        LeaderMemoryPolicyCoordinator? memoryPolicyCoordinator = null,
         TaskRepository? taskRepository = null,
         TaskRevisionRepository? taskRevisionRepository = null,
         WorkerSessionRouter? workerSessionRouter = null,
@@ -73,6 +75,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             messageRepository,
             scheduleMemorySynthesis,
             bootContextBuilder,
+            memoryPolicyCoordinator,
             taskRepository: taskRepository,
             taskRevisionRepository: taskRevisionRepository,
             workerSessionRouter: workerSessionRouter,

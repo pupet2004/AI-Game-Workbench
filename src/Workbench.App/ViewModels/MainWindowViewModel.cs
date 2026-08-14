@@ -105,6 +105,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             memorySynthesisRepository: _services.ProjectMemorySynthesisRepository,
             scheduleMemorySynthesis: _scheduleMemorySynthesis,
             bootContextBuilder: _services.LeaderBootContextBuilder,
+            memoryPolicyCoordinator: _services.LeaderMemoryPolicyCoordinator,
             taskRepository: _services.TaskRepository,
             taskRevisionRepository: _services.TaskRevisionRepository,
             workerSessionRouter: _services.WorkerSessionRouter,
@@ -113,7 +114,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await workspace.LeaderPane.InitializeAsync();
         await workspace.WorkPane.LoadAsync(result.Project.Id);
         await workspace.LibraryPane.InitializeAsync();
-        _scheduleMemorySynthesis(result.Project.Id);
     }
 
     public async ValueTask DisposeAsync()

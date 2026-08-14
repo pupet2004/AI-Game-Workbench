@@ -2,12 +2,15 @@ using System.Text;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Leaders;
+using Workbench.Storage.Memory;
+using Workbench.App.Memory;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Leader;
 
 public enum LeaderHandoffSource
 {
+    None,
     Semantic,
     Fallback
 }
@@ -35,6 +38,8 @@ public sealed class LeaderSessionRolloverService(
         StoredLeaderSessionEpoch oldEpoch,
         bool resumeOldSession,
         string rolloverReason,
+        LeaderMemoryPolicyDecision? policyDecision = null,
+        bool policyManaged = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -47,15 +52,20 @@ public sealed class LeaderSessionRolloverService(
         }
 
         var runtime = _runtimeRegistry.GetByAccount(oldSession.AccountId);
-        var handoff = await TryCreateSemanticHandoffAsync(runtime, oldSession, resumeOldSession, cancellationToken);
-        var source = LeaderHandoffSource.Semantic;
-        if (handoff is null)
+        string? handoff = policyDecision?.BrainHandoff;
+        var source = handoff is null ? LeaderHandoffSource.None : LeaderHandoffSource.Semantic;
+        if (!policyManaged)
         {
-            source = LeaderHandoffSource.Fallback;
-            handoff = LeaderHandoffBuilder.BuildFallback(
-                project,
-                oldEpoch,
-                await _messages.GetAllAsync(oldEpoch.Id, cancellationToken));
+            handoff = await TryCreateSemanticHandoffAsync(runtime, oldSession, resumeOldSession, cancellationToken);
+            source = LeaderHandoffSource.Semantic;
+            if (handoff is null)
+            {
+                source = LeaderHandoffSource.Fallback;
+                handoff = LeaderHandoffBuilder.BuildFallback(
+                    project,
+                    oldEpoch,
+                    await _messages.GetAllAsync(oldEpoch.Id, cancellationToken));
+            }
         }
 
         var newSession = await runtime.CreateSessionAsync(
@@ -95,6 +105,9 @@ public sealed class LeaderSessionRolloverService(
 
         try
         {
+            var plan = policyDecision is { ContinuitySelection.Count: > 0, TotalContinuityBudgetUtf8Bytes: > 0 }
+                ? new LeaderEpochContinuityPlan(newEpoch.Id, policyDecision.TotalContinuityBudgetUtf8Bytes.Value, policyDecision.ContinuitySelection, now)
+                : null;
             await _leaders.RolloverAsync(
                 project.Id,
                 oldEpoch.Id,
@@ -102,6 +115,7 @@ public sealed class LeaderSessionRolloverService(
                 now,
                 rolloverReason,
                 handoff,
+                plan,
                 cancellationToken);
         }
         catch
@@ -118,7 +132,7 @@ public sealed class LeaderSessionRolloverService(
             throw;
         }
 
-        return new LeaderSessionRolloverResult(newSession, newEpoch, handoff, source);
+        return new LeaderSessionRolloverResult(newSession, newEpoch, handoff ?? string.Empty, source);
     }
 
     private static async Task<string?> TryCreateSemanticHandoffAsync(

@@ -9,6 +9,7 @@ using Workbench.Runtime.Registry;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
+using Workbench.App.Memory;
 using Workbench.Core.Tasks;
 using CoreProject = Workbench.Core.Projects.Project;
 
@@ -26,6 +27,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly LeaderSessionRolloverService? _rolloverService;
     private readonly Action<Guid>? _scheduleMemorySynthesis;
     private readonly ILeaderBootContextBuilder? _bootContextBuilder;
+    private readonly LeaderMemoryPolicyCoordinator? _memoryPolicyCoordinator;
     private readonly LeaderDraftProposalBuilder? _draftProposalBuilder;
     private readonly TaskRevisionRepository? _taskRevisions;
     private readonly WorkerSessionRouter? _workerSessionRouter;
@@ -45,6 +47,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         LeaderMessageRepository? messageRepository = null,
         Action<Guid>? scheduleMemorySynthesis = null,
         ILeaderBootContextBuilder? bootContextBuilder = null,
+        LeaderMemoryPolicyCoordinator? memoryPolicyCoordinator = null,
         TaskRepository? taskRepository = null,
         TaskRevisionRepository? taskRevisionRepository = null,
         WorkerSessionRouter? workerSessionRouter = null,
@@ -60,6 +63,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _rolloverService = rolloverService;
         _scheduleMemorySynthesis = scheduleMemorySynthesis;
         _bootContextBuilder = bootContextBuilder;
+        _memoryPolicyCoordinator = memoryPolicyCoordinator;
         _draftProposalBuilder = taskRepository is null ? null : new LeaderDraftProposalBuilder(project.Id, taskRepository);
         _taskRevisions = taskRevisionRepository;
         _workerSessionRouter = workerSessionRouter;
@@ -439,7 +443,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         LeaderMessageViewModel? assistant = null;
         var turnCompleted = false;
-        var scheduleSynthesisAfterTurn = false;
         try
         {
             if (_conversation.SessionNeedsResume &&
@@ -579,7 +582,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                 persistedAssistantText,
                                 cancellationToken);
                             _conversation.RotationMessage = null;
-                            scheduleSynthesisAfterTurn = true;
                         }
 
                         break;
@@ -609,10 +611,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             ClearPendingApproval();
             _conversation.IsBusy = false;
             NotifyAllState();
-            if (scheduleSynthesisAfterTurn)
-            {
-                _scheduleMemorySynthesis?.Invoke(_project.Id);
-            }
         }
     }
 
@@ -639,12 +637,26 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 await _reconnectRuntime(cancellationToken);
             }
 
+            LeaderMemoryPolicyDecision? policyDecision = null;
+            if (_memoryPolicyCoordinator is not null)
+            {
+                var preparation = await _memoryPolicyCoordinator.PrepareForNewBrainAsync(
+                    _project,
+                    _conversation.Session,
+                    _conversation.Epoch,
+                    _conversation.SessionNeedsResume,
+                    cancellationToken);
+                policyDecision = preparation.Decision;
+            }
+
             var result = await _rolloverService.RolloverAsync(
                 _project,
                 _conversation.Session,
                 _conversation.Epoch,
                 _conversation.SessionNeedsResume,
                 reason,
+                policyDecision,
+                _memoryPolicyCoordinator is not null,
                 cancellationToken);
             _conversation.Session = result.NewSession;
             _conversation.Epoch = result.NewEpoch;
@@ -658,7 +670,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             {
                 await History.RefreshAfterRolloverAsync(cancellationToken);
             }
-            _scheduleMemorySynthesis?.Invoke(_project.Id);
         }
         finally
         {

@@ -2,6 +2,7 @@ using System.Text;
 using Workbench.Runtime.Agents;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
+using Workbench.App.Memory;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Leader;
@@ -14,9 +15,7 @@ public interface ILeaderBootContextBuilder
         CancellationToken cancellationToken = default);
 }
 
-public sealed class LeaderBootContextBuilder(
-    ProjectMemoryRepository memories,
-    LeaderSessionEpochRepository epochs) : ILeaderBootContextBuilder
+public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
 {
     public const int MaxFormalUtf8Bytes = 12000;
     public const int MaxLearnedUtf8Bytes = 8000;
@@ -27,8 +26,23 @@ public sealed class LeaderBootContextBuilder(
     private const string LearnedAuthorityNote =
         "This memory is AI-synthesized, provisional, and lower authority than user-certified memory.";
 
-    private readonly ProjectMemoryRepository _memories = memories ?? throw new ArgumentNullException(nameof(memories));
-    private readonly LeaderSessionEpochRepository _epochs = epochs ?? throw new ArgumentNullException(nameof(epochs));
+    private readonly ProjectMemoryRepository? _memories;
+    private readonly IProjectMemoryApi? _memoryApi;
+    private readonly LeaderEpochContinuityRepository? _continuityPlans;
+    private readonly LeaderSessionEpochRepository _epochs;
+
+    public LeaderBootContextBuilder(ProjectMemoryRepository memories, LeaderSessionEpochRepository epochs)
+    {
+        _memories = memories ?? throw new ArgumentNullException(nameof(memories));
+        _epochs = epochs ?? throw new ArgumentNullException(nameof(epochs));
+    }
+
+    public LeaderBootContextBuilder(IProjectMemoryApi memoryApi, LeaderSessionEpochRepository epochs, LeaderEpochContinuityRepository continuityPlans)
+    {
+        _memoryApi = memoryApi ?? throw new ArgumentNullException(nameof(memoryApi));
+        _epochs = epochs ?? throw new ArgumentNullException(nameof(epochs));
+        _continuityPlans = continuityPlans ?? throw new ArgumentNullException(nameof(continuityPlans));
+    }
 
     public async Task<AgentRequest> BuildAsync(
         CoreProject project,
@@ -37,10 +51,46 @@ public sealed class LeaderBootContextBuilder(
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(originalUserText);
-        var formal = await _memories.GetAsync(project.Id, "Formal", "Active", cancellationToken);
+        if (_memoryApi is not null)
+        {
+            var current = await _epochs.GetCurrentForProjectAsync(project.Id, cancellationToken);
+            var plan = current is null ? null : await _continuityPlans!.GetAsync(project.Id, current.Id, cancellationToken);
+            var resolved = plan is null
+                ? new ResolvedContinuityBundle(project.Id, [], 0, [])
+                : await _memoryApi.ResolveContinuityAsync(project.Id, plan, cancellationToken);
+            return BuildSelected(project, resolved.Materials, originalUserText);
+        }
+
+        var formal = await _memories!.GetAsync(project.Id, "Formal", "Active", cancellationToken);
         var learned = await _memories.GetAsync(project.Id, "Learned", "Active", cancellationToken);
         var predecessor = await _epochs.GetMostRecentArchivedForProjectAsync(project.Id, cancellationToken);
         return Build(project, formal, learned, predecessor?.HandoffSummary, originalUserText);
+    }
+
+    internal static AgentRequest BuildSelected(
+        CoreProject project,
+        IReadOnlyList<ResolvedContinuityMaterial> materials,
+        string originalUserText)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("WORKBENCH PROJECT CONTEXT");
+        builder.AppendLine("PROJECT");
+        builder.Append("Name: ").AppendLine(project.Name);
+        builder.Append("Root: ").AppendLine(project.RootPath);
+        if (materials.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("SELECTED CONTINUITY MATERIALS");
+            foreach (var material in materials)
+            {
+                builder.AppendLine($"{material.Kind}: {material.Label}");
+                builder.AppendLine(material.Content);
+            }
+        }
+        builder.AppendLine();
+        builder.AppendLine("CURRENT USER MESSAGE");
+        builder.Append(originalUserText);
+        return new AgentRequest(builder.ToString());
     }
 
     internal static AgentRequest Build(

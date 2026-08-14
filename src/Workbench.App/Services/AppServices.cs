@@ -41,6 +41,7 @@ public sealed class AppServices : IAsyncDisposable
         DailySummaryRepository dailySummaryRepository,
         ProjectMemoryPreferencesRepository projectMemoryPreferencesRepository,
         IProjectMemoryApi projectMemoryApi,
+        LeaderMemoryPolicyCoordinator leaderMemoryPolicyCoordinator,
         LeaderBootContextBuilder leaderBootContextBuilder,
         LeaderSessionRolloverService leaderSessionRolloverService,
         TaskRepository taskRepository,
@@ -67,6 +68,7 @@ public sealed class AppServices : IAsyncDisposable
         DailySummaryRepository = dailySummaryRepository;
         ProjectMemoryPreferencesRepository = projectMemoryPreferencesRepository;
         ProjectMemoryApi = projectMemoryApi;
+        LeaderMemoryPolicyCoordinator = leaderMemoryPolicyCoordinator;
         LeaderBootContextBuilder = leaderBootContextBuilder;
         LeaderSessionRolloverService = leaderSessionRolloverService;
         TaskRepository = taskRepository;
@@ -102,6 +104,7 @@ public sealed class AppServices : IAsyncDisposable
     public DailySummaryRepository DailySummaryRepository { get; }
     public ProjectMemoryPreferencesRepository ProjectMemoryPreferencesRepository { get; }
     public IProjectMemoryApi ProjectMemoryApi { get; }
+    public LeaderMemoryPolicyCoordinator LeaderMemoryPolicyCoordinator { get; }
     public LeaderBootContextBuilder LeaderBootContextBuilder { get; }
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
@@ -142,11 +145,14 @@ public sealed class AppServices : IAsyncDisposable
         var synthesisRepository = new ProjectMemorySynthesisRepository(database, effectiveTimeProvider);
         var dailySummaryRepository = new DailySummaryRepository(database);
         var projectMemoryPreferencesRepository = new ProjectMemoryPreferencesRepository(database, effectiveTimeProvider);
+        var continuityPlans = new LeaderEpochContinuityRepository(database);
         var projectOpenService = new ProjectOpenService(
             projectRepository,
             layoutRepository,
             new GitCliInspector(),
             effectiveTimeProvider);
+        var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages);
+        var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
 
         return new AppServices(
             database,
@@ -169,8 +175,9 @@ public sealed class AppServices : IAsyncDisposable
                 effectiveTimeProvider),
             dailySummaryRepository,
             projectMemoryPreferencesRepository,
-            new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages),
-            new LeaderBootContextBuilder(memoryRepository, leaderEpochs),
+            projectMemoryApi,
+            leaderMemoryPolicyCoordinator,
+            new LeaderBootContextBuilder(projectMemoryApi, leaderEpochs, continuityPlans),
             new LeaderSessionRolloverService(
                 effectiveRuntimeRegistry,
                 projectLeaders,

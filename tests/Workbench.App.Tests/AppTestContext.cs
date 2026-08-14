@@ -90,6 +90,7 @@ internal sealed class AppTestContext : IAsyncDisposable
             rolloverService: Services.LeaderSessionRolloverService,
             projectMemoryService: Services.ProjectMemoryService,
             bootContextBuilder: Services.LeaderBootContextBuilder,
+            memoryPolicyCoordinator: Services.LeaderMemoryPolicyCoordinator,
             taskRepository: Services.TaskRepository,
             taskRevisionRepository: Services.TaskRevisionRepository,
             workerSessionRouter: Services.WorkerSessionRouter,
