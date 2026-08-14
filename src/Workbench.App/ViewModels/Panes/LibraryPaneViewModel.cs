@@ -50,7 +50,6 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly ProjectMemoryService? _memory;
     private readonly ProjectMemorySynthesisRepository? _synthesisJobs;
     private readonly LeaderSessionEpochRepository? _epochRepository;
-    private readonly Action<Guid>? _scheduleMemorySynthesis;
     private readonly Dictionary<Guid, string> _candidateSourceLabels = [];
     private readonly ProjectLibraryRepository? _library;
     private readonly ProjectLibraryEvolutionRepository? _evolutionLibrary;
@@ -64,7 +63,6 @@ public partial class LibraryPaneViewModel : ViewModelBase
         ProjectMemoryService? memory = null,
         ProjectMemorySynthesisRepository? synthesisJobs = null,
         LeaderSessionEpochRepository? epochRepository = null,
-        Action<Guid>? scheduleMemorySynthesis = null,
         ProjectLibraryRepository? library = null,
         ProjectLibraryEvolutionRepository? evolutionLibrary = null,
         IProjectMemoryApi? projectMemoryApi = null)
@@ -76,7 +74,6 @@ public partial class LibraryPaneViewModel : ViewModelBase
         _memory = memory;
         _synthesisJobs = synthesisJobs;
         _epochRepository = epochRepository;
-        _scheduleMemorySynthesis = scheduleMemorySynthesis;
         _library = library;
         _evolutionLibrary = evolutionLibrary;
         _projectMemoryApi = projectMemoryApi;

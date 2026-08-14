@@ -143,6 +143,20 @@ public sealed class LeaderPersistenceRepositoryTests
     public async Task Atomic_rollover_archives_old_epoch_and_switches_to_fresh_current_epoch()
     {
         await using var context = await LeaderStorageContext.CreateAsync();
+        var legacyEpoch = context.CreateEpoch(context.ProjectB.Id);
+        await context.CreateCurrentEpochAsync(legacyEpoch);
+        var legacySuccessor = context.CreateEpoch(context.ProjectB.Id) with
+        {
+            ProviderId = legacyEpoch.ProviderId,
+            ProviderAccountId = legacyEpoch.ProviderAccountId,
+            ModelId = legacyEpoch.ModelId,
+            WorkingDirectory = legacyEpoch.WorkingDirectory,
+            StartedAt = context.T1,
+            LastActiveAt = context.T1
+        };
+        await context.Leaders.RolloverAsync(context.ProjectB.Id, legacyEpoch.Id, legacySuccessor, context.T1, "Manual", "legacy");
+        var legacyJobs = new ProjectMemorySynthesisRepository(context.Database);
+        await legacyJobs.QueueSynthesisForEpochAsync(legacyEpoch.Id);
         var oldEpoch = context.CreateEpoch(context.ProjectA.Id);
         await context.CreateCurrentEpochAsync(oldEpoch);
         var newEpoch = context.CreateEpoch(context.ProjectA.Id) with
@@ -177,8 +191,11 @@ public sealed class LeaderPersistenceRepositoryTests
         Assert.Equal(oldEpoch.WorkingDirectory, current.WorkingDirectory);
         Assert.Null(current.EndedAt);
         var synthesis = await new ProjectMemorySynthesisRepository(context.Database).GetAsync(oldEpoch.Id);
-        Assert.Equal(ProjectMemorySynthesisJobStatus.Pending, synthesis!.Status);
+        Assert.Null(synthesis);
         Assert.Null(await new ProjectMemorySynthesisRepository(context.Database).GetAsync(newEpoch.Id));
+        var retainedLegacyJob = await legacyJobs.GetAsync(legacyEpoch.Id);
+        Assert.Equal(ProjectMemorySynthesisJobStatus.Pending, retainedLegacyJob!.Status);
+        Assert.Equal(0, retainedLegacyJob.AttemptCount);
     }
 
     [Fact]

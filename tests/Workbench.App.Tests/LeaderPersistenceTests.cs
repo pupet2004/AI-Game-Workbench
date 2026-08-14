@@ -359,6 +359,7 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
 
     public DateTimeOffset T0 { get; } = DateTimeOffset.Parse("2026-03-01T09:00:00+00:00");
     public DateTimeOffset T1 { get; } = DateTimeOffset.Parse("2026-03-02T09:00:00+00:00");
+    public WorkbenchDatabase Database => _database;
     public CoreProject ProjectA { get; }
     public CoreProject ProjectB { get; }
     public ProviderAccountId AccountId { get; }

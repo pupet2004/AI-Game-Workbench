@@ -13,13 +13,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly AppServices _services;
     private readonly IFolderPickerService _folderPickerService;
     private readonly ProjectLeaderSessionManager _leaderSessions;
-    private readonly Action<Guid> _scheduleMemorySynthesis;
 
     public MainWindowViewModel(
         AppServices services,
         IFolderPickerService folderPickerService,
-        ProjectLeaderSessionManager? leaderSessions = null,
-        Action<Guid>? scheduleMemorySynthesis = null)
+        ProjectLeaderSessionManager? leaderSessions = null)
     {
         _services = services;
         _folderPickerService = folderPickerService;
@@ -28,7 +26,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             services.LeaderSessionEpochRepository,
             services.LeaderMessageRepository,
             services.TimeProvider);
-        _scheduleMemorySynthesis = scheduleMemorySynthesis ?? services.ScheduleMemorySynthesis;
         CurrentPage = CreateHome();
     }
 
@@ -103,7 +100,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             messageRepository: _services.LeaderMessageRepository,
             projectMemoryService: _services.ProjectMemoryService,
             memorySynthesisRepository: _services.ProjectMemorySynthesisRepository,
-            scheduleMemorySynthesis: _scheduleMemorySynthesis,
             bootContextBuilder: _services.LeaderBootContextBuilder,
             memoryPolicyCoordinator: _services.LeaderMemoryPolicyCoordinator,
             taskRepository: _services.TaskRepository,

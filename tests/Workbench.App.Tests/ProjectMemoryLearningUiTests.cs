@@ -40,13 +40,11 @@ public sealed class ProjectMemoryLearningUiTests
     {
         await using var context = await CoordinatorContext.CreateAsync();
         var result = Result(context);
-        var scheduled = 0;
         var library = new LibraryPaneViewModel(
             result, () => Task.CompletedTask,
             memory: context.Services.ProjectMemoryService,
             synthesisJobs: context.Jobs,
-            epochRepository: context.Epochs,
-            scheduleMemorySynthesis: _ => scheduled++);
+            epochRepository: context.Epochs);
         await library.InitializeAsync();
         await library.LoadMemoryAsync();
         Assert.Equal("Memory learning: 1 session pending", library.MemoryLearningStatus);
@@ -64,7 +62,6 @@ public sealed class ProjectMemoryLearningUiTests
         Assert.Equal("From Leader session · Aug 13", library.SelectedCandidateSourceLabel);
         Assert.Empty(library.FormalMemories);
         library.ShowProjectCommand.Execute(null);
-        Assert.Equal(0, scheduled);
     }
 
     [Fact]
@@ -89,40 +86,25 @@ public sealed class ProjectMemoryLearningUiTests
     {
         await using var appContext = await AppTestContext.CreateAsync();
         using var projectFolder = new TemporaryDirectory("open-trigger");
-        var openSchedules = 0;
         var main = new MainWindowViewModel(
             appContext.Services,
             new TestFolderPickerService(projectFolder.Path),
-            appContext.LeaderSessions,
-            _ => openSchedules++);
+            appContext.LeaderSessions);
         await main.InitializeAsync();
         await ((HomeViewModel)main.CurrentPage).OpenProjectFolderAsync();
-        Assert.Equal(0, openSchedules);
 
         await using var leaderContext = await PersistentLeaderContext.CreateAsync();
         var runtime = leaderContext.CreateRuntime();
         var registry = new AgentRuntimeRegistry();
         registry.Register(runtime);
-        var leaderSchedules = 0;
-        bool? leaderBusyWhenScheduled = null;
-        LeaderPaneViewModel? pane = null;
-        pane = new LeaderPaneViewModel(
+        var pane = new LeaderPaneViewModel(
             leaderContext.ProjectA, registry, leaderContext.CreateManager(), () => Task.CompletedTask,
-            rolloverService: leaderContext.CreateRolloverService(registry),
-            scheduleMemorySynthesis: _ =>
-            {
-                leaderSchedules++;
-                leaderBusyWhenScheduled = pane!.IsBusy;
-            });
+            rolloverService: leaderContext.CreateRolloverService(registry));
         runtime.QueueTurn(leaderContext.Completed("first answer"));
         await pane.InitializeAsync();
         pane.DraftMessage = "first question";
         await pane.SendAsync();
-        Assert.Equal(0, leaderSchedules);
-
-        leaderSchedules = 0;
         await pane.StartNewBrainAsync();
-        Assert.Equal(0, leaderSchedules);
     }
 
     [Fact]

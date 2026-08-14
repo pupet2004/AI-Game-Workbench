@@ -2,6 +2,7 @@ using Workbench.Storage.Memory;
 using Workbench.App.Memory;
 using Workbench.Core.Memory;
 using Workbench.Core.Projects;
+using Workbench.Storage.Database;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests;
@@ -33,7 +34,7 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
     }
 
     [Fact]
-    public async Task New_brain_persists_only_explicit_daily_selection_and_first_send_resolves_it()
+    public async Task New_brain_preserves_explicit_daily_and_library_selection_without_enqueuing_legacy_synthesis()
     {
         var runtime = new Support.FakeAgentRuntime();
         var registry = new Workbench.Runtime.Registry.AgentRuntimeRegistry();
@@ -47,14 +48,22 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         await workspace.LeaderPane.SendAsync();
         await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(new(workspace.Result.Project.Id, new DateOnly(2026, 8, 14), "SELECTED_DAILY_MARKER", null, []), context.Time.GetUtcNow());
         await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(new(workspace.Result.Project.Id, new DateOnly(2026, 8, 13), "UNSELECTED_DAILY_MARKER", null, []), context.Time.GetUtcNow());
+        var libraryObject = await context.Services.ProjectLibraryEvolutionRepository.CreateObjectAsync(workspace.Result.Project.Id, "Design", "Relics", context.Time.GetUtcNow());
+        libraryObject = await context.Services.ProjectLibraryEvolutionRepository.UpdateOverviewAsync(
+            workspace.Result.Project.Id, libraryObject.Id, "SELECTED_LIBRARY_OVERVIEW", libraryObject.OverviewRevision, context.Time.GetUtcNow());
+        var libraryNode = await context.Services.ProjectLibraryEvolutionRepository.AddNodeAsync(
+            workspace.Result.Project.Id, libraryObject.Id, new DateOnly(2026, 8, 14), "SELECTED_LIBRARY_TIMELINE", [], context.Time.GetUtcNow());
         Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
         var sourceEpoch = workspace.LeaderPane.SessionEpochId!.Value;
         await context.Services.ProjectMemoryApi.SaveBrainHandoffAsync(workspace.Result.Project.Id, sourceEpoch, "OLD_HANDOFF");
         await context.Services.LeaderMessageRepository.AppendAsync(sourceEpoch, "assistant", "SELECTED_RAW_MARKER", context.Time.GetUtcNow());
 
         var payload = """
-            {"brain_handoff":"SELECTED_HANDOFF_MARKER","daily_summary":null,"total_continuity_budget_utf8_bytes":4000,"continuity_selection":[{"ordinal":0,"kind":"DailySummary","reference":"daily:2026-08-14","max_utf8_bytes":1000,"selector":null},{"ordinal":1,"kind":"BrainHandoff","reference":"handoff:SOURCE","max_utf8_bytes":1000,"selector":null},{"ordinal":2,"kind":"RecentConversation","reference":"raw:SOURCE","max_utf8_bytes":1000,"selector":{"maxMessages":1,"maxUtf8Bytes":1000}}]}
+            {"brain_handoff":"SELECTED_HANDOFF_MARKER","daily_summary":null,"total_continuity_budget_utf8_bytes":6000,"continuity_selection":[{"ordinal":0,"kind":"DailySummary","reference":"daily:2026-08-14","max_utf8_bytes":1000,"selector":null},{"ordinal":1,"kind":"LibraryOverview","reference":"library-overview:LIBRARY","max_utf8_bytes":1000,"selector":null},{"ordinal":2,"kind":"LibraryTimelineNode","reference":"library-timeline:NODE","max_utf8_bytes":1000,"selector":null},{"ordinal":3,"kind":"BrainHandoff","reference":"handoff:SOURCE","max_utf8_bytes":1000,"selector":null},{"ordinal":4,"kind":"RecentConversation","reference":"raw:SOURCE","max_utf8_bytes":1000,"selector":{"maxMessages":1,"maxUtf8Bytes":1000}}]}
             """.Replace("SOURCE", sourceEpoch.ToString(), StringComparison.Ordinal);
+        payload = payload.Replace("LIBRARY", libraryObject.Id.ToString(), StringComparison.Ordinal)
+            .Replace("NODE", libraryNode.Id.ToString(), StringComparison.Ordinal);
+        var synthesisJobsBefore = await CountSynthesisJobsAsync(context.Services.Database);
         runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
             new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, payload, null), context.Time.GetUtcNow()));
         var preparation = await context.Services.LeaderMemoryPolicyCoordinator.PrepareForNewBrainAsync(
@@ -69,8 +78,9 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
         var epochId = workspace.LeaderPane.SessionEpochId!.Value;
         var plan = await new LeaderEpochContinuityRepository(context.Services.Database).GetAsync(workspace.Result.Project.Id, epochId);
-        Assert.Equal(["daily:2026-08-14", $"handoff:{sourceEpoch}", $"raw:{sourceEpoch}"], plan!.Selections.Select(item => item.Reference));
+        Assert.Equal(["daily:2026-08-14", $"library-overview:{libraryObject.Id}", $"library-timeline:{libraryNode.Id}", $"handoff:{sourceEpoch}", $"raw:{sourceEpoch}"], plan!.Selections.Select(item => item.Reference));
         Assert.Equal("SELECTED_HANDOFF_MARKER", (await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
+        Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Services.Database));
 
         runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
             new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, "new", null), context.Time.GetUtcNow()));
@@ -80,8 +90,20 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         Assert.Contains("SELECTED_DAILY_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
         Assert.Contains("SELECTED_HANDOFF_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
         Assert.Contains("SELECTED_RAW_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
+        Assert.Contains("SELECTED_LIBRARY_OVERVIEW", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
+        Assert.Contains("SELECTED_LIBRARY_TIMELINE", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
         Assert.DoesNotContain("UNSELECTED_DAILY_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
         Assert.Contains("continue", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
         Assert.Empty(await context.Services.DailySummaryRepository.ListAsync(workspace.Result.Project.Id, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 15)));
+        Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Services.Database));
+    }
+
+    private static async Task<long> CountSynthesisJobsAsync(WorkbenchDatabase database)
+    {
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM project_memory_synthesis_jobs;";
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 }

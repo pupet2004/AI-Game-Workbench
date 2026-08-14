@@ -26,7 +26,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly Func<CancellationToken, Task>? _reconnectRuntime;
     private readonly LeaderSessionRotationStateService? _rotationState;
     private readonly LeaderSessionRolloverService? _rolloverService;
-    private readonly Action<Guid>? _scheduleMemorySynthesis;
     private readonly ILeaderBootContextBuilder? _bootContextBuilder;
     private readonly LeaderMemoryPolicyCoordinator? _memoryPolicyCoordinator;
     private readonly LeaderDraftProposalBuilder? _draftProposalBuilder;
@@ -49,7 +48,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         LeaderSessionRolloverService? rolloverService = null,
         LeaderSessionEpochRepository? epochRepository = null,
         LeaderMessageRepository? messageRepository = null,
-        Action<Guid>? scheduleMemorySynthesis = null,
         ILeaderBootContextBuilder? bootContextBuilder = null,
         LeaderMemoryPolicyCoordinator? memoryPolicyCoordinator = null,
         TaskRepository? taskRepository = null,
@@ -68,7 +66,6 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _reconnectRuntime = reconnectRuntime;
         _rotationState = rotationState;
         _rolloverService = rolloverService;
-        _scheduleMemorySynthesis = scheduleMemorySynthesis;
         _bootContextBuilder = bootContextBuilder;
         _memoryPolicyCoordinator = memoryPolicyCoordinator;
         _draftProposalBuilder = taskRepository is null ? null : new LeaderDraftProposalBuilder(project.Id, taskRepository);

@@ -219,6 +219,7 @@ internal sealed class CoordinatorContext : IAsyncDisposable
         var current = Epoch(project.Id, runtime, time.GetUtcNow(), "current-thread");
         await services.ProjectLeaderRepository.RolloverAsync(
             project.Id, old.Id, current, time.GetUtcNow(), "Manual", "handoff");
+        await new ProjectMemorySynthesisRepository(services.Database, time).QueueSynthesisForEpochAsync(old.Id);
         var archived = (await services.LeaderSessionEpochRepository.GetAsync(old.Id))!;
         return new(directory, services, time, runtime, project, archived, current);
     }

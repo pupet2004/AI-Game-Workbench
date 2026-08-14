@@ -43,6 +43,7 @@ public sealed class LeaderRolloverPolicyTests
         pane.DraftMessage = "old question";
         await pane.SendAsync();
         var oldEpoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var synthesisJobsBefore = await CountSynthesisJobsAsync(context.Database);
         var oldSession = pane.Session!;
         await context.WorkbenchSettings.SaveLeaderSessionRotationPolicyAsync(LeaderSessionRotationPolicy.Auto);
         context.Time.SetUtcNow(context.T1);
@@ -64,6 +65,7 @@ public sealed class LeaderRolloverPolicyTests
         Assert.Equal(["original next-day text", "new answer"],
             (await context.Messages.GetAllAsync(current.Id)).Select(message => message.Text));
         Assert.DoesNotContain(await context.Messages.GetAllAsync(oldEpoch.Id), message => message.Text == "original next-day text");
+        Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Database));
     }
 
     [Fact]
@@ -337,4 +339,13 @@ public sealed class LeaderRolloverPolicyTests
             rotationState: context.CreateRotationStateService(),
             rolloverService: context.CreateRolloverService(registry),
             bootContextBuilder: context.CreateBootBuilder());
+
+    private static async Task<long> CountSynthesisJobsAsync(Workbench.Storage.Database.WorkbenchDatabase database)
+    {
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM project_memory_synthesis_jobs;";
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
 }

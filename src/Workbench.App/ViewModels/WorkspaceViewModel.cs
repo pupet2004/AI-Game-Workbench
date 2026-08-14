@@ -42,7 +42,6 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         LeaderMessageRepository? messageRepository = null,
         ProjectMemoryService? projectMemoryService = null,
         ProjectMemorySynthesisRepository? memorySynthesisRepository = null,
-        Action<Guid>? scheduleMemorySynthesis = null,
         ILeaderBootContextBuilder? bootContextBuilder = null,
         LeaderMemoryPolicyCoordinator? memoryPolicyCoordinator = null,
         TaskRepository? taskRepository = null,
@@ -72,7 +71,6 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             projectMemoryService,
             memorySynthesisRepository,
             epochRepository,
-            scheduleMemorySynthesis,
             library: projectLibraryRepository,
             evolutionLibrary: projectLibraryEvolutionRepository,
             projectMemoryApi: projectMemoryApi);
@@ -87,7 +85,6 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             rolloverService,
             epochRepository,
             messageRepository,
-            scheduleMemorySynthesis,
             bootContextBuilder,
             memoryPolicyCoordinator,
             taskRepository: taskRepository,
