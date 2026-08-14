@@ -38,6 +38,9 @@ public sealed class AppServices : IAsyncDisposable
         ProjectMemoryService projectMemoryService,
         ProjectMemorySynthesisRepository projectMemorySynthesisRepository,
         ProjectMemorySynthesisCoordinator projectMemorySynthesisCoordinator,
+        DailySummaryRepository dailySummaryRepository,
+        ProjectMemoryPreferencesRepository projectMemoryPreferencesRepository,
+        IProjectMemoryApi projectMemoryApi,
         LeaderBootContextBuilder leaderBootContextBuilder,
         LeaderSessionRolloverService leaderSessionRolloverService,
         TaskRepository taskRepository,
@@ -61,6 +64,9 @@ public sealed class AppServices : IAsyncDisposable
         ProjectMemoryService = projectMemoryService;
         ProjectMemorySynthesisRepository = projectMemorySynthesisRepository;
         ProjectMemorySynthesisCoordinator = projectMemorySynthesisCoordinator;
+        DailySummaryRepository = dailySummaryRepository;
+        ProjectMemoryPreferencesRepository = projectMemoryPreferencesRepository;
+        ProjectMemoryApi = projectMemoryApi;
         LeaderBootContextBuilder = leaderBootContextBuilder;
         LeaderSessionRolloverService = leaderSessionRolloverService;
         TaskRepository = taskRepository;
@@ -93,6 +99,9 @@ public sealed class AppServices : IAsyncDisposable
     public ProjectMemoryService ProjectMemoryService { get; }
     public ProjectMemorySynthesisRepository ProjectMemorySynthesisRepository { get; }
     public ProjectMemorySynthesisCoordinator ProjectMemorySynthesisCoordinator { get; }
+    public DailySummaryRepository DailySummaryRepository { get; }
+    public ProjectMemoryPreferencesRepository ProjectMemoryPreferencesRepository { get; }
+    public IProjectMemoryApi ProjectMemoryApi { get; }
     public LeaderBootContextBuilder LeaderBootContextBuilder { get; }
 
     public LeaderSessionRolloverService LeaderSessionRolloverService { get; }
@@ -131,6 +140,8 @@ public sealed class AppServices : IAsyncDisposable
         var leaderMessages = new LeaderMessageRepository(database);
         var memoryRepository = new ProjectMemoryRepository(database);
         var synthesisRepository = new ProjectMemorySynthesisRepository(database, effectiveTimeProvider);
+        var dailySummaryRepository = new DailySummaryRepository(database);
+        var projectMemoryPreferencesRepository = new ProjectMemoryPreferencesRepository(database, effectiveTimeProvider);
         var projectOpenService = new ProjectOpenService(
             projectRepository,
             layoutRepository,
@@ -156,6 +167,9 @@ public sealed class AppServices : IAsyncDisposable
                 leaderMessages,
                 memoryRepository,
                 effectiveTimeProvider),
+            dailySummaryRepository,
+            projectMemoryPreferencesRepository,
+            new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository),
             new LeaderBootContextBuilder(memoryRepository, leaderEpochs),
             new LeaderSessionRolloverService(
                 effectiveRuntimeRegistry,
