@@ -22,7 +22,7 @@ public sealed class WorkbenchDatabaseTests
     }
 
     [Fact]
-    public async Task Latest_migrations_set_user_version_to_10()
+    public async Task Latest_migrations_set_user_version_to_11()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,33 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(10L, await command.ExecuteScalarAsync());
+        Assert.Equal(11L, await command.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task Migration_011_creates_evolution_tables_and_preserves_legacy_library()
+    {
+        await using var temporary = new TemporaryDatabase();
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+
+        await database.InitializeAsync();
+
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name IN (
+                  'project_library_entries',
+                  'project_library_objects',
+                  'project_library_timeline_nodes',
+                  'project_library_material_refs',
+                  'project_library_proposals');
+            """;
+
+        Assert.Equal(5L, await command.ExecuteScalarAsync());
     }
 
     [Fact]

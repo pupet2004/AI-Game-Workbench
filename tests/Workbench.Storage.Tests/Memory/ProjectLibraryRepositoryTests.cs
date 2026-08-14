@@ -65,6 +65,39 @@ public sealed class ProjectLibraryRepositoryTests
         Assert.Equal("Jade tea cup", Assert.Single(await library.BrowseAsync(project.Id, text: "tea")).Summary);
     }
 
+    [Fact]
+    public async Task Legacy_submission_is_bridged_to_evolution_archive_idempotently()
+    {
+        await using var temporary = new TemporaryDatabase();
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+        await database.InitializeAsync();
+        var project = Project("Bridge");
+        await new ProjectRepository(database).UpsertAsync(project);
+        var submission = new LibrarySubmission(
+            Guid.Parse("70000000-0000-4000-8000-000000000001"),
+            project.Id,
+            Guid.Parse("70000000-0000-4000-8000-000000000002"),
+            null,
+            "Design",
+            "Relics",
+            "Actual state",
+            "docs/relics.md",
+            DateTimeOffset.Parse("2026-08-14T09:00:00+00:00"));
+        var legacy = new ProjectLibraryRepository(database);
+
+        await legacy.SubmitAsync(submission);
+        await legacy.SubmitAsync(submission);
+
+        var evolution = new ProjectLibraryEvolutionRepository(database);
+        var obj = Assert.Single(await evolution.ListObjectsByCategoryAsync(project.Id, "Design"));
+        var node = Assert.Single(await evolution.GetTimelineAsync(project.Id, obj.Id));
+        Assert.Equal(submission.SubmissionId, node.Id);
+        Assert.Equal("Actual state", node.Content);
+        Assert.Contains(
+            await evolution.GetMaterialReferencesAsync(project.Id, node.Id),
+            reference => reference.MaterialKind == "Reference" && reference.Reference == "docs/relics.md");
+    }
+
     private static LibrarySubmission Submission(Guid projectId, string category, string topic, string summary, DateTimeOffset at) =>
         new(Guid.NewGuid(), projectId, Guid.NewGuid(), null, category, topic, summary, null, at);
 

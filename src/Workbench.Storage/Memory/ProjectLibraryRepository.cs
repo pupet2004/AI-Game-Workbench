@@ -1,5 +1,7 @@
 using System.Globalization;
+using Microsoft.Data.Sqlite;
 using Workbench.Storage.Database;
+using Workbench.Storage.Migrations;
 
 namespace Workbench.Storage.Memory;
 
@@ -9,10 +11,32 @@ public sealed class ProjectLibraryRepository(WorkbenchDatabase database)
     public async Task SubmitAsync(LibrarySubmission submission, CancellationToken cancellationToken = default)
     {
         Validate(submission);
-        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
-        var command = connection.CreateCommand(); command.CommandText = "INSERT OR IGNORE INTO project_library_entries (id,project_id,source_session_id,task_id,category,topic,summary,source_reference,created_at) VALUES ($id,$project,$session,$task,$category,$topic,$summary,$source,$created);";
-        command.Parameters.AddWithValue("$id", submission.SubmissionId.ToString()); command.Parameters.AddWithValue("$project", submission.ProjectId.ToString()); command.Parameters.AddWithValue("$session", submission.SourceSessionId.ToString()); command.Parameters.AddWithValue("$task", (object?)submission.TaskId?.ToString() ?? DBNull.Value); command.Parameters.AddWithValue("$category", submission.Category); command.Parameters.AddWithValue("$topic", submission.Topic); command.Parameters.AddWithValue("$summary", submission.Summary); command.Parameters.AddWithValue("$source", (object?)submission.SourceReference ?? DBNull.Value); command.Parameters.AddWithValue("$created", submission.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "INSERT OR IGNORE INTO project_library_entries (id,project_id,source_session_id,task_id,category,topic,summary,source_reference,created_at) VALUES ($id,$project,$session,$task,$category,$topic,$summary,$source,$created);";
+            command.Parameters.AddWithValue("$id", submission.SubmissionId.ToString());
+            command.Parameters.AddWithValue("$project", submission.ProjectId.ToString());
+            command.Parameters.AddWithValue("$session", submission.SourceSessionId.ToString());
+            command.Parameters.AddWithValue("$task", (object?)submission.TaskId?.ToString() ?? DBNull.Value);
+            command.Parameters.AddWithValue("$category", submission.Category);
+            command.Parameters.AddWithValue("$topic", submission.Topic);
+            command.Parameters.AddWithValue("$summary", submission.Summary);
+            command.Parameters.AddWithValue("$source", (object?)submission.SourceReference ?? DBNull.Value);
+            command.Parameters.AddWithValue("$created", submission.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await Migration011ProjectLibraryEvolution.ImportLegacyEntriesAsync(connection, transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
     public async Task<IReadOnlyList<ProjectLibraryEntry>> BrowseAsync(Guid projectId, string? category = null, string? topic = null, string? text = null, CancellationToken cancellationToken = default)
     {
