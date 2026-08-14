@@ -154,7 +154,9 @@ public sealed class AppServices : IAsyncDisposable
             layoutRepository,
             new GitCliInspector(),
             effectiveTimeProvider);
-        var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages);
+        var libraryEvolutionRepository = new ProjectLibraryEvolutionRepository(database);
+        var libraryProposalService = new ProjectLibraryProposalService(database, effectiveTimeProvider);
+        var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages, libraryProposalService);
         var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
 
         return new AppServices(
@@ -189,7 +191,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRepository(database),
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
-            new ProjectLibraryEvolutionRepository(database),
+            libraryEvolutionRepository,
             new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider),
             new TaskEventWorkerRoutingStore(new TaskEventRepository(database)),
             effectiveRuntimeRegistry,

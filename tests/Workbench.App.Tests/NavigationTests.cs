@@ -107,6 +107,7 @@ public sealed class NavigationTests
         var report = Assert.Single(messages, message => message.Text.Contains("Worker Session:", StringComparison.Ordinal));
         Assert.Contains("Worker completed.", report.Text, StringComparison.Ordinal);
         Assert.Contains(workspace.LeaderPane.Messages, message => message.Text == report.Text);
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
 
         var reloaded = new WorkspaceViewModel(
             workspace.Result,

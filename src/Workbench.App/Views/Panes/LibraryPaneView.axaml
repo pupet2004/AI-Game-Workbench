@@ -11,6 +11,28 @@
                 <Button Content="Time" Command="{Binding ShowTimeCommand}" />
                 <Button Content="Project" Command="{Binding ShowProjectCommand}" />
             </WrapPanel>
+            <Border IsVisible="{Binding HasPendingLibraryProposals}" Padding="10" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Library proposal · pending user confirmation" FontWeight="SemiBold" />
+                    <ListBox ItemsSource="{Binding PendingLibraryProposals}" SelectedItem="{Binding SelectedLibraryProposal, Mode=TwoWay}">
+                        <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Draft.Action}" FontWeight="SemiBold" /><TextBlock Text="{Binding Draft.Category}" /><TextBlock Text="{Binding Draft.Topic}" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel IsVisible="{Binding SelectedLibraryProposal}" Spacing="4">
+                        <TextBlock Text="Action" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedLibraryProposal.Draft.Action}" />
+                        <TextBlock Text="Target Object / Timeline Node" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding SelectedLibraryProposal.Draft.TargetObjectId}" /><TextBlock Text="{Binding SelectedLibraryProposal.Draft.TargetNodeId}" />
+                        <TextBlock Text="Local date" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedLibraryProposal.Draft.LocalDate}" />
+                        <TextBlock Text="Proposed factual content" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding ProposalEditContent, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" />
+                        <TextBlock Text="Proposed Current Overview" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding ProposalEditOverview, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" />
+                        <TextBlock Text="Materials / Sources" FontWeight="SemiBold" />
+                        <ItemsControl ItemsSource="{Binding SelectedLibraryProposal.Draft.Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding MaterialKind}" /><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                        <WrapPanel><Button Content="Accept" Command="{Binding AcceptLibraryProposalCommand}" /><Button Content="Edit + Accept" Command="{Binding EditAndAcceptLibraryProposalCommand}" /><Button Content="Reject" Command="{Binding RejectLibraryProposalCommand}" /></WrapPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <TextBlock Text="{Binding LibraryProposalStatusMessage}" TextWrapping="Wrap" Foreground="#475467" />
             <StackPanel IsVisible="{Binding IsCategory}" Spacing="8">
                 <TextBlock Text="Project Library · Category" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding LibraryCategories.Count, StringFormat=Categories: {0}}" />

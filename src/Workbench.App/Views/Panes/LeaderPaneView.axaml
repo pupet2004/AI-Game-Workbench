@@ -47,6 +47,9 @@
                             Command="{Binding RetryRuntimeCommand}"
                             IsVisible="{Binding CanRetryRuntime}" />
                 </Grid>
+                <Border IsVisible="{Binding HasMemoryCommandStatus}" Padding="8" Background="#EEF4FF" CornerRadius="4">
+                    <TextBlock Text="{Binding MemoryCommandStatus}" Foreground="#344054" TextWrapping="Wrap" />
+                </Border>
             </StackPanel>
 
             <Grid Grid.Row="2">

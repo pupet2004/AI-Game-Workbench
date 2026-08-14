@@ -19,6 +19,7 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         await workspace.LeaderPane.SendAsync();
         await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(new(workspace.Result.Project.Id, new DateOnly(2026, 8, 14), "SELECTED_DAILY_MARKER", null, []), context.Time.GetUtcNow());
         await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(new(workspace.Result.Project.Id, new DateOnly(2026, 8, 13), "UNSELECTED_DAILY_MARKER", null, []), context.Time.GetUtcNow());
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
         var sourceEpoch = workspace.LeaderPane.SessionEpochId!.Value;
         await context.Services.ProjectMemoryApi.SaveBrainHandoffAsync(workspace.Result.Project.Id, sourceEpoch, "OLD_HANDOFF");
         await context.Services.LeaderMessageRepository.AppendAsync(sourceEpoch, "assistant", "SELECTED_RAW_MARKER", context.Time.GetUtcNow());
@@ -37,6 +38,7 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
             new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, payload, null), context.Time.GetUtcNow()));
         await workspace.LeaderPane.StartNewBrainAsync();
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
         var epochId = workspace.LeaderPane.SessionEpochId!.Value;
         var plan = await new LeaderEpochContinuityRepository(context.Services.Database).GetAsync(workspace.Result.Project.Id, epochId);
         Assert.Equal(["daily:2026-08-14", $"handoff:{sourceEpoch}", $"raw:{sourceEpoch}"], plan!.Selections.Select(item => item.Reference));

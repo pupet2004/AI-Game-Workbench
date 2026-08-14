@@ -8,6 +8,7 @@ using Workbench.Storage.Memory;
 using Workbench.Storage.Leaders;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Workbench.App.Memory;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -53,6 +54,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly Dictionary<Guid, string> _candidateSourceLabels = [];
     private readonly ProjectLibraryRepository? _library;
     private readonly ProjectLibraryEvolutionRepository? _evolutionLibrary;
+    private readonly IProjectMemoryApi? _projectMemoryApi;
 
     public LibraryPaneViewModel(
         ProjectOpenResult result,
@@ -64,7 +66,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
         LeaderSessionEpochRepository? epochRepository = null,
         Action<Guid>? scheduleMemorySynthesis = null,
         ProjectLibraryRepository? library = null,
-        ProjectLibraryEvolutionRepository? evolutionLibrary = null)
+        ProjectLibraryEvolutionRepository? evolutionLibrary = null,
+        IProjectMemoryApi? projectMemoryApi = null)
     {
         Result = result;
         _focus = focus;
@@ -76,6 +79,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         _scheduleMemorySynthesis = scheduleMemorySynthesis;
         _library = library;
         _evolutionLibrary = evolutionLibrary;
+        _projectMemoryApi = projectMemoryApi;
     }
 
     public LibraryPaneViewModel(ProjectOpenResult result)
@@ -156,6 +160,21 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public ObservableCollection<LibraryTimeGroupView> TimeGroups { get; } = [];
     public LibraryTimelineDirection TimelineDirection => LibraryTimelineDirection.OldToNew;
 
+    public ObservableCollection<ProjectLibraryProposal> PendingLibraryProposals { get; } = [];
+    public bool HasPendingLibraryProposals => PendingLibraryProposals.Count > 0;
+
+    [ObservableProperty]
+    public partial ProjectLibraryProposal? SelectedLibraryProposal { get; set; }
+
+    [ObservableProperty]
+    public partial string ProposalEditContent { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string? ProposalEditOverview { get; set; }
+
+    [ObservableProperty]
+    public partial string? LibraryProposalStatusMessage { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CurrentOverviewText))]
     public partial ProjectLibraryObject? SelectedLibraryObject { get; set; }
@@ -220,6 +239,49 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     [RelayCommand]
     private Task SelectLibraryObject(Guid objectId) => SelectLibraryObjectAsync(objectId);
+
+    partial void OnSelectedLibraryProposalChanged(ProjectLibraryProposal? value)
+    {
+        ProposalEditContent = value?.Draft.NodeContent ?? string.Empty;
+        ProposalEditOverview = value?.Draft.CurrentOverview;
+        LibraryProposalStatusMessage = null;
+    }
+
+    public async Task AcceptLibraryProposalAsync(CancellationToken cancellationToken = default)
+    {
+        var proposal = SelectedLibraryProposal ?? throw new InvalidOperationException("Select a Library Proposal first.");
+        await ConfirmLibraryProposalAsync(
+            token => _projectMemoryApi!.AcceptLibraryProposalAsync(Result.Project.Id, proposal.Id, token),
+            cancellationToken);
+    }
+
+    public async Task EditAndAcceptLibraryProposalAsync(CancellationToken cancellationToken = default)
+    {
+        var proposal = SelectedLibraryProposal ?? throw new InvalidOperationException("Select a Library Proposal first.");
+        var edit = new LibraryProposalEdit(ProposalEditContent, ProposalEditOverview, proposal.Draft.Materials);
+        await ConfirmLibraryProposalAsync(
+            token => _projectMemoryApi!.EditAndAcceptLibraryProposalAsync(Result.Project.Id, proposal.Id, edit, token),
+            cancellationToken);
+    }
+
+    public async Task RejectLibraryProposalAsync(CancellationToken cancellationToken = default)
+    {
+        var proposal = SelectedLibraryProposal ?? throw new InvalidOperationException("Select a Library Proposal first.");
+        if (_projectMemoryApi is null) throw new InvalidOperationException("Library Proposal review is unavailable.");
+        await _projectMemoryApi.RejectLibraryProposalAsync(Result.Project.Id, proposal.Id, cancellationToken);
+        SelectedLibraryProposal = null;
+        LibraryProposalStatusMessage = "Library proposal rejected; the Library was not changed.";
+        await LoadLibraryAsync(cancellationToken);
+    }
+
+    [RelayCommand]
+    private Task AcceptLibraryProposal() => AcceptLibraryProposalAsync();
+
+    [RelayCommand]
+    private Task EditAndAcceptLibraryProposal() => EditAndAcceptLibraryProposalAsync();
+
+    [RelayCommand]
+    private Task RejectLibraryProposal() => RejectLibraryProposalAsync();
 
     public async Task LoadMemoryAsync(CancellationToken cancellationToken=default)
     {
@@ -326,6 +388,43 @@ public partial class LibraryPaneViewModel : ViewModelBase
             var views = new List<LibraryTimelineNodeView>();
             foreach (var node in group) views.Add(await CreateTimelineNodeViewAsync(node, cancellationToken));
             TimeGroups.Add(new(group.Key.LocalDate, libraryObject.Category, libraryObject.Topic, libraryObject.Id, views));
+        }
+
+        PendingLibraryProposals.Clear();
+        if (_projectMemoryApi is not null)
+        {
+            foreach (var proposal in await _projectMemoryApi.GetPendingLibraryProposalsAsync(Result.Project.Id, cancellationToken))
+                PendingLibraryProposals.Add(proposal);
+        }
+        OnPropertyChanged(nameof(HasPendingLibraryProposals));
+    }
+
+    private async Task ConfirmLibraryProposalAsync(
+        Func<CancellationToken, Task> confirm,
+        CancellationToken cancellationToken)
+    {
+        if (_projectMemoryApi is null) throw new InvalidOperationException("Library Proposal review is unavailable.");
+        try
+        {
+            await confirm(cancellationToken);
+            SelectedLibraryProposal = null;
+            LibraryProposalStatusMessage = "Library proposal accepted.";
+            await LoadLibraryAsync(cancellationToken);
+        }
+        catch (LibraryRevisionConflictException)
+        {
+            LibraryProposalStatusMessage = "Library changed since this proposal was prepared. Review and retry without overwriting newer data.";
+            await LoadLibraryAsync(cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            LibraryProposalStatusMessage = exception.Message;
+            await LoadLibraryAsync(cancellationToken);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            LibraryProposalStatusMessage = "The Library proposal could not be committed; no Library changes were saved.";
+            await LoadLibraryAsync(cancellationToken);
         }
     }
 

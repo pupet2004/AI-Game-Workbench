@@ -18,6 +18,25 @@ public sealed class LeaderBootContextBuilderTests
         Assert.Contains("wait for user confirmation", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("do not claim a Worker started, executed", text, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Both_boot_paths_define_stage_end_library_judgment_and_user_confirmation_semantics()
+    {
+        var legacy = LeaderBootContextBuilder.Build(Project, [], [], null, "Close the stage.").Text;
+        var selected = LeaderBootContextBuilder.BuildSelected(Project, [], "Close the stage.").Text;
+
+        foreach (var text in new[] { legacy, selected })
+        {
+            Assert.Contains("LIBRARY PROPOSAL CONTRACT", text, StringComparison.Ordinal);
+            Assert.Contains("long-lived factual evolution", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("stage", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("memory_commands", text, StringComparison.Ordinal);
+            Assert.Contains("user confirmation", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Daily Summary", text, StringComparison.Ordinal);
+            Assert.Contains("reasons", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("ordinary turns", text, StringComparison.OrdinalIgnoreCase);
+        }
+    }
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-08-13T00:00:00+00:00");
     private static readonly CoreProject Project = new(
         Guid.Parse("10000000-0000-4000-8000-000000000001"),

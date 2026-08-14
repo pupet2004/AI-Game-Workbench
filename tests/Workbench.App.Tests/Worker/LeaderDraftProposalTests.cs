@@ -10,6 +10,7 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
+using Workbench.Storage.Memory;
 
 namespace Workbench.App.Tests.Worker;
 
@@ -24,6 +25,13 @@ public sealed class LeaderDraftProposalTests
         Assert.False(objectBranch.GetProperty("additionalProperties").GetBoolean());
         var profile = objectBranch.GetProperty("properties").GetProperty("recommendedExecutionProfile");
         Assert.False(profile.GetProperty("additionalProperties").GetBoolean());
+        var memory = document.RootElement.GetProperty("properties").GetProperty("memory_commands");
+        var memoryObject = memory.GetProperty("anyOf").EnumerateArray().Single(item => item.GetProperty("type").GetString() == "object");
+        Assert.False(memoryObject.GetProperty("additionalProperties").GetBoolean());
+        var library = memoryObject.GetProperty("properties").GetProperty("library_proposal");
+        var libraryObject = library.GetProperty("anyOf").EnumerateArray().Single(item => item.GetProperty("type").GetString() == "object");
+        Assert.False(libraryObject.GetProperty("additionalProperties").GetBoolean());
+        Assert.Contains("memory_commands", document.RootElement.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
     }
     [Fact]
     public async Task Leader_turn_request_carries_output_schema_but_worker_request_does_not()
@@ -32,12 +40,13 @@ public sealed class LeaderDraftProposalTests
         var registry = new AgentRuntimeRegistry(); registry.Register(runtime);
         await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
-        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "{\"response\":\"ok\",\"draft_proposal\":null}", null), DateTimeOffset.UtcNow));
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "{\"response\":\"ok\",\"draft_proposal\":null,\"memory_commands\":null}", null), DateTimeOffset.UtcNow));
         await workspace.LeaderPane.InitializeAsync();
         workspace.LeaderPane.DraftMessage = "ordinary";
         await workspace.LeaderPane.SendAsync();
         Assert.NotNull(runtime.SentRequests.Single().OutputSchema);
         Assert.Contains("draft_proposal", runtime.SentRequests.Single().OutputSchema!, StringComparison.Ordinal);
+        Assert.Contains("memory_commands", runtime.SentRequests.Single().OutputSchema!, StringComparison.Ordinal);
 
         Assert.DoesNotContain("outputSchema", new AgentRequest("worker").Text, StringComparison.Ordinal);
     }
@@ -76,6 +85,48 @@ public sealed class LeaderDraftProposalTests
         Assert.Equal("I drafted this task.", parsed.Response);
         Assert.Equal(projectId, parsed.Proposal!.ProjectId);
         Assert.Equal("Codex", parsed.Proposal.Recommendation.ProviderHint);
+    }
+
+    [Fact]
+    public void Structured_library_command_parses_as_provider_neutral_data()
+    {
+        var projectId = Guid.NewGuid();
+        var json = """
+            {"response":"Stage is closed.","draft_proposal":null,"memory_commands":{"daily_summary":null,"library_proposal":{"action":"CreateNode","target_object_id":null,"target_node_id":null,"expected_node_revision":null,"expected_overview_revision":0,"category":"Design","topic":"Relics","local_date":"2026-08-14","node_content":"Mechanism is implemented.","current_overview":"Current relic state.","materials":[{"kind":"GitCommit","reference":"abc123","label":"Implementation"}]}}}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, projectId, out var parsed));
+        Assert.Equal("Stage is closed.", parsed.Response);
+        Assert.Null(parsed.Proposal);
+        Assert.Null(parsed.MemoryCommandError);
+        var proposal = Assert.IsType<LeaderLibraryProposalCommand>(parsed.MemoryCommands!.LibraryProposal);
+        Assert.Equal(LibraryProposalAction.CreateNode, proposal.Action);
+        Assert.Equal(new DateOnly(2026, 8, 14), proposal.LocalDate);
+        Assert.Equal("abc123", Assert.Single(proposal.Materials).Reference);
+    }
+
+    [Fact]
+    public async Task Invalid_library_command_preserves_visible_response_and_uses_non_transcript_status()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+            "{\"response\":\"The stage assessment is still visible.\",\"draft_proposal\":null,\"memory_commands\":{\"daily_summary\":null,\"library_proposal\":{\"action\":\"CreateNode\"}}}", null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.DraftMessage = "close stage";
+
+        await workspace.LeaderPane.SendAsync();
+
+        Assert.Contains(workspace.LeaderPane.Messages, message => message.Text == "The stage assessment is still visible.");
+        Assert.DoesNotContain(workspace.LeaderPane.Messages, message => message.Text.Contains("memory command", StringComparison.OrdinalIgnoreCase));
+        Assert.True(workspace.LeaderPane.HasMemoryCommandStatus);
+        Assert.Contains("could not be processed", workspace.LeaderPane.MemoryCommandStatus!, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
+        var transcript = await context.Services.LeaderMessageRepository.GetAllAsync(workspace.LeaderPane.SessionEpochId!.Value);
+        Assert.Equal("The stage assessment is still visible.", transcript.Last().Text);
     }
     [Fact]
     public async Task Valid_provider_neutral_proposal_persists_one_project_scoped_draft_and_revision()
@@ -229,6 +280,7 @@ public sealed class LeaderDraftProposalTests
         Assert.Contains(workspace.LeaderPane.Messages, message => message.Text == "Leader response could not be processed.");
         Assert.False(workspace.LeaderPane.HasDraftConfirmation);
         Assert.Empty(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
     }
 
     private sealed class Fixture : IAsyncDisposable

@@ -361,6 +361,191 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         return await ReadNodesAsync(command, cancellationToken);
     }
 
+    internal async Task ApplyProposalAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ProjectLibraryProposalDraft draft,
+        DateTimeOffset appliedAt,
+        CancellationToken cancellationToken)
+    {
+        draft = NormalizeProposalDraft(draft);
+        if (!await ProjectExistsAsync(connection, transaction, draft.ProjectId, cancellationToken))
+        {
+            throw new InvalidOperationException("The proposal project does not exist.");
+        }
+
+        var categoryKey = ProjectLibraryIdentity.NormalizeKey(draft.Category);
+        var topicKey = ProjectLibraryIdentity.NormalizeKey(draft.Topic);
+        var libraryObject = draft.TargetObjectId is null
+            ? await ReadObjectByKeyAsync(connection, transaction, draft.ProjectId, categoryKey, topicKey, cancellationToken)
+            : await ReadObjectByIdAsync(connection, transaction, draft.ProjectId, draft.TargetObjectId.Value, cancellationToken);
+
+        if (draft.Action == LibraryProposalAction.CreateNode && libraryObject is null && draft.TargetObjectId is null)
+        {
+            var objectId = Guid.NewGuid();
+            var insertObject = connection.CreateCommand();
+            insertObject.Transaction = transaction;
+            insertObject.CommandText = """
+                INSERT INTO project_library_objects (
+                    id,project_id,category,topic,category_key,topic_key,current_overview,
+                    overview_revision,created_at,updated_at)
+                VALUES ($id,$projectId,$category,$topic,$categoryKey,$topicKey,NULL,0,$createdAt,$createdAt);
+                """;
+            insertObject.Parameters.AddWithValue("$id", objectId.ToString());
+            insertObject.Parameters.AddWithValue("$projectId", draft.ProjectId.ToString());
+            insertObject.Parameters.AddWithValue("$category", draft.Category);
+            insertObject.Parameters.AddWithValue("$topic", draft.Topic);
+            insertObject.Parameters.AddWithValue("$categoryKey", categoryKey);
+            insertObject.Parameters.AddWithValue("$topicKey", topicKey);
+            insertObject.Parameters.AddWithValue("$createdAt", Format(appliedAt));
+            await insertObject.ExecuteNonQueryAsync(cancellationToken);
+            libraryObject = await ReadObjectByIdAsync(connection, transaction, draft.ProjectId, objectId, cancellationToken);
+        }
+
+        if (libraryObject is null)
+        {
+            throw new InvalidOperationException("The target Library Object is not owned by this project.");
+        }
+        if (!string.Equals(libraryObject.CategoryKey, categoryKey, StringComparison.Ordinal) ||
+            !string.Equals(libraryObject.TopicKey, topicKey, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The proposal identity does not match the target Library Object.");
+        }
+
+        if (draft.CurrentOverview is not null && libraryObject.OverviewRevision != draft.ExpectedOverviewRevision)
+        {
+            throw new LibraryRevisionConflictException("The Library Current Overview has changed.");
+        }
+
+        if (draft.Action == LibraryProposalAction.CreateNode)
+        {
+            var nodeId = Guid.NewGuid();
+            var insertNode = connection.CreateCommand();
+            insertNode.Transaction = transaction;
+            insertNode.CommandText = """
+                INSERT INTO project_library_timeline_nodes (
+                    id,object_id,local_date,content,revision,created_at,updated_at)
+                VALUES ($id,$objectId,$localDate,$content,1,$createdAt,$createdAt);
+                """;
+            insertNode.Parameters.AddWithValue("$id", nodeId.ToString());
+            insertNode.Parameters.AddWithValue("$objectId", libraryObject.Id.ToString());
+            insertNode.Parameters.AddWithValue("$localDate", Format(draft.LocalDate));
+            insertNode.Parameters.AddWithValue("$content", draft.NodeContent);
+            insertNode.Parameters.AddWithValue("$createdAt", Format(appliedAt));
+            await insertNode.ExecuteNonQueryAsync(cancellationToken);
+            await InsertReferencesAsync(connection, transaction, nodeId, draft.Materials, appliedAt, cancellationToken);
+        }
+        else
+        {
+            var node = await ReadNodeByIdAsync(connection, transaction, draft.ProjectId, draft.TargetNodeId!.Value, cancellationToken)
+                ?? throw new InvalidOperationException("The target Library Timeline Node is not owned by this project.");
+            if (node.ObjectId != libraryObject.Id)
+            {
+                throw new InvalidOperationException("The target Library Timeline Node does not belong to the target Object.");
+            }
+            if (node.LocalDate != draft.LocalDate)
+            {
+                throw new InvalidOperationException("The proposal date does not match the target Library Timeline Node.");
+            }
+            if (node.Revision != draft.ExpectedNodeRevision)
+            {
+                throw new LibraryRevisionConflictException("The Library Timeline Node has changed.");
+            }
+
+            var updateNode = connection.CreateCommand();
+            updateNode.Transaction = transaction;
+            updateNode.CommandText = """
+                UPDATE project_library_timeline_nodes
+                SET content=$content,revision=revision+1,updated_at=$updatedAt
+                WHERE id=$nodeId AND revision=$expectedRevision;
+                """;
+            updateNode.Parameters.AddWithValue("$content", draft.NodeContent);
+            updateNode.Parameters.AddWithValue("$updatedAt", Format(appliedAt));
+            updateNode.Parameters.AddWithValue("$nodeId", node.Id.ToString());
+            updateNode.Parameters.AddWithValue("$expectedRevision", draft.ExpectedNodeRevision!.Value);
+            if (await updateNode.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new LibraryRevisionConflictException("The Library Timeline Node has changed.");
+            }
+
+            var deleteReferences = connection.CreateCommand();
+            deleteReferences.Transaction = transaction;
+            deleteReferences.CommandText = "DELETE FROM project_library_material_refs WHERE node_id=$nodeId;";
+            deleteReferences.Parameters.AddWithValue("$nodeId", node.Id.ToString());
+            await deleteReferences.ExecuteNonQueryAsync(cancellationToken);
+            await InsertReferencesAsync(connection, transaction, node.Id, draft.Materials, appliedAt, cancellationToken);
+        }
+
+        if (draft.CurrentOverview is not null)
+        {
+            var updateOverview = connection.CreateCommand();
+            updateOverview.Transaction = transaction;
+            updateOverview.CommandText = """
+                UPDATE project_library_objects
+                SET current_overview=$overview,overview_revision=overview_revision+1,updated_at=$updatedAt
+                WHERE id=$objectId AND project_id=$projectId AND overview_revision=$expectedRevision;
+                """;
+            updateOverview.Parameters.AddWithValue("$overview", draft.CurrentOverview);
+            updateOverview.Parameters.AddWithValue("$updatedAt", Format(appliedAt));
+            updateOverview.Parameters.AddWithValue("$objectId", libraryObject.Id.ToString());
+            updateOverview.Parameters.AddWithValue("$projectId", draft.ProjectId.ToString());
+            updateOverview.Parameters.AddWithValue("$expectedRevision", draft.ExpectedOverviewRevision!.Value);
+            if (await updateOverview.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new LibraryRevisionConflictException("The Library Current Overview has changed.");
+            }
+        }
+    }
+
+    internal static ProjectLibraryProposalDraft NormalizeProposalDraft(ProjectLibraryProposalDraft draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        ValidateGuid(draft.ProposalId, nameof(draft.ProposalId));
+        ValidateGuid(draft.ProjectId, nameof(draft.ProjectId));
+        ValidateGuid(draft.SourceSessionId, nameof(draft.SourceSessionId));
+        if (!Enum.IsDefined(draft.Action)) throw new ArgumentOutOfRangeException(nameof(draft.Action));
+        if (draft.TargetObjectId == Guid.Empty || draft.TargetNodeId == Guid.Empty) throw new ArgumentException("Target identity is invalid.", nameof(draft));
+        var category = ProjectLibraryIdentity.NormalizeDisplay(ValidateRequiredText(draft.Category, MaxCategoryLength, nameof(draft.Category)));
+        var topic = ProjectLibraryIdentity.NormalizeDisplay(ValidateRequiredText(draft.Topic, MaxTopicLength, nameof(draft.Topic)));
+        var content = ValidateRequiredText(draft.NodeContent, MaxNodeContentLength, nameof(draft.NodeContent));
+        var overview = NormalizeOptional(draft.CurrentOverview, MaxOverviewLength, nameof(draft.CurrentOverview));
+        var materials = NormalizeReferences(draft.Materials);
+        if (draft.LocalDate == DateOnly.MinValue) throw new ArgumentException("Local date is required.", nameof(draft.LocalDate));
+
+        if (draft.Action == LibraryProposalAction.CreateNode)
+        {
+            if (draft.TargetNodeId is not null || draft.ExpectedNodeRevision is not null)
+                throw new ArgumentException("CreateNode cannot target an existing Timeline Node.", nameof(draft));
+        }
+        else if (draft.TargetObjectId is null || draft.TargetNodeId is null || draft.ExpectedNodeRevision is null or < 1)
+        {
+            throw new ArgumentException("UpdateNode requires target identities and a positive expected revision.", nameof(draft));
+        }
+
+        if (overview is not null && draft.ExpectedOverviewRevision is null or < 0)
+            throw new ArgumentException("An Overview replacement requires its expected revision.", nameof(draft));
+
+        return draft with
+        {
+            Category = category,
+            Topic = topic,
+            NodeContent = content,
+            CurrentOverview = overview,
+            Materials = materials
+        };
+    }
+
+    internal static LibraryProposalEdit NormalizeProposalEdit(LibraryProposalEdit edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        return edit with
+        {
+            NodeContent = ValidateRequiredText(edit.NodeContent, MaxNodeContentLength, nameof(edit.NodeContent)),
+            CurrentOverview = NormalizeOptional(edit.CurrentOverview, MaxOverviewLength, nameof(edit.CurrentOverview)),
+            Materials = NormalizeReferences(edit.Materials)
+        };
+    }
+
     private const string ObjectSelect = "SELECT id,project_id,category,topic,category_key,topic_key,current_overview,overview_revision,created_at,updated_at FROM project_library_objects";
     private const string NodeSelect = "SELECT node.id,node.object_id,node.local_date,node.content,node.revision,node.created_at,node.updated_at FROM project_library_timeline_nodes node";
 
@@ -380,6 +565,38 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         command.Parameters.AddWithValue("$topicKey", topicKey);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadObject(reader) : null;
+    }
+
+    private static async Task<ProjectLibraryObject?> ReadObjectByIdAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid projectId,
+        Guid objectId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"{ObjectSelect} WHERE project_id=$projectId AND id=$objectId;";
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        command.Parameters.AddWithValue("$objectId", objectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadObject(reader) : null;
+    }
+
+    private static async Task<ProjectLibraryTimelineNode?> ReadNodeByIdAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid projectId,
+        Guid nodeId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"{NodeSelect} JOIN project_library_objects object ON object.id=node.object_id WHERE object.project_id=$projectId AND node.id=$nodeId;";
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        command.Parameters.AddWithValue("$nodeId", nodeId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadNode(reader) : null;
     }
 
     private static async Task<bool> ProjectExistsAsync(

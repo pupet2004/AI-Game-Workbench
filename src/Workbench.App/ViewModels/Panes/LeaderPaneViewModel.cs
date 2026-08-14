@@ -11,6 +11,7 @@ using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
 using Workbench.App.Memory;
 using Workbench.Core.Tasks;
+using Workbench.Storage.Memory;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ViewModels.Panes;
@@ -32,6 +33,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly TaskRevisionRepository? _taskRevisions;
     private readonly WorkerSessionRouter? _workerSessionRouter;
     private readonly Func<CancellationToken, Task>? _refreshWorkPane;
+    private readonly IProjectMemoryApi? _projectMemoryApi;
+    private readonly TimeProvider _timeProvider;
+    private readonly Func<CancellationToken, Task>? _refreshLibraryPane;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -51,7 +55,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         TaskRepository? taskRepository = null,
         TaskRevisionRepository? taskRevisionRepository = null,
         WorkerSessionRouter? workerSessionRouter = null,
-        Func<CancellationToken, Task>? refreshWorkPane = null)
+        Func<CancellationToken, Task>? refreshWorkPane = null,
+        IProjectMemoryApi? projectMemoryApi = null,
+        TimeProvider? timeProvider = null,
+        Func<CancellationToken, Task>? refreshLibraryPane = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -68,6 +75,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _taskRevisions = taskRevisionRepository;
         _workerSessionRouter = workerSessionRouter;
         _refreshWorkPane = refreshWorkPane;
+        _projectMemoryApi = projectMemoryApi;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _refreshLibraryPane = refreshLibraryPane;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -95,6 +105,12 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public bool HasDraftConfirmation => DraftConfirmation is not null;
     public string? CurrentWorkerProfile => DraftConfirmation is null ? null : $"{DraftConfirmation.Resource.DisplayLabel} · {DraftConfirmation.Resource.ModelDisplayName}";
     public ObservableCollection<WorkerResource> WorkerResources { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMemoryCommandStatus))]
+    public partial string? MemoryCommandStatus { get; set; }
+
+    public bool HasMemoryCommandStatus => !string.IsNullOrWhiteSpace(MemoryCommandStatus);
 
     public LeaderEpochHistoryViewModel? History { get; }
 
@@ -405,6 +421,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         _conversation.IsBusy = true;
         _conversation.ApprovalError = null;
+        MemoryCommandStatus = null;
         NotifyAllState();
 
         var bootPendingDelivery = _bootContextBuilder is not null &&
@@ -518,10 +535,19 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                     case AgentTurnCompleted completed:
                         turnCompleted = true;
                         var finalText = completed.Result.FinalText;
-                        if (_draftProposalBuilder is not null && LeaderStructuredResponse.TryParse(finalText, _project.Id, out var structured))
+                        if ((_draftProposalBuilder is not null || _projectMemoryApi is not null) &&
+                            LeaderStructuredResponse.TryParse(finalText, _project.Id, out var structured))
                         {
                             finalText = structured.Response;
-                            if (structured.Proposal is not null)
+                            if (structured.MemoryCommandError is not null)
+                            {
+                                MemoryCommandStatus = structured.MemoryCommandError;
+                            }
+                            else if (structured.MemoryCommands?.LibraryProposal is not null)
+                            {
+                                await CreateLibraryProposalAsync(structured.MemoryCommands.LibraryProposal, cancellationToken);
+                            }
+                            if (_draftProposalBuilder is not null && structured.Proposal is not null)
                             {
                                 var resources = await _runtimeRegistry.GetWorkerResourcesAsync(cancellationToken);
                                 var candidate = SelectCandidate(resources, structured.Proposal.Recommendation);
@@ -546,7 +572,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                 }
                             }
                         }
-                        else if (_draftProposalBuilder is not null && !string.IsNullOrWhiteSpace(finalText) && finalText.TrimStart().StartsWith('{'))
+                        else if ((_draftProposalBuilder is not null || _projectMemoryApi is not null) && !string.IsNullOrWhiteSpace(finalText) && finalText.TrimStart().StartsWith('{'))
                         {
                             finalText = string.Empty;
                             AddErrorMessage("Leader response could not be processed.");
@@ -784,6 +810,44 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private void AddErrorMessage(string text) =>
         Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.Error, text));
 
+    private async Task CreateLibraryProposalAsync(
+        LeaderLibraryProposalCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (_projectMemoryApi is null || _conversation.Session is null)
+        {
+            MemoryCommandStatus = "Library proposal could not be processed.";
+            return;
+        }
+
+        try
+        {
+            var draft = new ProjectLibraryProposalDraft(
+                Guid.NewGuid(),
+                _project.Id,
+                _conversation.Session.Id.Value,
+                command.Action,
+                command.TargetObjectId,
+                command.TargetNodeId,
+                command.ExpectedNodeRevision,
+                command.ExpectedOverviewRevision,
+                command.Category,
+                command.Topic,
+                command.LocalDate,
+                command.NodeContent,
+                command.CurrentOverview,
+                command.Materials,
+                _timeProvider.GetUtcNow());
+            await _projectMemoryApi.CreateLibraryProposalAsync(draft, cancellationToken);
+            MemoryCommandStatus = "Library proposal ready for review.";
+            if (_refreshLibraryPane is not null) await _refreshLibraryPane(cancellationToken);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            MemoryCommandStatus = "Library proposal could not be processed.";
+        }
+    }
+
     private void ClearPendingApproval()
     {
         _conversation.PendingApproval = null;
@@ -851,6 +915,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasHistory));
         OnPropertyChanged(nameof(HasDraftConfirmation));
         OnPropertyChanged(nameof(CurrentWorkerProfile));
+        OnPropertyChanged(nameof(HasMemoryCommandStatus));
         NotifyCommandState();
     }
 

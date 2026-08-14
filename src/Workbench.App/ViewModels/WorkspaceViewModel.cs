@@ -50,7 +50,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         WorkerSessionRouter? workerSessionRouter = null,
         IWorkerRoutingStore? workerRoutingStore = null,
         ProjectLibraryRepository? projectLibraryRepository = null,
-        ProjectLibraryEvolutionRepository? projectLibraryEvolutionRepository = null)
+        ProjectLibraryEvolutionRepository? projectLibraryEvolutionRepository = null,
+        IProjectMemoryApi? projectMemoryApi = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -63,6 +64,18 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             workerRoutingStore,
             runtimeRegistry,
             new CodexInteractiveSessionLauncher());
+        LibraryPane = new LibraryPaneViewModel(
+            result,
+            FocusLibraryAsync,
+            projectSettingsRepository,
+            rotationStateService,
+            projectMemoryService,
+            memorySynthesisRepository,
+            epochRepository,
+            scheduleMemorySynthesis,
+            library: projectLibraryRepository,
+            evolutionLibrary: projectLibraryEvolutionRepository,
+            projectMemoryApi: projectMemoryApi);
         LeaderPane = new LeaderPaneViewModel(
             result.Project,
             runtimeRegistry ?? new AgentRuntimeRegistry(),
@@ -80,18 +93,10 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             taskRepository: taskRepository,
             taskRevisionRepository: taskRevisionRepository,
             workerSessionRouter: workerSessionRouter,
-            refreshWorkPane: cancellationToken => WorkPane.LoadAsync(result.Project.Id, cancellationToken));
-        LibraryPane = new LibraryPaneViewModel(
-            result,
-            FocusLibraryAsync,
-            projectSettingsRepository,
-            rotationStateService,
-            projectMemoryService,
-            memorySynthesisRepository,
-            epochRepository,
-            scheduleMemorySynthesis,
-            library: projectLibraryRepository,
-            evolutionLibrary: projectLibraryEvolutionRepository);
+            refreshWorkPane: cancellationToken => WorkPane.LoadAsync(result.Project.Id, cancellationToken),
+            projectMemoryApi: projectMemoryApi,
+            timeProvider: _timeProvider,
+            refreshLibraryPane: LibraryPane.LoadLibraryAsync);
     }
 
     public ProjectOpenResult Result { get; }

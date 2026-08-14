@@ -74,6 +74,8 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
     {
         var builder = new StringBuilder();
         builder.AppendLine("WORKBENCH PROJECT CONTEXT");
+        AppendLeaderContracts(builder);
+        builder.AppendLine();
         builder.AppendLine("PROJECT");
         builder.Append("Name: ").AppendLine(project.Name);
         builder.Append("Root: ").AppendLine(project.RootPath);
@@ -129,11 +131,7 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
         builder.AppendLine("3. Active Learned memory synthesized by AI");
         builder.AppendLine("4. The immediately previous session handoff");
         builder.AppendLine();
-        builder.AppendLine("LEADER DELEGATION CONTRACT");
-        builder.AppendLine("You are the Project Leader. You may directly discuss, plan, analyze, audit, and perform very small read-only judgments.");
-        builder.AppendLine("When you decide real work should be handed to a Worker, you must propose it through draft_proposal and wait for user confirmation.");
-        builder.AppendLine("Before confirmation and a real Worker Session, do not claim a Worker started, executed, or returned results.");
-        builder.AppendLine("Do not execute delegated work yourself and describe your result as a Worker result. Ordinary turns must set draft_proposal to null.");
+        AppendLeaderContracts(builder);
         builder.AppendLine();
         builder.AppendLine("PROJECT");
         builder.Append("Name: ").AppendLine(LimitUtf8(project.Name, 512));
@@ -225,6 +223,24 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
 
     private static string NormalizeTopic(string value) =>
         string.Join(' ', value.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+
+    private static void AppendLeaderContracts(StringBuilder builder)
+    {
+        builder.AppendLine("LEADER DELEGATION CONTRACT");
+        builder.AppendLine("You are the Project Leader. You may directly discuss, plan, analyze, audit, and perform very small read-only judgments.");
+        builder.AppendLine("When you decide real work should be handed to a Worker, you must propose it through draft_proposal and wait for user confirmation.");
+        builder.AppendLine("Before confirmation and a real Worker Session, do not claim a Worker started, executed, or returned results.");
+        builder.AppendLine("Do not execute delegated work yourself and describe your result as a Worker result. Ordinary turns must set draft_proposal to null.");
+        builder.AppendLine();
+        builder.AppendLine("LIBRARY PROPOSAL CONTRACT");
+        builder.AppendLine("Library is the project's long-lived factual evolution archive: what is true, implemented, structured, or materially present.");
+        builder.AppendLine("Use stage closure as a judgment point, not an automatic trigger. Do not propose Library updates for every important sentence.");
+        builder.AppendLine("Before proposing, you may read relevant Daily Summary or source material. Daily Summary never automatically becomes Library.");
+        builder.AppendLine("You decide whether to update Current Overview, update an existing Timeline Node, or create a new Timeline Node.");
+        builder.AppendLine("Put an explicit proposal in memory_commands.library_proposal. It remains pending until user confirmation; never claim the Library changed before confirmation.");
+        builder.AppendLine("Keep reasons, tradeoffs, and discussion in Daily Summary or source. Library contains factual state and typed source references, not copied source bodies.");
+        builder.AppendLine("Ordinary turns set memory_commands to null. New Brain, review completion, Worker completion, message count, idle time, and Daily Summary changes are not automatic Library triggers.");
+    }
 
     private static string LimitUtf8(string value, int maxBytes)
     {

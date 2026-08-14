@@ -17,4 +17,10 @@ public interface IProjectMemoryApi
     Task<RecentConversationSlice> ReadRecentConversationAsync(Guid projectId, Guid epochId, long? beforeSequence, int maxMessages, int maxUtf8Bytes, CancellationToken cancellationToken = default);
     Task<ContinuityMaterialCatalog> ListContinuityMaterialsAsync(Guid projectId, Guid sourceEpochId, CancellationToken cancellationToken = default);
     Task<ResolvedContinuityBundle> ResolveContinuityAsync(Guid projectId, LeaderEpochContinuityPlan plan, CancellationToken cancellationToken = default);
+    Task<ProjectLibraryProposal> CreateLibraryProposalAsync(ProjectLibraryProposalDraft draft, CancellationToken cancellationToken = default);
+    Task<ProjectLibraryProposal?> GetLibraryProposalAsync(Guid projectId, Guid proposalId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectLibraryProposal>> GetPendingLibraryProposalsAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task AcceptLibraryProposalAsync(Guid projectId, Guid proposalId, CancellationToken cancellationToken = default);
+    Task EditAndAcceptLibraryProposalAsync(Guid projectId, Guid proposalId, LibraryProposalEdit edit, CancellationToken cancellationToken = default);
+    Task RejectLibraryProposalAsync(Guid projectId, Guid proposalId, CancellationToken cancellationToken = default);
 }
