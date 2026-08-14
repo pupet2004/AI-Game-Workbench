@@ -172,7 +172,7 @@ public sealed class ProjectLeaderSessionManager
             return;
         }
 
-        var text = $"Worker · {handoff.WorkerLabel}\nTask: {handoff.TaskId}\nWorker Session: {handoff.WorkerSessionId.Value}\nStatus: {handoff.Status}\n\n{handoff.Message}";
+        var text = $"Worker · {handoff.WorkerLabel}\nKind: {handoff.Kind}\nAssignment: {handoff.TaskId}\nRevision: {handoff.TaskRevisionId}\nWorker Session: {handoff.WorkerSessionId.Value}\nStatus: {handoff.Status}\n\n{handoff.Message}";
         await PersistCompletedAssistantAsync(conversation, text, cancellationToken);
         conversation.Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.Assistant, text));
     }

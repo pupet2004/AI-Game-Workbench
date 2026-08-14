@@ -4,12 +4,14 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Workers;
+using Workbench.Storage.Tasks;
 
 namespace Workbench.App.Worker;
 
 public sealed record WorkerStartRequest(
     Workbench.Core.Projects.Project Project,
     Guid TaskId,
+    Guid TaskRevisionId,
     string TaskTitle,
     ExecutionProfile ExecutionProfile,
     string LeaderPrompt,
@@ -35,7 +37,11 @@ public sealed record WorkerHandoff(
     string WorkerLabel,
     AgentSessionStatus Status,
     string Message,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    WorkerHandoffKind Kind = WorkerHandoffKind.NeedsLeaderDecision,
+    string? ValidationSummary = null,
+    Guid? SourceEventId = null,
+    Guid TaskRevisionId = default);
 
 public sealed record WorkerRemoval(
     Guid ProjectId,
@@ -125,7 +131,7 @@ internal sealed record StoredSession(Guid ProjectId, Guid TaskId, string TaskTit
         ExecutionProfile.Create(RecommendedProviderId, RecommendedAccountId, RecommendedModelId, RecommendedRuntimeId), Label, LastActiveAt);
 }
 
-public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRoutingStore store, TimeProvider time)
+public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRoutingStore store, TimeProvider time, AssignmentReviewStateRepository? assignments = null)
 {
     public async Task<WorkerStartResult> StartAsync(WorkerStartRequest request, CancellationToken cancellationToken = default)
     {
@@ -160,12 +166,49 @@ public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRo
             session = persisted.Session;
         }
 
+        if (created && assignments is not null)
+        {
+            var ready = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId,
+                TaskLifecycleStatus.Draft, TaskLifecycleStatus.ReadyToStart, Guid.NewGuid(),
+                "AssignmentReadyToStart", "{}", time.GetUtcNow(), cancellationToken);
+            if (ready is not AssignmentStateTransitionResult.Applied and not AssignmentStateTransitionResult.Conflict)
+            {
+                await runtime.StopAsync(session, CancellationToken.None);
+                return new WorkerStartResult(false, null, "The Assignment was not ready to start.");
+            }
+            var started = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId,
+                TaskLifecycleStatus.ReadyToStart, TaskLifecycleStatus.Working, Guid.NewGuid(),
+                "WorkerAssignmentStarted", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value }), time.GetUtcNow(), cancellationToken);
+            if (started != AssignmentStateTransitionResult.Applied)
+            {
+                await runtime.StopAsync(session, CancellationToken.None);
+                return new WorkerStartResult(false, null, "The Assignment was not ready to start.");
+            }
+        }
+
         await foreach (var item in runtime.SendAsync(session, new AgentRequest(request.LeaderPrompt), cancellationToken))
         {
             if (item is AgentTurnCompleted completed && !string.IsNullOrWhiteSpace(completed.Result.FinalText))
             {
+                var isTyped = WorkerHandoffPayloadParser.TryParse(completed.Result.FinalText, out var payload);
+                var eventId = Guid.NewGuid();
+                if (isTyped && payload!.Kind == WorkerHandoffKind.FinalReport && assignments is not null)
+                {
+                    var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId,
+                        TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing, eventId,
+                        "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message, payload.ValidationSummary }), time.GetUtcNow(), cancellationToken);
+                    if (transition != AssignmentStateTransitionResult.Applied) continue;
+                }
+                else if (isTyped && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
+                {
+                    var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId,
+                        TaskLifecycleStatus.Working, TaskLifecycleStatus.NeedsLeaderDecision, eventId,
+                        "WorkerNeedsLeaderDecisionReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message }), time.GetUtcNow(), cancellationToken);
+                    if (transition != AssignmentStateTransitionResult.Applied) continue;
+                }
                 var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id,
-                    request.WorkerLabel, completed.Result.FinalStatus, completed.Result.FinalText, time.GetUtcNow());
+                    request.WorkerLabel, completed.Result.FinalStatus, isTyped ? payload!.Message : completed.Result.FinalText!, time.GetUtcNow(),
+                    isTyped ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision, isTyped ? payload!.ValidationSummary : null, eventId, request.TaskRevisionId);
                 await store.AppendHandoffAsync(handoff, cancellationToken);
                 if (request.OnHandoff is not null)
                 {

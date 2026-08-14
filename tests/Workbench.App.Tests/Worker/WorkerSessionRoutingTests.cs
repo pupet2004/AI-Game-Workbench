@@ -17,7 +17,7 @@ public sealed class WorkerSessionRoutingTests
     public async Task Confirming_a_draft_creates_one_worker_session_sends_the_leader_prompt_and_persists_the_relation()
     {
         await using var fixture = await Fixture.CreateAsync();
-        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Worker result A", null), DateTimeOffset.UtcNow));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, FinalReport("Worker result A"), null), DateTimeOffset.UtcNow));
 
         var result = await fixture.Router.StartAsync(fixture.NewRequest("Leader prompt A"));
 
@@ -38,7 +38,7 @@ public sealed class WorkerSessionRoutingTests
         await using var fixture = await Fixture.CreateAsync();
         var worker = fixture.CreateExistingWorker();
         await fixture.Events.SaveSessionAsync(new WorkerSessionRecord(fixture.Project.Id, fixture.Task.TaskId, fixture.Task.Title, worker, fixture.Profile, "Worker 1", DateTimeOffset.UtcNow));
-        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(worker.Id, AgentSessionStatus.Completed, "Worker result B", null), DateTimeOffset.UtcNow));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(worker.Id, AgentSessionStatus.Completed, FinalReport("Worker result B"), null), DateTimeOffset.UtcNow));
 
         var result = await fixture.Router.StartAsync(fixture.NewRequest("Leader correction B", worker.Id));
 
@@ -52,7 +52,7 @@ public sealed class WorkerSessionRoutingTests
     public async Task Leader_handoff_delivery_failure_does_not_remove_the_persisted_worker_handoff()
     {
         await using var fixture = await Fixture.CreateAsync();
-        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Worker result", null), DateTimeOffset.UtcNow));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, FinalReport("Worker result"), null), DateTimeOffset.UtcNow));
 
         var result = await fixture.Router.StartAsync(fixture.NewRequest("Leader prompt", onHandoff: (_, _) => Task.FromException(new InvalidOperationException("Leader unavailable"))));
 
@@ -78,8 +78,8 @@ public sealed class WorkerSessionRoutingTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var router = new WorkerSessionRouter(fixture.Registry, new TaskEventWorkerRoutingStore(new TaskEventRepository(fixture.Database)), TimeProvider.System);
-        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Result A", null), DateTimeOffset.UtcNow));
-        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Result B", null), DateTimeOffset.UtcNow));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, FinalReport("Result A"), null), DateTimeOffset.UtcNow));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, FinalReport("Result B"), null), DateTimeOffset.UtcNow));
 
         var first = await router.StartAsync(fixture.NewRequest("Prompt A"));
         var second = await router.StartAsync(fixture.NewRequest("Correction B", first.WorkerSession!.Id));
@@ -90,6 +90,26 @@ public sealed class WorkerSessionRoutingTests
         Assert.Equal(["Prompt A", "Correction B"], fixture.Runtime.SentRequests.Select(item => item.Text));
         var events = await fixture.ListAsync();
         Assert.Equal(2, events.Count(item => item.Type == "WorkerToLeaderHandoff"));
+    }
+
+    [Fact]
+    public async Task Explicit_final_report_atomically_moves_only_its_working_assignment_to_reviewing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        Assert.True(await new TaskRepository(fixture.Database).UpdateStatusAsync(fixture.Project.Id, fixture.Task.TaskId,
+            TaskLifecycleStatus.Draft, TaskLifecycleStatus.ReadyToStart));
+        var router = new WorkerSessionRouter(fixture.Registry, fixture.Events, TimeProvider.System,
+            new AssignmentReviewStateRepository(fixture.Database));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+            FinalReport("delivered"), null), DateTimeOffset.UtcNow));
+
+        var result = await router.StartAsync(fixture.NewRequest("prompt"));
+
+        Assert.True(result.Succeeded);
+        var state = (await new AssignmentReviewStateRepository(fixture.Database)
+            .GetRecoveryStateAsync(fixture.Project.Id, fixture.Task.TaskId))!;
+        Assert.Equal(TaskLifecycleStatus.Reviewing, state.Task.Status);
+        Assert.Single(state.Events, item => item.Type == "WorkerFinalReportReceived");
     }
 
     private sealed class Fixture : IAsyncDisposable
@@ -117,7 +137,7 @@ public sealed class WorkerSessionRoutingTests
         public Workbench.Storage.Database.WorkbenchDatabase Database => _context.Services.Database;
 
         public WorkerStartRequest NewRequest(string prompt, AgentSessionId? reuse = null, Func<WorkerHandoff, CancellationToken, Task>? onHandoff = null) =>
-            new(Project, Task.TaskId, Task.Title, Profile, prompt, reuse, "Worker 1", onHandoff);
+            new(Project, Task.TaskId, Task.CurrentRevisionId, Task.Title, Profile, prompt, reuse, "Worker 1", onHandoff);
 
         public AgentSession CreateExistingWorker() => new(AgentSessionId.New(), Runtime.Account.Id, Runtime.Provider.Id, "model-a", Project.RootPath, "worker-existing", AgentSessionStatus.Ready, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
@@ -142,6 +162,8 @@ public sealed class WorkerSessionRoutingTests
 
         public async ValueTask DisposeAsync() => await _context.DisposeAsync();
     }
+
+    private static string FinalReport(string message) => JsonSerializer.Serialize(new { Kind = "FinalReport", Message = message, ValidationSummary = "verified" });
 }
 
 internal sealed class TestTaskEventStore(WorkbenchDatabase database) : IWorkerRoutingStore

@@ -192,7 +192,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider, new AssignmentReviewStateRepository(database)),
             new TaskEventWorkerRoutingStore(new TaskEventRepository(database)),
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
