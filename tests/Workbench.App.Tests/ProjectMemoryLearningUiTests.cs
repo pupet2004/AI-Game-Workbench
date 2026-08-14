@@ -48,6 +48,7 @@ public sealed class ProjectMemoryLearningUiTests
             epochRepository: context.Epochs,
             scheduleMemorySynthesis: _ => scheduled++);
         await library.InitializeAsync();
+        await library.LoadMemoryAsync();
         Assert.Equal("Memory learning: 1 session pending", library.MemoryLearningStatus);
 
         context.Runtime.QueueTurn(context.Completed("""
@@ -62,8 +63,8 @@ public sealed class ProjectMemoryLearningUiTests
         Assert.Contains("AI-generated", library.LearnedMemoryLabel, StringComparison.Ordinal);
         Assert.Equal("From Leader session · Aug 13", library.SelectedCandidateSourceLabel);
         Assert.Empty(library.FormalMemories);
-        await library.ShowProjectCommand.ExecuteAsync(null);
-        Assert.Equal(1, scheduled);
+        library.ShowProjectCommand.Execute(null);
+        Assert.Equal(0, scheduled);
     }
 
     [Fact]
@@ -78,6 +79,7 @@ public sealed class ProjectMemoryLearningUiTests
             epochRepository: context.Epochs);
 
         await library.InitializeAsync();
+        await library.LoadMemoryAsync();
 
         Assert.Equal("Learning...", library.MemoryLearningStatus);
     }
@@ -140,15 +142,14 @@ public sealed class ProjectMemoryLearningUiTests
     }
 
     [Fact]
-    public void Library_markup_keeps_learned_visually_separate_from_formal()
+    public void Library_markup_does_not_expose_legacy_memory_as_a_primary_surface()
     {
         var root = FindRepositoryRoot();
         var markup = File.ReadAllText(Path.Combine(root, "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
 
-        Assert.Contains("Learned Memory", markup, StringComparison.Ordinal);
-        Assert.Contains("AI-generated", markup, StringComparison.Ordinal);
-        Assert.Contains("SelectedCandidateSourceLabel", markup, StringComparison.Ordinal);
-        Assert.Contains("Formal Memory", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Project Memory", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Learned Memory", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Formal Memory", markup, StringComparison.Ordinal);
     }
 
     private static ProjectOpenResult Result(CoordinatorContext context) =>

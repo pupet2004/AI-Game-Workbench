@@ -248,7 +248,7 @@ public sealed class WorkspaceViewModelTests
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
         await context.Services.ProjectMemoryService.CreateCandidateAsync(workspace.Result.Project.Id, "Memory Foundation Smoke", "Project Memory belongs to the Workbench, not to a runtime session.", [new ProjectMemorySource("Manual", "smoke")]);
 
-        await workspace.LibraryPane.InitializeAsync();
+        await workspace.LibraryPane.LoadMemoryAsync();
         workspace.LibraryPane.SelectCandidateCommand.Execute(workspace.LibraryPane.PendingCandidates.Single());
         await workspace.LibraryPane.AcceptCandidateCommand.ExecuteAsync(null);
 
@@ -257,11 +257,11 @@ public sealed class WorkspaceViewModelTests
     }
 
     [Fact]
-    public void Library_memory_count_uses_a_real_binding()
+    public void Library_does_not_bind_the_legacy_memory_count()
     {
         var root = FindRepositoryRoot();
         var markup = File.ReadAllText(Path.Combine(root, "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
-        Assert.Contains("Text=\"{Binding PendingCandidateCount, StringFormat=Pending Candidates: {0}}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pending Candidates", markup, StringComparison.Ordinal);
     }
 
     private static Workbench.Project.Opening.ProjectOpenResult CreateResult(GitSnapshot git)

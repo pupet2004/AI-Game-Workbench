@@ -13,7 +13,6 @@ namespace Workbench.App.ViewModels.Panes;
 
 public enum LibrarySection
 {
-    Overview,
     Category,
     Time,
     Project
@@ -87,10 +86,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public ProjectOpenResult Result { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsOverview), nameof(IsCategory), nameof(IsTime), nameof(HasCategoryView), nameof(HasTimeView), nameof(IsProject))]
-    public partial LibrarySection SelectedSection { get; set; } = LibrarySection.Overview;
-
-    public bool IsOverview => SelectedSection == LibrarySection.Overview;
+    [NotifyPropertyChangedFor(nameof(IsCategory), nameof(IsTime), nameof(HasCategoryView), nameof(HasTimeView), nameof(IsProject))]
+    public partial LibrarySection SelectedSection { get; set; } = LibrarySection.Category;
 
     public bool IsCategory => SelectedSection == LibrarySection.Category;
 
@@ -175,7 +172,6 @@ public partial class LibraryPaneViewModel : ViewModelBase
             RotationPolicyOverride = state.ProjectOverride;
             EffectiveRotationPolicy = state.EffectivePolicy;
         }
-        if (_memory is not null) await LoadMemoryAsync(cancellationToken);
         await LoadLibraryAsync(cancellationToken);
     }
 
@@ -294,21 +290,13 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private Task UseManualRotation() => SetLeaderSessionRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.ManualOnly);
 
     [RelayCommand]
-    private void ShowOverview() => SelectedSection = LibrarySection.Overview;
-
-    [RelayCommand]
     private Task ShowCategory() => ShowCategoryAsync();
 
     [RelayCommand]
     private Task ShowTime() => ShowTimeAsync();
 
     [RelayCommand]
-    private async Task ShowProject()
-    {
-        SelectedSection = LibrarySection.Project;
-        await LoadMemoryAsync();
-        _scheduleMemorySynthesis?.Invoke(Result.Project.Id);
-    }
+    private void ShowProject() => SelectedSection = LibrarySection.Project;
 
     [RelayCommand]
     private Task Focus() => _focus();

@@ -6,22 +6,11 @@
     <Border Padding="16">
         <StackPanel Spacing="12">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="LIBRARY" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
-            <WrapPanel ItemHeight="28" ItemWidth="68">
-                <Button Content="Overview" Command="{Binding ShowOverviewCommand}" />
+            <WrapPanel ItemHeight="28">
                 <Button Content="Category" Command="{Binding ShowCategoryCommand}" />
                 <Button Content="Time" Command="{Binding ShowTimeCommand}" />
                 <Button Content="Project" Command="{Binding ShowProjectCommand}" />
             </WrapPanel>
-            <StackPanel IsVisible="{Binding IsOverview}" Spacing="6">
-                <TextBlock Text="{Binding ProjectName}" FontSize="18" FontWeight="SemiBold" />
-                <TextBlock Text="Project Type:" /><TextBlock Text="{Binding ProjectType}" />
-                <TextBlock Text="Project Path:" /><TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" />
-                <TextBlock Text="Git:" /><TextBlock Text="{Binding GitStatus}" />
-                <TextBlock Text="Branch:" /><TextBlock Text="{Binding BranchText}" />
-                <TextBlock Text="HEAD:" /><TextBlock Text="{Binding ShortHead}" />
-                <TextBlock Text="Working Tree:" /><TextBlock Text="{Binding WorkingTreeText}" />
-                <TextBlock Text="{Binding StatusMessage}" Foreground="IndianRed" />
-            </StackPanel>
             <StackPanel IsVisible="{Binding IsCategory}" Spacing="8">
                 <TextBlock Text="Project Library · Category" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding LibraryCategories.Count, StringFormat=Categories: {0}}" />
@@ -33,7 +22,7 @@
                     <TextBlock Text="{Binding SelectedLibraryObject.Category}" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedLibraryObject.Topic}" FontSize="16" />
                     <TextBlock Text="Current Overview" FontWeight="SemiBold" /><TextBlock Text="{Binding CurrentOverviewText}" TextWrapping="Wrap" />
                     <TextBlock Text="Timeline · newest first · visual flow ↑ (old → new)" FontWeight="SemiBold" />
-                    <ItemsControl ItemsSource="{Binding ObjectTimeline}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding LocalDate}" Foreground="#667085" /><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding MaterialKind}" /><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    <ItemsControl ItemsSource="{Binding ObjectTimeline}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding LocalDate}" Foreground="#667085" /><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding MaterialKind}" /><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><TextBlock Text="↑ old → new" Foreground="#667085" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                 </StackPanel>
             </StackPanel>
             <StackPanel IsVisible="{Binding IsTime}" Spacing="8">
@@ -43,28 +32,15 @@
                 <ItemsControl ItemsSource="{Binding TimeGroups}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="3"><TextBlock Text="{Binding LocalDate}" FontWeight="SemiBold" /><TextBlock Text="{Binding Category}" /><TextBlock Text="{Binding Topic}" /><ItemsControl ItemsSource="{Binding Nodes}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding MaterialKind}" /><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
             </StackPanel>
             <StackPanel IsVisible="{Binding IsProject}" Spacing="8">
-                <TextBlock Text="Project Memory" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding MemoryLearningStatus}" />
-                <TextBlock Text="{Binding PendingCandidateCount, StringFormat=Pending Candidates: {0}}" />
-                <ItemsControl ItemsSource="{Binding PendingCandidates}">
-                    <ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Topic}" Command="{Binding $parent[UserControl].DataContext.SelectCandidateCommand}" CommandParameter="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel IsVisible="{Binding SelectedCandidate}" Spacing="4">
-                    <TextBlock Text="{Binding SelectedCandidate.Topic}" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedCandidate.Content}" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding SelectedCandidateSourceLabel}" Foreground="#667085" />
-                    <TextBox Text="{Binding CandidateEditContent, Mode=TwoWay}" PlaceholderText="Edit before accepting" />
-                    <Button Content="Accept" Command="{Binding AcceptCandidateCommand}" /><Button Content="Edit + Accept" Command="{Binding EditAndAcceptCandidateCommand}" /><Button Content="Reject" Command="{Binding RejectCandidateCommand}" />
-                </StackPanel>
-                <TextBlock Text="Learned Memory · AI-generated" FontWeight="SemiBold" />
-                <ItemsControl ItemsSource="{Binding LearnedMemories}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Topic}" FontWeight="SemiBold" /><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                <TextBlock Text="Formal Memory" FontWeight="SemiBold" />
-                <ItemsControl ItemsSource="{Binding FormalMemories}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Topic}" FontWeight="SemiBold" /><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                <TextBlock Text="Leader Session Rotation" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding RotationPolicySummary}" TextWrapping="Wrap" />
-                <Button Content="Use global setting" Command="{Binding UseGlobalRotationPolicyCommand}" />
-                <Button Content="Automatic" Command="{Binding UseAutomaticRotationCommand}" />
-                <Button Content="Ask first" Command="{Binding AskBeforeRotationCommand}" />
-                <Button Content="Manual only" Command="{Binding UseManualRotationCommand}" />
+                <TextBlock Text="Project" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" />
+                <TextBlock Text="Project Type:" /><TextBlock Text="{Binding ProjectType}" />
+                <TextBlock Text="Project Path:" /><TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" />
+                <TextBlock Text="Git:" /><TextBlock Text="{Binding GitStatus}" />
+                <TextBlock Text="Branch:" /><TextBlock Text="{Binding BranchText}" />
+                <TextBlock Text="HEAD:" /><TextBlock Text="{Binding ShortHead}" />
+                <TextBlock Text="Working Tree:" /><TextBlock Text="{Binding WorkingTreeText}" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="IndianRed" />
             </StackPanel>
         </StackPanel>
     </Border>
