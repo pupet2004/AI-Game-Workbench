@@ -5,6 +5,7 @@ using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Workers;
 using Workbench.Storage.Tasks;
+using Workbench.App.Leader;
 
 namespace Workbench.App.Worker;
 
@@ -131,7 +132,7 @@ internal sealed record StoredSession(Guid ProjectId, Guid TaskId, string TaskTit
         ExecutionProfile.Create(RecommendedProviderId, RecommendedAccountId, RecommendedModelId, RecommendedRuntimeId), Label, LastActiveAt);
 }
 
-public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRoutingStore store, TimeProvider time, AssignmentReviewStateRepository? assignments = null)
+public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRoutingStore store, TimeProvider time, AssignmentReviewStateRepository? assignments = null, ILeaderReviewOrchestrator? reviews = null)
 {
     public async Task<WorkerStartResult> StartAsync(WorkerStartRequest request, CancellationToken cancellationToken = default)
     {
@@ -210,6 +211,10 @@ public sealed class WorkerSessionRouter(AgentRuntimeRegistry runtimes, IWorkerRo
                     request.WorkerLabel, completed.Result.FinalStatus, isTyped ? payload!.Message : completed.Result.FinalText!, time.GetUtcNow(),
                     isTyped ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision, isTyped ? payload!.ValidationSummary : null, eventId, request.TaskRevisionId);
                 await store.AppendHandoffAsync(handoff, cancellationToken);
+                if (isTyped && payload!.Kind == WorkerHandoffKind.FinalReport && reviews is not null)
+                {
+                    await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
+                }
                 if (request.OnHandoff is not null)
                 {
                     try { await request.OnHandoff(handoff, cancellationToken); }

@@ -15,6 +15,7 @@ public enum AssignmentStateTransitionResult
 }
 
 public sealed record AssignmentReviewRecoveryState(StoredTask Task, IReadOnlyList<StoredTaskEvent> Events);
+public sealed record PendingLeaderReviewReport(Guid TaskId, Guid FinalReportEventId);
 public sealed record LeaderReviewDecisionPersistenceRequest(Guid EventId, Guid ProjectId, Guid TaskId, Guid TaskRevisionId, Guid FinalReportEventId, string Outcome, string ActionLevel, string ReviewDepth, string Summary, string? Issue, string NextAction, string? ImportantNote, DateTimeOffset CreatedAt);
 public sealed record StoredLeaderReviewDecision(Guid EventId, Guid ProjectId, Guid TaskId, Guid TaskRevisionId, Guid FinalReportEventId, string Outcome, string ActionLevel, string ReviewDepth, string Summary, string? Issue, string NextAction, string? ImportantNote, DateTimeOffset CreatedAt);
 
@@ -47,6 +48,32 @@ public sealed class AssignmentReviewStateRepository(WorkbenchDatabase database)
         await using var reader = await command.ExecuteReaderAsync(cancellationToken); if (!await reader.ReadAsync(cancellationToken)) return null;
         var payload = System.Text.Json.JsonSerializer.Deserialize<DecisionPayload>(reader.GetString(1))!;
         return new StoredLeaderReviewDecision(Guid.Parse(reader.GetString(0)), projectId, taskId, payload.TaskRevisionId, payload.FinalReportEventId, payload.Outcome, payload.ActionLevel, payload.ReviewDepth, payload.Summary, payload.Issue, payload.NextAction, payload.ImportantNote, DateTimeOffset.Parse(reader.GetString(2)));
+    }
+
+    public async Task<IReadOnlyList<PendingLeaderReviewReport>> ListPendingReviewReportsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT final.id, final.task_id
+            FROM task_events final
+            JOIN tasks task ON task.id = final.task_id AND task.project_id = final.project_id
+            WHERE final.project_id = $projectId
+              AND task.status = 'Reviewing'
+              AND final.event_type = 'WorkerFinalReportReceived'
+              AND NOT EXISTS (
+                  SELECT 1 FROM task_events decision
+                  WHERE decision.project_id = final.project_id
+                    AND decision.task_id = final.task_id
+                    AND decision.event_type = 'LeaderReviewDecisionRecorded'
+                    AND decision.payload_json LIKE '%' || '"FinalReportEventId":"' || final.id || '"' || '%')
+            ORDER BY final.created_at, final.id;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var results = new List<PendingLeaderReviewReport>();
+        while (await reader.ReadAsync(cancellationToken)) results.Add(new(Guid.Parse(reader.GetString(1)), Guid.Parse(reader.GetString(0))));
+        return results;
     }
 
     public async Task<AssignmentStateTransitionResult> TryTransitionAsync(

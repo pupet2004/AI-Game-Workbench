@@ -50,6 +50,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLibraryEvolutionRepository projectLibraryEvolutionRepository,
         WorkerSessionRouter workerSessionRouter,
         IWorkerRoutingStore workerRoutingStore,
+        ILeaderReviewOrchestrator leaderReviewOrchestrator,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -78,6 +79,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLibraryEvolutionRepository = projectLibraryEvolutionRepository;
         WorkerSessionRouter = workerSessionRouter;
         WorkerRoutingStore = workerRoutingStore;
+        LeaderReviewOrchestrator = leaderReviewOrchestrator;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -116,6 +118,7 @@ public sealed class AppServices : IAsyncDisposable
     public ProjectLibraryEvolutionRepository ProjectLibraryEvolutionRepository { get; }
     public WorkerSessionRouter WorkerSessionRouter { get; }
     public IWorkerRoutingStore WorkerRoutingStore { get; }
+    public ILeaderReviewOrchestrator LeaderReviewOrchestrator { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -158,6 +161,11 @@ public sealed class AppServices : IAsyncDisposable
         var libraryProposalService = new ProjectLibraryProposalService(database, effectiveTimeProvider);
         var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages, libraryProposalService, libraryEvolutionRepository);
         var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
+        var taskEvents = new TaskEventRepository(database);
+        var reviewState = new AssignmentReviewStateRepository(database);
+        var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
+            new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
+            new LeaderReviewRuntimeAdapter(), reviewState, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider);
 
         return new AppServices(
             database,
@@ -192,8 +200,9 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(new TaskEventRepository(database)), effectiveTimeProvider, new AssignmentReviewStateRepository(database)),
-            new TaskEventWorkerRoutingStore(new TaskEventRepository(database)),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(taskEvents), effectiveTimeProvider, reviewState, leaderReviewOrchestrator),
+            new TaskEventWorkerRoutingStore(taskEvents),
+            leaderReviewOrchestrator,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);
