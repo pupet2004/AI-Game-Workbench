@@ -98,8 +98,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             rolloverService: _services.LeaderSessionRolloverService,
             epochRepository: _services.LeaderSessionEpochRepository,
             messageRepository: _services.LeaderMessageRepository,
-            projectMemoryService: _services.ProjectMemoryService,
-            memorySynthesisRepository: _services.ProjectMemorySynthesisRepository,
             bootContextBuilder: _services.LeaderBootContextBuilder,
             memoryPolicyCoordinator: _services.LeaderMemoryPolicyCoordinator,
             taskRepository: _services.TaskRepository,

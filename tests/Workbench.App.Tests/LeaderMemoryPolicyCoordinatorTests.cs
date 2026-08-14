@@ -3,6 +3,7 @@ using Workbench.App.Memory;
 using Workbench.Core.Memory;
 using Workbench.Core.Projects;
 using Workbench.Storage.Database;
+using Microsoft.Data.Sqlite;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests;
@@ -64,6 +65,7 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         payload = payload.Replace("LIBRARY", libraryObject.Id.ToString(), StringComparison.Ordinal)
             .Replace("NODE", libraryNode.Id.ToString(), StringComparison.Ordinal);
         var synthesisJobsBefore = await CountSynthesisJobsAsync(context.Services.Database);
+        var legacyRowsBefore = await CountLegacyRowsAsync(context.Services.Database);
         runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
             new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, payload, null), context.Time.GetUtcNow()));
         var preparation = await context.Services.LeaderMemoryPolicyCoordinator.PrepareForNewBrainAsync(
@@ -81,6 +83,7 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         Assert.Equal(["daily:2026-08-14", $"library-overview:{libraryObject.Id}", $"library-timeline:{libraryNode.Id}", $"handoff:{sourceEpoch}", $"raw:{sourceEpoch}"], plan!.Selections.Select(item => item.Reference));
         Assert.Equal("SELECTED_HANDOFF_MARKER", (await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
         Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Services.Database));
+        Assert.Equal(legacyRowsBefore, await CountLegacyRowsAsync(context.Services.Database));
 
         runtime.SendException = new IOException("delivery failed");
         workspace.LeaderPane.DraftMessage = "failed delivery";
@@ -120,5 +123,20 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM project_memory_synthesis_jobs;";
         return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<long[]> CountLegacyRowsAsync(WorkbenchDatabase database)
+    {
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        string[] tables = ["project_activity_events", "project_memory_items", "project_memory_sources", "project_library_entries"];
+        var counts = new long[tables.Length];
+        for (var index = 0; index < tables.Length; index++)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM {tables[index]};";
+            counts[index] = Convert.ToInt64(await command.ExecuteScalarAsync());
+        }
+        return counts;
     }
 }
