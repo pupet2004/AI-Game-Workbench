@@ -13,6 +13,7 @@ public enum AssignmentStateTransitionResult
     Conflict,
     NotFound
 }
+public enum UserDecisionGateResult { Applied, Idempotent, Conflict, NotFound }
 
 public sealed record AssignmentReviewRecoveryState(StoredTask Task, IReadOnlyList<StoredTaskEvent> Events);
 public sealed record PendingLeaderReviewReport(Guid TaskId, Guid FinalReportEventId);
@@ -93,6 +94,15 @@ public sealed class AssignmentReviewStateRepository(WorkbenchDatabase database)
         return results;
     }
 
+    public async Task<IReadOnlyList<StoredLeaderReviewDecision>> ListUserDecisionGateCandidatesAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand(); command.CommandText = "SELECT e.id,e.task_id,e.payload_json,e.created_at FROM task_events e JOIN tasks t ON t.id=e.task_id AND t.project_id=e.project_id WHERE e.project_id=$p AND t.status IN ('Reviewing','NeedsUserDecision') AND e.event_type='LeaderReviewDecisionRecorded' ORDER BY e.created_at,e.id;"; command.Parameters.AddWithValue("$p", projectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken); var results = new List<StoredLeaderReviewDecision>();
+        while (await reader.ReadAsync(cancellationToken)) { var payload = System.Text.Json.JsonSerializer.Deserialize<DecisionPayload>(reader.GetString(2)); if (payload is not null) results.Add(new(Guid.Parse(reader.GetString(0)), projectId, Guid.Parse(reader.GetString(1)), payload.TaskRevisionId, payload.FinalReportEventId, payload.Outcome, payload.ActionLevel, payload.ReviewDepth, payload.Summary, payload.Issue, payload.NextAction, payload.ImportantNote, DateTimeOffset.Parse(reader.GetString(3)))); }
+        return results;
+    }
+
     public async Task<AssignmentStateTransitionResult> TryTransitionAsync(
         Guid projectId,
         Guid taskId,
@@ -168,6 +178,40 @@ public sealed class AssignmentReviewStateRepository(WorkbenchDatabase database)
 
         await transaction.CommitAsync(cancellationToken);
         return AssignmentStateTransitionResult.Applied;
+    }
+
+    public async Task<UserDecisionGateResult> TryOpenUserDecisionGateAsync(Guid projectId, Guid taskId, Guid taskRevisionId, Guid decisionEventId, Guid leaderEpochId, Guid transitionEventId, string eventPayload, string question, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var task = await ReadTaskAsync(connection, transaction, projectId, taskId, cancellationToken);
+        if (task is null) { await transaction.CommitAsync(cancellationToken); return UserDecisionGateResult.NotFound; }
+        if (task.CurrentRevisionId != taskRevisionId || (task.Status != TaskLifecycleStatus.Reviewing && task.Status != TaskLifecycleStatus.NeedsUserDecision)) { await transaction.CommitAsync(cancellationToken); return UserDecisionGateResult.Conflict; }
+        var epoch = connection.CreateCommand(); epoch.Transaction = transaction; epoch.CommandText = "SELECT 1 FROM leader_session_epochs WHERE id=$e AND project_id=$p AND ended_at IS NULL;"; epoch.Parameters.AddWithValue("$e", leaderEpochId.ToString()); epoch.Parameters.AddWithValue("$p", projectId.ToString());
+        if (await epoch.ExecuteScalarAsync(cancellationToken) is null) { await transaction.CommitAsync(cancellationToken); return UserDecisionGateResult.Conflict; }
+
+        var marker = UserDecisionQuestionMarker(projectId, taskId, decisionEventId);
+        var message = connection.CreateCommand(); message.Transaction = transaction; message.CommandText = "SELECT 1 FROM leader_messages WHERE epoch_id=$e AND text LIKE $m LIMIT 1;"; message.Parameters.AddWithValue("$e", leaderEpochId.ToString()); message.Parameters.AddWithValue("$m", $"%{marker}%");
+        var hasMessage = await message.ExecuteScalarAsync(cancellationToken) is not null;
+        if (task.Status == TaskLifecycleStatus.NeedsUserDecision)
+        {
+            if (!hasMessage) await InsertLeaderMessageAsync(connection, transaction, leaderEpochId, question, occurredAt, cancellationToken);
+            await transaction.CommitAsync(cancellationToken); return hasMessage ? UserDecisionGateResult.Idempotent : UserDecisionGateResult.Applied;
+        }
+
+        var update = connection.CreateCommand(); update.Transaction = transaction; update.CommandText = "UPDATE tasks SET status='NeedsUserDecision',updated_at=$at WHERE project_id=$p AND id=$t AND status='Reviewing';"; update.Parameters.AddWithValue("$at", Format(occurredAt)); update.Parameters.AddWithValue("$p", projectId.ToString()); update.Parameters.AddWithValue("$t", taskId.ToString());
+        if (await update.ExecuteNonQueryAsync(cancellationToken) != 1) { await transaction.CommitAsync(cancellationToken); return UserDecisionGateResult.Conflict; }
+        var append = connection.CreateCommand(); append.Transaction = transaction; append.CommandText = "INSERT INTO task_events(id,project_id,task_id,execution_id,event_type,payload_json,created_at) VALUES($i,$p,$t,NULL,'AssignmentNeedsUserDecision',$x,$a);"; append.Parameters.AddWithValue("$i", transitionEventId.ToString()); append.Parameters.AddWithValue("$p", projectId.ToString()); append.Parameters.AddWithValue("$t", taskId.ToString()); append.Parameters.AddWithValue("$x", eventPayload); append.Parameters.AddWithValue("$a", Format(occurredAt)); await append.ExecuteNonQueryAsync(cancellationToken);
+        if (!hasMessage) await InsertLeaderMessageAsync(connection, transaction, leaderEpochId, question, occurredAt, cancellationToken);
+        await transaction.CommitAsync(cancellationToken); return UserDecisionGateResult.Applied;
+    }
+
+    public static string UserDecisionQuestionMarker(Guid projectId, Guid taskId, Guid decisionEventId) => $"review-user-decision:{projectId:D}:{taskId:D}:{decisionEventId:D}";
+
+    private static async Task InsertLeaderMessageAsync(SqliteConnection connection, SqliteTransaction transaction, Guid epochId, string question, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+    {
+        var next = connection.CreateCommand(); next.Transaction = transaction; next.CommandText = "SELECT COALESCE(MAX(sequence),0)+1 FROM leader_messages WHERE epoch_id=$e;"; next.Parameters.AddWithValue("$e", epochId.ToString()); var sequence = Convert.ToInt64(await next.ExecuteScalarAsync(cancellationToken));
+        var insert = connection.CreateCommand(); insert.Transaction = transaction; insert.CommandText = "INSERT INTO leader_messages(epoch_id,sequence,role,text,created_at) VALUES($e,$s,'user',$q,$a);"; insert.Parameters.AddWithValue("$e", epochId.ToString()); insert.Parameters.AddWithValue("$s", sequence); insert.Parameters.AddWithValue("$q", question); insert.Parameters.AddWithValue("$a", Format(occurredAt)); await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<AssignmentReviewRecoveryState?> GetRecoveryStateAsync(

@@ -53,6 +53,7 @@ public sealed class AppServices : IAsyncDisposable
         ILeaderReviewOrchestrator leaderReviewOrchestrator,
         LeaderAuthoritySettingsService leaderAuthoritySettings,
         ILeaderReviewAutoProceedExecutor leaderReviewAutoProceed,
+        ILeaderReviewAskUserGate leaderReviewAskUserGate,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -84,6 +85,7 @@ public sealed class AppServices : IAsyncDisposable
         LeaderReviewOrchestrator = leaderReviewOrchestrator;
         LeaderAuthoritySettings = leaderAuthoritySettings;
         LeaderReviewAutoProceed = leaderReviewAutoProceed;
+        LeaderReviewAskUserGate = leaderReviewAskUserGate;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -125,6 +127,7 @@ public sealed class AppServices : IAsyncDisposable
     public ILeaderReviewOrchestrator LeaderReviewOrchestrator { get; }
     public LeaderAuthoritySettingsService LeaderAuthoritySettings { get; }
     public ILeaderReviewAutoProceedExecutor LeaderReviewAutoProceed { get; }
+    public ILeaderReviewAskUserGate LeaderReviewAskUserGate { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -172,10 +175,11 @@ public sealed class AppServices : IAsyncDisposable
         var leaderAuthoritySettings = new LeaderAuthoritySettingsService(
             new WorkbenchSettingsRepository(database), new ProjectSettingsRepository(database));
         var leaderAutoProceed = new LeaderReviewAutoProceedExecutor(new TaskRepository(database), reviewState, leaderAuthoritySettings, effectiveTimeProvider);
+        var leaderAskUserGate = new LeaderReviewAskUserGate(new TaskRepository(database), reviewState, leaderAuthoritySettings, projectLeaders, effectiveTimeProvider);
         var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
             new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
             new LeaderReviewRuntimeAdapter(), reviewState, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
-            leaderAutoProceed);
+            leaderAutoProceed, leaderAskUserGate);
 
         return new AppServices(
             database,
@@ -215,6 +219,7 @@ public sealed class AppServices : IAsyncDisposable
             leaderReviewOrchestrator,
             leaderAuthoritySettings,
             leaderAutoProceed,
+            leaderAskUserGate,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);
