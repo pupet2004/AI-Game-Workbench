@@ -82,6 +82,14 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         Assert.Equal("SELECTED_HANDOFF_MARKER", (await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
         Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Services.Database));
 
+        runtime.SendException = new IOException("delivery failed");
+        workspace.LeaderPane.DraftMessage = "failed delivery";
+        await workspace.LeaderPane.SendAsync();
+        Assert.Equal(plan.Selections, (await new LeaderEpochContinuityRepository(context.Services.Database)
+            .GetAsync(workspace.Result.Project.Id, epochId))!.Selections);
+        Assert.Null((await context.Services.LeaderSessionEpochRepository.GetAsync(epochId))!.BootContextDeliveredAt);
+
+        runtime.SendException = null;
         runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
             new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, "new", null), context.Time.GetUtcNow()));
         workspace.LeaderPane.DraftMessage = "continue";
@@ -96,6 +104,10 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         Assert.Contains("continue", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
         Assert.Empty(await context.Services.DailySummaryRepository.ListAsync(workspace.Result.Project.Id, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 15)));
         Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Services.Database));
+        Assert.Empty((await new LeaderEpochContinuityRepository(context.Services.Database)
+            .GetAsync(workspace.Result.Project.Id, epochId))!.Selections);
+        Assert.Equal("SELECTED_LIBRARY_OVERVIEW", (await context.Services.ProjectLibraryEvolutionRepository
+            .GetObjectAsync(workspace.Result.Project.Id, libraryObject.Id))!.CurrentOverview);
     }
 
     private static async Task<long> CountSynthesisJobsAsync(WorkbenchDatabase database)

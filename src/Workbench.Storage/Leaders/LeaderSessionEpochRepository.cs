@@ -153,7 +153,9 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
     {
         await using var connection = _database.CreateConnection();
         await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
         var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE leader_session_epochs
             SET boot_context_delivered_at = COALESCE(boot_context_delivered_at, $deliveredAt)
@@ -165,6 +167,13 @@ public sealed class LeaderSessionEpochRepository(WorkbenchDatabase database)
         {
             throw new InvalidOperationException("Boot context can only be delivered to an active Leader epoch.");
         }
+
+        var consumeSelections = connection.CreateCommand();
+        consumeSelections.Transaction = transaction;
+        consumeSelections.CommandText = "DELETE FROM leader_epoch_continuity_selections WHERE epoch_id = $id;";
+        consumeSelections.Parameters.AddWithValue("$id", epochId.ToString());
+        await consumeSelections.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<StoredLeaderSessionEpoch> SaveActiveHandoffAsync(Guid projectId, Guid epochId, string? content, CancellationToken cancellationToken = default)
