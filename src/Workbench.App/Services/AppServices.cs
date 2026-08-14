@@ -52,6 +52,7 @@ public sealed class AppServices : IAsyncDisposable
         IWorkerRoutingStore workerRoutingStore,
         ILeaderReviewOrchestrator leaderReviewOrchestrator,
         LeaderAuthoritySettingsService leaderAuthoritySettings,
+        ILeaderReviewAutoProceedExecutor leaderReviewAutoProceed,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -82,6 +83,7 @@ public sealed class AppServices : IAsyncDisposable
         WorkerRoutingStore = workerRoutingStore;
         LeaderReviewOrchestrator = leaderReviewOrchestrator;
         LeaderAuthoritySettings = leaderAuthoritySettings;
+        LeaderReviewAutoProceed = leaderReviewAutoProceed;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -122,6 +124,7 @@ public sealed class AppServices : IAsyncDisposable
     public IWorkerRoutingStore WorkerRoutingStore { get; }
     public ILeaderReviewOrchestrator LeaderReviewOrchestrator { get; }
     public LeaderAuthoritySettingsService LeaderAuthoritySettings { get; }
+    public ILeaderReviewAutoProceedExecutor LeaderReviewAutoProceed { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -166,11 +169,13 @@ public sealed class AppServices : IAsyncDisposable
         var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
         var taskEvents = new TaskEventRepository(database);
         var reviewState = new AssignmentReviewStateRepository(database);
-        var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
-            new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
-            new LeaderReviewRuntimeAdapter(), reviewState, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider);
         var leaderAuthoritySettings = new LeaderAuthoritySettingsService(
             new WorkbenchSettingsRepository(database), new ProjectSettingsRepository(database));
+        var leaderAutoProceed = new LeaderReviewAutoProceedExecutor(new TaskRepository(database), reviewState, leaderAuthoritySettings, effectiveTimeProvider);
+        var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
+            new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
+            new LeaderReviewRuntimeAdapter(), reviewState, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
+            leaderAutoProceed);
 
         return new AppServices(
             database,
@@ -209,6 +214,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskEventWorkerRoutingStore(taskEvents),
             leaderReviewOrchestrator,
             leaderAuthoritySettings,
+            leaderAutoProceed,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);

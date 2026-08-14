@@ -35,7 +35,8 @@ public sealed class LeaderReviewOrchestrator(
     ProjectLeaderRepository leaders,
     LeaderSessionEpochRepository epochs,
     AgentRuntimeRegistry runtimes,
-    TimeProvider timeProvider) : ILeaderReviewOrchestrator
+    TimeProvider timeProvider,
+    ILeaderReviewAutoProceedExecutor? autoProceed = null) : ILeaderReviewOrchestrator
 {
     public async Task<LeaderReviewOrchestrationResult> TryReviewAsync(Guid projectId, Guid taskId, Guid finalReportEventId, CancellationToken cancellationToken = default)
     {
@@ -44,7 +45,11 @@ public sealed class LeaderReviewOrchestrator(
         var task = await tasks.GetAsync(projectId, taskId, cancellationToken);
         if (task is null || task.Status != TaskLifecycleStatus.Reviewing) return new(LeaderReviewOrchestrationResultKind.NoWork);
         var existing = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, task.CurrentRevisionId, finalReportEventId, cancellationToken);
-        if (existing is not null) return new(LeaderReviewOrchestrationResultKind.ExistingDecision, existing);
+        if (existing is not null)
+        {
+            if (autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, existing.TaskRevisionId, existing.FinalReportEventId, cancellationToken);
+            return new(LeaderReviewOrchestrationResultKind.ExistingDecision, existing);
+        }
 
         var input = await inputBuilder.BuildAsync(projectId, taskId, finalReportEventId, cancellationToken);
         if (input is null) return new(LeaderReviewOrchestrationResultKind.ValidationFailure);
@@ -72,11 +77,13 @@ public sealed class LeaderReviewOrchestrator(
             if (persisted == AssignmentStateTransitionResult.Applied)
             {
                 var stored = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
+                if (stored is not null && autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, stored.TaskRevisionId, stored.FinalReportEventId, cancellationToken);
                 return new(LeaderReviewOrchestrationResultKind.Recorded, stored);
             }
             if (persisted == AssignmentStateTransitionResult.Idempotent)
             {
                 var stored = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
+                if (stored is not null && autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, stored.TaskRevisionId, stored.FinalReportEventId, cancellationToken);
                 return new(LeaderReviewOrchestrationResultKind.ExistingDecision, stored);
             }
             return new(LeaderReviewOrchestrationResultKind.PersistenceFailure, Error: persisted.ToString());

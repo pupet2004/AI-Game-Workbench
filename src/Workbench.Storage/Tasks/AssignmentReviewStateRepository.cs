@@ -76,6 +76,23 @@ public sealed class AssignmentReviewStateRepository(WorkbenchDatabase database)
         return results;
     }
 
+    public async Task<IReadOnlyList<StoredLeaderReviewDecision>> ListReviewingPassDecisionsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT e.id,e.task_id,e.payload_json,e.created_at FROM task_events e JOIN tasks t ON t.id=e.task_id AND t.project_id=e.project_id WHERE e.project_id=$p AND t.status='Reviewing' AND e.event_type='LeaderReviewDecisionRecorded' AND e.payload_json LIKE '%\"Outcome\":\"Pass\"%' ORDER BY e.created_at,e.id;";
+        command.Parameters.AddWithValue("$p", projectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var results = new List<StoredLeaderReviewDecision>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var payload = System.Text.Json.JsonSerializer.Deserialize<DecisionPayload>(reader.GetString(2));
+            if (payload is null) continue;
+            results.Add(new(Guid.Parse(reader.GetString(0)), projectId, Guid.Parse(reader.GetString(1)), payload.TaskRevisionId, payload.FinalReportEventId, payload.Outcome, payload.ActionLevel, payload.ReviewDepth, payload.Summary, payload.Issue, payload.NextAction, payload.ImportantNote, DateTimeOffset.Parse(reader.GetString(3))));
+        }
+        return results;
+    }
+
     public async Task<AssignmentStateTransitionResult> TryTransitionAsync(
         Guid projectId,
         Guid taskId,

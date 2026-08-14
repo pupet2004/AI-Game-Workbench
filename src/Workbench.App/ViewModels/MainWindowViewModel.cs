@@ -109,6 +109,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);
+        await _services.LeaderReviewAutoProceed.RecoverAsync(result.Project.Id);
         await workspace.WorkPane.LoadAsync(result.Project.Id);
         await workspace.LibraryPane.InitializeAsync();
     }
