@@ -21,6 +21,26 @@ public sealed record ProjectLibraryTimelineNode(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
+public sealed record ProjectLibraryOverviewMetadata(
+    Guid ObjectId,
+    Guid ProjectId,
+    string Category,
+    string Topic,
+    int Revision,
+    DateTimeOffset UpdatedAt,
+    int Utf8Bytes);
+
+public sealed record ProjectLibraryTimelineNodeMetadata(
+    Guid NodeId,
+    Guid ObjectId,
+    Guid ProjectId,
+    string Category,
+    string Topic,
+    DateOnly LocalDate,
+    int Revision,
+    DateTimeOffset CreatedAt,
+    int Utf8Bytes);
+
 public sealed record LibraryMaterialReference(
     Guid NodeId,
     string MaterialKind,

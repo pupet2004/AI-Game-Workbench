@@ -156,7 +156,7 @@ public sealed class AppServices : IAsyncDisposable
             effectiveTimeProvider);
         var libraryEvolutionRepository = new ProjectLibraryEvolutionRepository(database);
         var libraryProposalService = new ProjectLibraryProposalService(database, effectiveTimeProvider);
-        var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages, libraryProposalService);
+        var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages, libraryProposalService, libraryEvolutionRepository);
         var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
 
         return new AppServices(

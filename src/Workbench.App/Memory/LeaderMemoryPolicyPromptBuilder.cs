@@ -18,6 +18,8 @@ public static class LeaderMemoryPolicyPromptBuilder
         builder.AppendLine("Select continuity material by descriptor reference only. Do not invent references.");
         builder.AppendLine("Choose by current task, material type, age, size, and user continuity preference. Recent short work may favor raw conversation; older work may favor summaries or handoff.");
         builder.AppendLine("Daily Summary records what happened, why, decisions/tradeoffs, and user feedback; it is not Library. Handoff is only short-term adjacent-session operational context.");
+        builder.AppendLine("Library Current Overview describes an object's current factual state; a Library Timeline Node describes its historical evolution.");
+        builder.AppendLine("For older projects, explicitly selecting Library + Daily may be more useful than relying on old Raw Conversation. Selection remains descriptor-driven; Library is never included automatically.");
         builder.AppendLine($"Project: {project.Name}");
         builder.AppendLine($"Continuity preference: {preferences.Continuity}");
         builder.AppendLine("CATALOG:");

@@ -340,6 +340,75 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         return objects;
     }
 
+    public async Task<IReadOnlyList<ProjectLibraryOverviewMetadata>> ListOverviewMetadataAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateGuid(projectId, nameof(projectId));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id,project_id,category,topic,overview_revision,updated_at,
+                   length(CAST(current_overview AS BLOB))
+            FROM project_library_objects
+            WHERE project_id=$projectId AND current_overview IS NOT NULL
+              AND length(CAST(current_overview AS BLOB)) > 0
+            ORDER BY category_key,topic_key,id;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<ProjectLibraryOverviewMetadata>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new(
+                Guid.Parse(reader.GetString(0)),
+                Guid.Parse(reader.GetString(1)),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetInt32(4),
+                ParseTimestamp(reader.GetString(5)),
+                reader.GetInt32(6)));
+        }
+        return items;
+    }
+
+    public async Task<IReadOnlyList<ProjectLibraryTimelineNodeMetadata>> ListTimelineMetadataAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateGuid(projectId, nameof(projectId));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT node.id,node.object_id,object.project_id,object.category,object.topic,
+                   node.local_date,node.revision,node.created_at,
+                   length(CAST(node.content AS BLOB))
+            FROM project_library_timeline_nodes node
+            JOIN project_library_objects object ON object.id=node.object_id
+            WHERE object.project_id=$projectId
+            ORDER BY node.local_date DESC,node.created_at DESC,node.id;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<ProjectLibraryTimelineNodeMetadata>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new(
+                Guid.Parse(reader.GetString(0)),
+                Guid.Parse(reader.GetString(1)),
+                Guid.Parse(reader.GetString(2)),
+                reader.GetString(3),
+                reader.GetString(4),
+                DateOnly.ParseExact(reader.GetString(5), "yyyy-MM-dd", CultureInfo.InvariantCulture),
+                reader.GetInt32(6),
+                ParseTimestamp(reader.GetString(7)),
+                reader.GetInt32(8)));
+        }
+        return items;
+    }
+
     public async Task<IReadOnlyList<ProjectLibraryTimelineNode>> BrowseNodesByDateAsync(
         Guid projectId,
         DateOnly? from = null,

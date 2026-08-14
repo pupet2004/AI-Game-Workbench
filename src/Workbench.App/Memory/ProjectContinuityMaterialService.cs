@@ -8,7 +8,8 @@ namespace Workbench.App.Memory;
 public sealed class ProjectContinuityMaterialService(
     IProjectMemoryApi memory,
     LeaderSessionEpochRepository epochs,
-    LeaderMessageRepository messages)
+    LeaderMessageRepository messages,
+    ProjectLibraryEvolutionRepository library)
 {
     public async Task<ContinuityMaterialCatalog> ListAsync(
         Guid projectId,
@@ -53,6 +54,28 @@ public sealed class ProjectContinuityMaterialService(
             epoch.LastActiveAt,
             stats.Utf8Bytes));
 
+        foreach (var overview in await library.ListOverviewMetadataAsync(projectId, cancellationToken))
+        {
+            materials.Add(new(
+                $"library-overview:{overview.ObjectId}",
+                ContinuityMaterialKind.LibraryOverview,
+                projectId,
+                OverviewLabel(overview.Category, overview.Topic, overview.ObjectId, overview.Revision),
+                overview.UpdatedAt,
+                overview.Utf8Bytes));
+        }
+
+        foreach (var node in await library.ListTimelineMetadataAsync(projectId, cancellationToken))
+        {
+            materials.Add(new(
+                $"library-timeline:{node.NodeId}",
+                ContinuityMaterialKind.LibraryTimelineNode,
+                projectId,
+                TimelineLabel(node.Category, node.Topic, node.ObjectId, node.NodeId, node.LocalDate, node.Revision),
+                node.CreatedAt,
+                node.Utf8Bytes));
+        }
+
         return new ContinuityMaterialCatalog(projectId, epochId, materials);
     }
 
@@ -93,7 +116,44 @@ public sealed class ProjectContinuityMaterialService(
         ContinuityMaterialSelection selection,
         CancellationToken cancellationToken)
     {
-        if (selection.Reference.StartsWith("daily:", StringComparison.Ordinal) &&
+        if (selection.Kind == ContinuityMaterialKind.LibraryOverview &&
+            selection.Reference.StartsWith("library-overview:", StringComparison.Ordinal) &&
+            Guid.TryParse(selection.Reference[17..], out var objectId))
+        {
+            var libraryObject = await library.GetObjectAsync(projectId, objectId, cancellationToken);
+            if (string.IsNullOrEmpty(libraryObject?.CurrentOverview))
+            {
+                throw new InvalidOperationException();
+            }
+
+            return new(
+                selection.Kind,
+                selection.Reference,
+                OverviewLabel(libraryObject.Category, libraryObject.Topic, libraryObject.Id, libraryObject.OverviewRevision),
+                libraryObject.CurrentOverview,
+                Encoding.UTF8.GetByteCount(libraryObject.CurrentOverview));
+        }
+
+        if (selection.Kind == ContinuityMaterialKind.LibraryTimelineNode &&
+            selection.Reference.StartsWith("library-timeline:", StringComparison.Ordinal) &&
+            Guid.TryParse(selection.Reference[17..], out var nodeId))
+        {
+            var node = await library.GetNodeAsync(projectId, nodeId, cancellationToken)
+                ?? throw new InvalidOperationException();
+            var libraryObject = await library.GetObjectAsync(projectId, node.ObjectId, cancellationToken)
+                ?? throw new InvalidOperationException();
+            var references = await library.GetMaterialReferencesAsync(projectId, node.Id, cancellationToken);
+            var content = FormatTimelineContent(node.Content, references);
+            return new(
+                selection.Kind,
+                selection.Reference,
+                TimelineLabel(libraryObject.Category, libraryObject.Topic, libraryObject.Id, node.Id, node.LocalDate, node.Revision),
+                content,
+                Encoding.UTF8.GetByteCount(content));
+        }
+
+        if (selection.Kind == ContinuityMaterialKind.DailySummary &&
+            selection.Reference.StartsWith("daily:", StringComparison.Ordinal) &&
             DateOnly.TryParse(selection.Reference[6..], out var day))
         {
             var daily = await memory.GetDailySummaryAsync(projectId, day, cancellationToken)
@@ -101,7 +161,8 @@ public sealed class ProjectContinuityMaterialService(
             return new(selection.Kind, selection.Reference, day.ToString("yyyy-MM-dd"), daily.Content, Encoding.UTF8.GetByteCount(daily.Content));
         }
 
-        if (selection.Reference.StartsWith("handoff:", StringComparison.Ordinal) &&
+        if (selection.Kind == ContinuityMaterialKind.BrainHandoff &&
+            selection.Reference.StartsWith("handoff:", StringComparison.Ordinal) &&
             Guid.TryParse(selection.Reference[8..], out var handoffEpoch))
         {
             var text = await memory.GetBrainHandoffAsync(projectId, handoffEpoch, cancellationToken)
@@ -109,7 +170,8 @@ public sealed class ProjectContinuityMaterialService(
             return new(selection.Kind, selection.Reference, $"Epoch {handoffEpoch}", text, Encoding.UTF8.GetByteCount(text));
         }
 
-        if (selection.Reference.StartsWith("raw:", StringComparison.Ordinal) &&
+        if (selection.Kind == ContinuityMaterialKind.RecentConversation &&
+            selection.Reference.StartsWith("raw:", StringComparison.Ordinal) &&
             Guid.TryParse(selection.Reference[4..], out var rawEpoch) &&
             selection.SelectorJson is not null)
         {
@@ -143,5 +205,42 @@ public sealed class ProjectContinuityMaterialService(
         }
 
         throw new InvalidOperationException();
+    }
+
+    private static string OverviewLabel(string category, string topic, Guid objectId, int revision) =>
+        $"Library Overview · {category} / {topic} · Object {objectId} · revision {revision}";
+
+    private static string TimelineLabel(
+        string category,
+        string topic,
+        Guid objectId,
+        Guid nodeId,
+        DateOnly localDate,
+        int revision) =>
+        $"Library Timeline · {category} / {topic} · Object {objectId} · {localDate:yyyy-MM-dd} · Node {nodeId} · revision {revision}";
+
+    private static string FormatTimelineContent(
+        string content,
+        IReadOnlyList<LibraryMaterialReference> references)
+    {
+        if (references.Count == 0)
+        {
+            return content;
+        }
+
+        var builder = new StringBuilder(content);
+        builder.AppendLine();
+        builder.AppendLine();
+        builder.Append("MATERIAL REFERENCES");
+        foreach (var reference in references)
+        {
+            builder.AppendLine();
+            builder.Append("- ").Append(reference.MaterialKind).Append(" | ").Append(reference.Reference);
+            if (!string.IsNullOrEmpty(reference.Label))
+            {
+                builder.Append(" | ").Append(reference.Label);
+            }
+        }
+        return builder.ToString();
     }
 }

@@ -1,9 +1,37 @@
 using Workbench.Storage.Memory;
+using Workbench.App.Memory;
+using Workbench.Core.Memory;
+using Workbench.Core.Projects;
+using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests;
 
 public sealed class LeaderMemoryPolicyCoordinatorTests
 {
+    [Fact]
+    public void Policy_prompt_explains_explicit_library_overview_and_timeline_selection_for_older_projects()
+    {
+        var project = new CoreProject(Guid.NewGuid(), "Archive", "C:/Archive", ProjectType.Generic, null,
+            DateTimeOffset.Parse("2026-08-14T00:00:00+00:00"), DateTimeOffset.Parse("2026-08-14T00:00:00+00:00"));
+        var catalog = new ContinuityMaterialCatalog(project.Id, Guid.NewGuid(),
+        [
+            new("library-overview:1", ContinuityMaterialKind.LibraryOverview, project.Id, "Design / Relics", null, 100),
+            new("library-timeline:2", ContinuityMaterialKind.LibraryTimelineNode, project.Id, "Design / Relics / 2026-08-14", null, 200)
+        ]);
+        var preferences = new ProjectMemoryPreferences(project.Id, LibraryGranularityMode.Balanced,
+            ContinuityMode.Balanced, "UTC", null, DateTimeOffset.Parse("2026-08-14T00:00:00+00:00"));
+
+        var prompt = LeaderMemoryPolicyPromptBuilder.Build(project, catalog, preferences).Text;
+
+        Assert.Contains("Current Overview", prompt, StringComparison.Ordinal);
+        Assert.Contains("current factual state", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Timeline Node", prompt, StringComparison.Ordinal);
+        Assert.Contains("historical evolution", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Library + Daily", prompt, StringComparison.Ordinal);
+        Assert.Contains("explicit", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("descriptor reference only", prompt, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task New_brain_persists_only_explicit_daily_selection_and_first_send_resolves_it()
     {
