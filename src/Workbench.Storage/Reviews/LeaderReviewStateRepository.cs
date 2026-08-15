@@ -12,6 +12,7 @@ public sealed record LeaderReviewDecisionWriteRequest(
     Guid ProjectId,
     Guid TaskId,
     Guid RevisionId,
+    Guid FinalReportEventId,
     string Outcome,
     string ActionLevel,
     string AuthorityResolution,
@@ -23,6 +24,7 @@ public sealed record LeaderReviewDecisionRecord(
     Guid ProjectId,
     Guid TaskId,
     Guid RevisionId,
+    Guid FinalReportEventId,
     string Outcome,
     string ActionLevel,
     LeaderAuthorityMode? AuthorityMode,
@@ -65,8 +67,8 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
             return Matches(existing, request) ? LeaderReviewWriteResult.Existing : LeaderReviewWriteResult.Conflict;
         }
         var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "INSERT INTO task_review_decisions(review_decision_id,project_id,task_id,revision_id,source_event_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES($id,$p,$t,$r,$source,$outcome,$action,$authority,$resolution,'Recorded',$created);";
-        Add(command, "$id", request.ReviewDecisionId); Add(command, "$p", request.ProjectId); Add(command, "$t", request.TaskId); Add(command, "$r", request.RevisionId); Add(command, "$source", request.ReviewDecisionId); Add(command, "$outcome", request.Outcome); Add(command, "$action", request.ActionLevel); Add(command, "$authority", request.AuthorityMode.ToString()); Add(command, "$resolution", request.AuthorityResolution); Add(command, "$created", Format(request.CreatedAt));
+        command.CommandText = "INSERT INTO task_review_decisions(review_decision_id,project_id,task_id,revision_id,source_event_id,final_report_event_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES($id,$p,$t,$r,$source,$report,$outcome,$action,$authority,$resolution,'Recorded',$created);";
+        Add(command, "$id", request.ReviewDecisionId); Add(command, "$p", request.ProjectId); Add(command, "$t", request.TaskId); Add(command, "$r", request.RevisionId); Add(command, "$source", request.ReviewDecisionId); Add(command, "$report", request.FinalReportEventId); Add(command, "$outcome", request.Outcome); Add(command, "$action", request.ActionLevel); Add(command, "$authority", request.AuthorityMode.ToString()); Add(command, "$resolution", request.AuthorityResolution); Add(command, "$created", Format(request.CreatedAt));
         try { await command.ExecuteNonQueryAsync(cancellationToken); await transaction.CommitAsync(cancellationToken); return LeaderReviewWriteResult.Applied; }
         catch (SqliteException) { await transaction.RollbackAsync(CancellationToken.None); return LeaderReviewWriteResult.Conflict; }
     }
@@ -75,6 +77,12 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
     {
         await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
         return await ReadDecisionAsync(connection, null, projectId, taskId, reviewDecisionId, cancellationToken);
+    }
+
+    public async Task<LeaderReviewDecisionRecord?> GetDecisionByFinalReportAsync(Guid projectId, Guid taskId, Guid finalReportEventId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        return await ReadDecisionByFinalReportAsync(connection, null, projectId, taskId, finalReportEventId, cancellationToken);
     }
 
     public async Task<LeaderReviewWriteResult> OpenUserGateIfAbsentAsync(LeaderReviewUserGateWriteRequest request, CancellationToken cancellationToken = default)
@@ -126,10 +134,21 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
 
     private static async Task<LeaderReviewDecisionRecord?> ReadDecisionAsync(SqliteConnection connection, SqliteTransaction? transaction, Guid projectId, Guid taskId, Guid id, CancellationToken cancellationToken)
     {
-        var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "SELECT review_decision_id,project_id,task_id,revision_id,outcome,action_level,authority_mode,authority_mode_recording,authority_resolution,created_at FROM task_review_decisions WHERE project_id=$p AND task_id=$t AND review_decision_id=$id;"; Add(command, "$p", projectId); Add(command, "$t", taskId); Add(command, "$id", id);
+        var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "SELECT review_decision_id,project_id,task_id,revision_id,final_report_event_id,outcome,action_level,authority_mode,authority_mode_recording,authority_resolution,created_at FROM task_review_decisions WHERE project_id=$p AND task_id=$t AND review_decision_id=$id;"; Add(command, "$p", projectId); Add(command, "$t", taskId); Add(command, "$id", id);
+        return await ReadDecisionAsync(command, cancellationToken);
+    }
+
+    private static async Task<LeaderReviewDecisionRecord?> ReadDecisionByFinalReportAsync(SqliteConnection connection, SqliteTransaction? transaction, Guid projectId, Guid taskId, Guid finalReportEventId, CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "SELECT review_decision_id,project_id,task_id,revision_id,final_report_event_id,outcome,action_level,authority_mode,authority_mode_recording,authority_resolution,created_at FROM task_review_decisions WHERE project_id=$p AND task_id=$t AND final_report_event_id=$report;"; Add(command, "$p", projectId); Add(command, "$t", taskId); Add(command, "$report", finalReportEventId);
+        return await ReadDecisionAsync(command, cancellationToken);
+    }
+
+    private static async Task<LeaderReviewDecisionRecord?> ReadDecisionAsync(SqliteCommand command, CancellationToken cancellationToken)
+    {
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
-        return new(Guid.Parse(reader.GetString(0)), Guid.Parse(reader.GetString(1)), Guid.Parse(reader.GetString(2)), Guid.Parse(reader.GetString(3)), reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : Enum.Parse<LeaderAuthorityMode>(reader.GetString(6)), reader.GetString(7), reader.GetString(8), Parse(reader.GetString(9)));
+        return new(Guid.Parse(reader.GetString(0)), Guid.Parse(reader.GetString(1)), Guid.Parse(reader.GetString(2)), Guid.Parse(reader.GetString(3)), Guid.Parse(reader.GetString(4)), reader.GetString(5), reader.GetString(6), reader.IsDBNull(7) ? null : Enum.Parse<LeaderAuthorityMode>(reader.GetString(7)), reader.GetString(8), reader.GetString(9), Parse(reader.GetString(10)));
     }
 
     private static async Task<LeaderReviewUserGateRecord?> ReadGateAsync(SqliteConnection connection, SqliteTransaction? transaction, Guid projectId, Guid taskId, Guid id, CancellationToken cancellationToken)
@@ -148,8 +167,8 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
     }
 
     private static LeaderReviewUserGateRecord ReadGate(SqliteDataReader reader) => new(Guid.Parse(reader.GetString(0)), Guid.Parse(reader.GetString(1)), Guid.Parse(reader.GetString(2)), Guid.Parse(reader.GetString(3)), reader.IsDBNull(4) ? null : reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetInt64(5), Parse(reader.GetString(6)), reader.IsDBNull(7) ? null : Parse(reader.GetString(7)), reader.GetString(8));
-    private static bool Matches(LeaderReviewDecisionRecord existing, LeaderReviewDecisionWriteRequest request) => existing.RevisionId == request.RevisionId && existing.Outcome == request.Outcome && existing.ActionLevel == request.ActionLevel && existing.AuthorityMode == request.AuthorityMode && existing.AuthorityModeRecording == "Recorded" && existing.AuthorityResolution == request.AuthorityResolution && existing.CreatedAt == request.CreatedAt;
-    private static void Validate(LeaderReviewDecisionWriteRequest request) { if (request.ReviewDecisionId == Guid.Empty || request.ProjectId == Guid.Empty || request.TaskId == Guid.Empty || request.RevisionId == Guid.Empty || !Enum.IsDefined(request.AuthorityMode)) throw new ArgumentException("Invalid review decision identity or authority mode."); }
+    private static bool Matches(LeaderReviewDecisionRecord existing, LeaderReviewDecisionWriteRequest request) => existing.RevisionId == request.RevisionId && existing.FinalReportEventId == request.FinalReportEventId && existing.Outcome == request.Outcome && existing.ActionLevel == request.ActionLevel && existing.AuthorityMode == request.AuthorityMode && existing.AuthorityModeRecording == "Recorded" && existing.AuthorityResolution == request.AuthorityResolution && existing.CreatedAt == request.CreatedAt;
+    private static void Validate(LeaderReviewDecisionWriteRequest request) { if (request.ReviewDecisionId == Guid.Empty || request.ProjectId == Guid.Empty || request.TaskId == Guid.Empty || request.RevisionId == Guid.Empty || request.FinalReportEventId == Guid.Empty || !Enum.IsDefined(request.AuthorityMode)) throw new ArgumentException("Invalid review decision identity, subject, or authority mode."); }
     private static DateTimeOffset Parse(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     private static string Format(DateTimeOffset value) => value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
     private static void Add(SqliteCommand command, string name, object? value) => command.Parameters.AddWithValue(name, value switch { Guid guid => guid.ToString(), DateTimeOffset time => Format(time), _ => value ?? DBNull.Value });

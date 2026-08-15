@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class HistoricalAuthorityRecordingMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_reaches_v17_with_explicit_authority_recording()
+    public async Task Fresh_database_reaches_v18_with_explicit_authority_recording()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -14,7 +14,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(17L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(18L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
 
         var columns = await ColumnsAsync(connection, "task_review_decisions");
         Assert.Contains(columns, column => column.Name == "authority_mode" && !column.NotNull);
@@ -22,7 +22,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
     }
 
     [Fact]
-    public async Task V15_to_v17_preserves_recorded_decisions_and_leaves_gate_schema_and_rows_unchanged()
+    public async Task V15_to_v18_without_typed_decisions_preserves_gate_schema()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -33,8 +33,6 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
         {
             await connection.OpenAsync();
             await CreateFixtureAsync(connection);
-            await InsertV15DecisionAsync(connection, "recorded");
-            await InsertGateAsync(connection, "recorded");
         }
 
         await using var before = database.CreateConnection();
@@ -42,13 +40,10 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
         var gateSql = await ScalarAsync<string>(before, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_review_user_gates';");
 
         await database.InitializeAsync();
-        await database.InitializeAsync();
 
         await using var verified = database.CreateConnection();
         await verified.OpenAsync();
-        Assert.Equal(17L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
-        Assert.Equal(("Balanced", "Recorded"), await ReadAuthorityAsync(verified, "recorded"));
-        Assert.Equal(1L, await ScalarAsync<long>(verified, "SELECT COUNT(*) FROM task_review_user_gates WHERE review_decision_id = 'recorded';"));
+        Assert.Equal(18L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
         Assert.Equal(gateSql, await ScalarAsync<string>(verified, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_review_user_gates';"));
         Assert.Equal(0L, await ScalarAsync<long>(verified, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }
@@ -115,7 +110,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
         ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,outcome,action_level,authority_mode,authority_resolution,created_at) VALUES ($id,'p','t','r','Pass','L1LocalFix','Balanced','AutoProceed','2026-08-15T00:01:00+00:00');", ("$id", id));
 
     private static Task InsertV16DecisionAsync(SqliteConnection connection, string id, string? authorityMode, string recording) =>
-        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES ($id,'p','t','r','Pass','L1LocalFix',$mode,'AutoProceed',$recording,'2026-08-15T00:01:00+00:00');", ("$id", id), ("$mode", authorityMode), ("$recording", recording));
+        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,final_report_event_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES ($id,'p','t','r',$report,'Pass','L1LocalFix',$mode,'AutoProceed',$recording,'2026-08-15T00:01:00+00:00');", ("$id", id), ("$report", Guid.NewGuid().ToString()), ("$mode", authorityMode), ("$recording", recording));
 
     private static Task InsertGateAsync(SqliteConnection connection, string decisionId) =>
         ExecuteAsync(connection, "INSERT INTO task_review_user_gates (review_decision_id,project_id,task_id,revision_id,question_message_id,user_message_id,opened_at,responded_at,state) VALUES ($id,'p','t','r',NULL,NULL,'2026-08-15T00:01:00+00:00',NULL,'Open');", ("$id", decisionId));

@@ -16,11 +16,17 @@ public sealed class LeaderReviewStateRepositoryTests
         await database.InitializeAsync();
         var repository = new LeaderReviewStateRepository(database);
         var ids = await SeedAsync(database);
-        var request = new LeaderReviewDecisionWriteRequest(ids.DecisionId, ids.ProjectId, ids.TaskId, ids.RevisionId, "Pass", "L1LocalFix", "AutoProceed", LeaderAuthorityMode.Balanced, ids.Now);
+        var request = new LeaderReviewDecisionWriteRequest(ids.DecisionId, ids.ProjectId, ids.TaskId, ids.RevisionId, ids.FinalReportId, "Pass", "L1LocalFix", "AutoProceed", LeaderAuthorityMode.Balanced, ids.Now);
 
         Assert.Equal(LeaderReviewWriteResult.Applied, await repository.InsertDecisionIfAbsentAsync(request));
         Assert.Equal(LeaderReviewWriteResult.Existing, await repository.InsertDecisionIfAbsentAsync(request));
         Assert.Equal("Recorded", (await repository.GetDecisionAsync(ids.ProjectId, ids.TaskId, ids.DecisionId))!.AuthorityModeRecording);
+        Assert.Equal(ids.DecisionId, (await repository.GetDecisionByFinalReportAsync(ids.ProjectId, ids.TaskId, ids.FinalReportId))!.ReviewDecisionId);
+        Assert.Null(await repository.GetDecisionByFinalReportAsync(Guid.NewGuid(), ids.TaskId, ids.FinalReportId));
+        Assert.Null(await repository.GetDecisionByFinalReportAsync(ids.ProjectId, ids.TaskId, Guid.NewGuid()));
+        Assert.Equal(LeaderReviewWriteResult.Conflict, await repository.InsertDecisionIfAbsentAsync(request with { FinalReportEventId = Guid.NewGuid() }));
+        Assert.Equal(LeaderReviewWriteResult.Conflict, await repository.InsertDecisionIfAbsentAsync(request with { ReviewDecisionId = Guid.NewGuid() }));
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.InsertDecisionIfAbsentAsync(new(ids.DecisionId, ids.ProjectId, ids.TaskId, ids.RevisionId, Guid.Empty, "Pass", "L1LocalFix", "AutoProceed", LeaderAuthorityMode.Balanced, ids.Now)));
     }
 
     [Fact]
@@ -31,7 +37,7 @@ public sealed class LeaderReviewStateRepositoryTests
         await database.InitializeAsync();
         var repository = new LeaderReviewStateRepository(database);
         var ids = await SeedAsync(database);
-        await repository.InsertDecisionIfAbsentAsync(new(ids.DecisionId, ids.ProjectId, ids.TaskId, ids.RevisionId, "AskUser", "L3DecisionRequired", "AskUser", LeaderAuthorityMode.Balanced, ids.Now));
+        await repository.InsertDecisionIfAbsentAsync(new(ids.DecisionId, ids.ProjectId, ids.TaskId, ids.RevisionId, ids.FinalReportId, "AskUser", "L3DecisionRequired", "AskUser", LeaderAuthorityMode.Balanced, ids.Now));
         await repository.OpenUserGateIfAbsentAsync(new(ids.DecisionId, ids.ProjectId, ids.TaskId, ids.RevisionId, null, ids.Now));
 
         Assert.Single(await repository.GetOpenUserGatesAsync(ids.ProjectId));
@@ -65,5 +71,6 @@ public sealed class LeaderReviewStateRepositoryTests
     private sealed record Ids(Guid ProjectId, Guid TaskId, Guid RevisionId, Guid DecisionId, DateTimeOffset Now)
     {
         public Guid EpochId { get; } = Guid.NewGuid();
+        public Guid FinalReportId { get; } = Guid.NewGuid();
     }
 }

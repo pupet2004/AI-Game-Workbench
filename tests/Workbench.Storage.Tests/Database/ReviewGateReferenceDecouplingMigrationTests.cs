@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class ReviewGateReferenceDecouplingMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_reaches_v17_with_nullable_set_null_message_locators()
+    public async Task Fresh_database_reaches_v18_with_nullable_set_null_message_locators()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -15,7 +15,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(17L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(18L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         var columns = await ColumnsAsync(connection);
         Assert.Contains(columns, column => column.Name == "question_message_id" && !column.NotNull);
         Assert.Contains(columns, column => column.Name == "user_message_id" && !column.NotNull);
@@ -26,7 +26,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
     }
 
     [Fact]
-    public async Task V14_to_v17_preserves_open_and_responded_gates_and_is_idempotent()
+    public async Task V14_to_v18_rejects_unverifiable_typed_decisions()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -37,14 +37,13 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
         {
             await connection.OpenAsync();
             var fixture = await CreateFixtureAsync(connection);
-            await InsertDecisionAsync(connection, "open", fixture.ProjectId, fixture.TaskId, fixture.RevisionId);
+            await InsertV14DecisionAsync(connection, "open", fixture.ProjectId, fixture.TaskId, fixture.RevisionId);
             await InsertGateAsync(connection, "open", fixture.ProjectId, fixture.TaskId, fixture.RevisionId, fixture.QuestionMessageId, null, null, "Open");
-            await InsertDecisionAsync(connection, "responded", fixture.ProjectId, fixture.TaskId, fixture.RevisionId);
+            await InsertV14DecisionAsync(connection, "responded", fixture.ProjectId, fixture.TaskId, fixture.RevisionId);
             await InsertGateAsync(connection, "responded", fixture.ProjectId, fixture.TaskId, fixture.RevisionId, fixture.QuestionMessageId, fixture.UserMessageId, fixture.RespondedAt, "Responded");
         }
 
-        await database.InitializeAsync();
-        await database.InitializeAsync();
+        await Assert.ThrowsAsync<DatabaseInitializationException>(() => database.InitializeAsync());
 
         await using var verified = database.CreateConnection();
         await verified.OpenAsync();
@@ -103,7 +102,20 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
     {
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
+        await ExecuteAsync(connection, "PRAGMA foreign_keys = OFF;");
+        await ExecuteAsync(connection, "DROP TABLE task_review_decisions;");
         await ExecuteAsync(connection, "DROP TABLE task_review_user_gates;");
+        await ExecuteAsync(connection, """
+            CREATE TABLE task_review_decisions (
+                review_decision_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL, revision_id TEXT NOT NULL,
+                source_event_id TEXT NULL UNIQUE, outcome TEXT NOT NULL, action_level TEXT NOT NULL, authority_mode TEXT NOT NULL,
+                authority_resolution TEXT NOT NULL, created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY(task_id, project_id) REFERENCES tasks(id, project_id) ON DELETE CASCADE,
+                FOREIGN KEY(revision_id, task_id) REFERENCES task_revisions(id, task_id) ON DELETE CASCADE
+            );
+            CREATE UNIQUE INDEX ux_task_review_decisions_identity ON task_review_decisions(review_decision_id, project_id, task_id, revision_id);
+            """);
         await ExecuteAsync(connection, """
             CREATE TABLE task_review_user_gates (
                 review_decision_id TEXT PRIMARY KEY,
@@ -125,7 +137,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
                 FOREIGN KEY(user_message_id) REFERENCES leader_messages(id) ON DELETE RESTRICT
             );
             """);
-        await ExecuteAsync(connection, "PRAGMA user_version = 14;");
+        await ExecuteAsync(connection, "PRAGMA user_version = 14; PRAGMA foreign_keys = ON;");
     }
 
     private static async Task<Fixture> CreateFixtureAsync(SqliteConnection connection)
@@ -144,7 +156,10 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
     }
 
     private static Task InsertDecisionAsync(SqliteConnection connection, string id, string projectId, string taskId, string revisionId) =>
-        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES ($id,$project,$task,$revision,'AskUser','L3DecisionRequired','Balanced','AskUser','Recorded','2026-08-15T00:01:00+00:00');", ("$id", id), ("$project", projectId), ("$task", taskId), ("$revision", revisionId));
+        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,final_report_event_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES ($id,$project,$task,$revision,$report,'AskUser','L3DecisionRequired','Balanced','AskUser','Recorded','2026-08-15T00:01:00+00:00');", ("$id", id), ("$project", projectId), ("$task", taskId), ("$revision", revisionId), ("$report", Guid.NewGuid().ToString()));
+
+    private static Task InsertV14DecisionAsync(SqliteConnection connection, string id, string projectId, string taskId, string revisionId) =>
+        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,outcome,action_level,authority_mode,authority_resolution,created_at) VALUES ($id,$project,$task,$revision,'AskUser','L3DecisionRequired','Balanced','AskUser','2026-08-15T00:01:00+00:00');", ("$id", id), ("$project", projectId), ("$task", taskId), ("$revision", revisionId));
 
     private static Task InsertGateAsync(SqliteConnection connection, string decisionId, string projectId, string taskId, string revisionId, long? questionMessageId, long? userMessageId, string? respondedAt, string state) =>
         ExecuteAsync(connection, "INSERT INTO task_review_user_gates (review_decision_id,project_id,task_id,revision_id,question_message_id,user_message_id,opened_at,responded_at,state) VALUES ($id,$project,$task,$revision,$question,$user,'2026-08-15T00:01:00+00:00',$responded,$state);", ("$id", decisionId), ("$project", projectId), ("$task", taskId), ("$revision", revisionId), ("$question", questionMessageId), ("$user", userMessageId), ("$responded", respondedAt), ("$state", state));
