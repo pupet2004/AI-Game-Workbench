@@ -40,7 +40,7 @@ public sealed class ProjectMemorySynthesisJobTests
     }
 
     [Fact]
-    public async Task Pending_job_round_trips_through_running_failure_and_restart_recovery()
+    public async Task Pending_job_round_trips_through_running_failure_and_restart_freeze()
     {
         await using var context = await JobContext.CreateAsync();
         var archived = await context.CreateEpochAsync(archived: true);
@@ -59,7 +59,7 @@ public sealed class ProjectMemorySynthesisJobTests
         Assert.NotNull(await context.Jobs.ClaimNextPendingAsync(context.Project.Id));
         await context.Jobs.RecoverRunningAsync();
         var recovered = await context.Jobs.GetAsync(archived.Id);
-        Assert.Equal(ProjectMemorySynthesisJobStatus.Pending, recovered!.Status);
+        Assert.Equal(ProjectMemorySynthesisJobStatus.Running, recovered!.Status);
         Assert.Equal(2, recovered.AttemptCount);
     }
 

@@ -11,7 +11,6 @@ using Workbench.Storage.Memory;
 using Workbench.Storage.Tasks;
 using Workbench.App.Memory;
 using Workbench.App.Worker;
-using System.Collections.Concurrent;
 using Workbench.Storage.Workers;
 using Workbench.Storage.Reviews;
 
@@ -22,8 +21,6 @@ public sealed class AppServices : IAsyncDisposable
     private readonly Func<CancellationToken, Task<IAgentRuntime>>? _runtimeFactory;
     private readonly List<IAsyncDisposable> _ownedRuntimes = [];
     private readonly SemaphoreSlim _runtimeConnectionGate = new(1, 1);
-    private readonly CancellationTokenSource _synthesisShutdown = new();
-    private readonly ConcurrentDictionary<Guid, byte> _scheduledSynthesis = [];
     private int _disposeRequested;
 
     private AppServices(
@@ -38,7 +35,6 @@ public sealed class AppServices : IAsyncDisposable
         ProjectSettingsRepository projectSettingsRepository,
         ProjectMemoryService projectMemoryService,
         ProjectMemorySynthesisRepository projectMemorySynthesisRepository,
-        ProjectMemorySynthesisCoordinator projectMemorySynthesisCoordinator,
         DailySummaryRepository dailySummaryRepository,
         ProjectMemoryPreferencesRepository projectMemoryPreferencesRepository,
         IProjectMemoryApi projectMemoryApi,
@@ -72,7 +68,6 @@ public sealed class AppServices : IAsyncDisposable
         ProjectSettingsRepository = projectSettingsRepository;
         ProjectMemoryService = projectMemoryService;
         ProjectMemorySynthesisRepository = projectMemorySynthesisRepository;
-        ProjectMemorySynthesisCoordinator = projectMemorySynthesisCoordinator;
         DailySummaryRepository = dailySummaryRepository;
         ProjectMemoryPreferencesRepository = projectMemoryPreferencesRepository;
         ProjectMemoryApi = projectMemoryApi;
@@ -115,7 +110,6 @@ public sealed class AppServices : IAsyncDisposable
     public ProjectSettingsRepository ProjectSettingsRepository { get; }
     public ProjectMemoryService ProjectMemoryService { get; }
     public ProjectMemorySynthesisRepository ProjectMemorySynthesisRepository { get; }
-    public ProjectMemorySynthesisCoordinator ProjectMemorySynthesisCoordinator { get; }
     public DailySummaryRepository DailySummaryRepository { get; }
     public ProjectMemoryPreferencesRepository ProjectMemoryPreferencesRepository { get; }
     public IProjectMemoryApi ProjectMemoryApi { get; }
@@ -204,13 +198,6 @@ public sealed class AppServices : IAsyncDisposable
             new ProjectSettingsRepository(database),
             new ProjectMemoryService(new ProjectActivityRepository(database), memoryRepository, effectiveTimeProvider),
             synthesisRepository,
-            new ProjectMemorySynthesisCoordinator(
-                effectiveRuntimeRegistry,
-                synthesisRepository,
-                leaderEpochs,
-                leaderMessages,
-                memoryRepository,
-                effectiveTimeProvider),
             dailySummaryRepository,
             projectMemoryPreferencesRepository,
             projectMemoryApi,
@@ -246,28 +233,7 @@ public sealed class AppServices : IAsyncDisposable
 
     public void ScheduleMemorySynthesis(Guid projectId)
     {
-        if (Volatile.Read(ref _disposeRequested) != 0 || !_scheduledSynthesis.TryAdd(projectId, 0))
-        {
-            return;
-        }
-
-        _ = RunScheduledSynthesisAsync(projectId);
-    }
-
-    private async Task RunScheduledSynthesisAsync(Guid projectId)
-    {
-        try
-        {
-            await ProjectMemorySynthesisCoordinator.TryProcessNextAsync(projectId, _synthesisShutdown.Token);
-        }
-        catch
-        {
-            // Coordinator failures are persisted for a later safe trigger.
-        }
-        finally
-        {
-            _scheduledSynthesis.TryRemove(projectId, out _);
-        }
+        // Legacy Memory is frozen read-only; retained jobs are not scheduled.
     }
 
     public async Task RetryRuntimeAsync(CancellationToken cancellationToken = default)
@@ -323,7 +289,6 @@ public sealed class AppServices : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _disposeRequested, 1);
-        _synthesisShutdown.Cancel();
         await _runtimeConnectionGate.WaitAsync();
         try
         {

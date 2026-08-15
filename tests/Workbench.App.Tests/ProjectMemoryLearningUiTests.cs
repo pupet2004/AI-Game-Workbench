@@ -128,19 +128,15 @@ public sealed class ProjectMemoryLearningUiTests
     }
 
     [Fact]
-    public async Task App_scheduler_returns_while_synthesis_is_still_running()
+    public async Task App_scheduler_does_not_execute_frozen_legacy_synthesis()
     {
         await using var context = await CoordinatorContext.CreateAsync();
-        context.Runtime.PauseBeforeEvents = true;
-        context.Runtime.QueueTurn(context.Completed("""
-            {"learned":[],"candidates":[]}
-            """));
 
         context.Services.ScheduleMemorySynthesis(context.Project.Id);
-        await context.Runtime.WaitForSendAsync();
+        await Task.Delay(50);
 
-        Assert.Equal(ProjectMemorySynthesisJobStatus.Running, (await context.Jobs.GetAsync(context.ArchivedEpoch.Id))!.Status);
-        context.Runtime.ReleaseSend();
+        Assert.Empty(context.Runtime.SentRequests);
+        Assert.Equal(ProjectMemorySynthesisJobStatus.Pending, (await context.Jobs.GetAsync(context.ArchivedEpoch.Id))!.Status);
     }
 
     [Fact]

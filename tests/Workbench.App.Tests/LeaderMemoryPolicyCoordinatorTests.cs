@@ -1,9 +1,12 @@
 using Workbench.Storage.Memory;
 using Workbench.App.Memory;
+using Workbench.App.Services;
 using Workbench.Core.Memory;
 using Workbench.Core.Projects;
 using Workbench.Storage.Database;
-using Microsoft.Data.Sqlite;
+using Workbench.Storage.Leaders;
+using Workbench.Runtime.Registry;
+using Workbench.App.Tests.Support;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests;
@@ -35,10 +38,10 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
     }
 
     [Fact]
-    public async Task New_brain_preserves_explicit_daily_and_library_selection_without_enqueuing_legacy_synthesis()
+    public async Task New_brain_does_not_run_a_second_model_pass_or_write_legacy_memory()
     {
         var runtime = new Support.FakeAgentRuntime();
-        var registry = new Workbench.Runtime.Registry.AgentRuntimeRegistry();
+        var registry = new AgentRuntimeRegistry();
         registry.Register(runtime);
         await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
@@ -47,89 +50,109 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
             new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, "old", null), context.Time.GetUtcNow()));
         workspace.LeaderPane.DraftMessage = "start";
         await workspace.LeaderPane.SendAsync();
-        await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(new(workspace.Result.Project.Id, new DateOnly(2026, 8, 14), "SELECTED_DAILY_MARKER", null, []), context.Time.GetUtcNow());
-        await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(new(workspace.Result.Project.Id, new DateOnly(2026, 8, 13), "UNSELECTED_DAILY_MARKER", null, []), context.Time.GetUtcNow());
-        var libraryObject = await context.Services.ProjectLibraryEvolutionRepository.CreateObjectAsync(workspace.Result.Project.Id, "Design", "Relics", context.Time.GetUtcNow());
-        libraryObject = await context.Services.ProjectLibraryEvolutionRepository.UpdateOverviewAsync(
-            workspace.Result.Project.Id, libraryObject.Id, "SELECTED_LIBRARY_OVERVIEW", libraryObject.OverviewRevision, context.Time.GetUtcNow());
-        var libraryNode = await context.Services.ProjectLibraryEvolutionRepository.AddNodeAsync(
-            workspace.Result.Project.Id, libraryObject.Id, new DateOnly(2026, 8, 14), "SELECTED_LIBRARY_TIMELINE", [], context.Time.GetUtcNow());
-        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
-        var sourceEpoch = workspace.LeaderPane.SessionEpochId!.Value;
-        await context.Services.ProjectMemoryApi.SaveBrainHandoffAsync(workspace.Result.Project.Id, sourceEpoch, "OLD_HANDOFF");
-        await context.Services.LeaderMessageRepository.AppendAsync(sourceEpoch, "assistant", "SELECTED_RAW_MARKER", context.Time.GetUtcNow());
+        var candidate = await context.Services.ProjectMemoryService.CreateCandidateAsync(
+            workspace.Result.Project.Id,
+            "Legacy",
+            "Retained memory",
+            [new("Manual", "r4-04")]);
+        var day = new DateOnly(2026, 8, 14);
+        await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(
+            new(workspace.Result.Project.Id, day, "Retained summary", null, [new("LeaderEpoch", workspace.LeaderPane.SessionEpochId!.Value.ToString())]),
+            context.Time.GetUtcNow());
+        var oldEpochId = workspace.LeaderPane.SessionEpochId;
+        var before = await CountLegacyRowsAsync(context.Services.Database);
+        var requestCount = runtime.SentRequests.Count;
 
-        var payload = """
-            {"brain_handoff":"SELECTED_HANDOFF_MARKER","daily_summary":null,"total_continuity_budget_utf8_bytes":6000,"continuity_selection":[{"ordinal":0,"kind":"DailySummary","reference":"daily:2026-08-14","max_utf8_bytes":1000,"selector":null},{"ordinal":1,"kind":"LibraryOverview","reference":"library-overview:LIBRARY","max_utf8_bytes":1000,"selector":null},{"ordinal":2,"kind":"LibraryTimelineNode","reference":"library-timeline:NODE","max_utf8_bytes":1000,"selector":null},{"ordinal":3,"kind":"BrainHandoff","reference":"handoff:SOURCE","max_utf8_bytes":1000,"selector":null},{"ordinal":4,"kind":"RecentConversation","reference":"raw:SOURCE","max_utf8_bytes":1000,"selector":{"maxMessages":1,"maxUtf8Bytes":1000}}]}
-            """.Replace("SOURCE", sourceEpoch.ToString(), StringComparison.Ordinal);
-        payload = payload.Replace("LIBRARY", libraryObject.Id.ToString(), StringComparison.Ordinal)
-            .Replace("NODE", libraryNode.Id.ToString(), StringComparison.Ordinal);
-        var synthesisJobsBefore = await CountSynthesisJobsAsync(context.Services.Database);
-        var legacyRowsBefore = await CountLegacyRowsAsync(context.Services.Database);
-        runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
-            new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, payload, null), context.Time.GetUtcNow()));
-        var preparation = await context.Services.LeaderMemoryPolicyCoordinator.PrepareForNewBrainAsync(
-            workspace.Result.Project,
-            workspace.LeaderPane.Session!,
-            (await context.Services.LeaderSessionEpochRepository.GetCurrentForProjectAsync(workspace.Result.Project.Id))!,
-            false);
-        Assert.True(preparation.Available, preparation.Error);
-        runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
-            new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, payload, null), context.Time.GetUtcNow()));
         await workspace.LeaderPane.StartNewBrainAsync();
-        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
-        var epochId = workspace.LeaderPane.SessionEpochId!.Value;
-        var plan = await new LeaderEpochContinuityRepository(context.Services.Database).GetAsync(workspace.Result.Project.Id, epochId);
-        Assert.Equal(["daily:2026-08-14", $"library-overview:{libraryObject.Id}", $"library-timeline:{libraryNode.Id}", $"handoff:{sourceEpoch}", $"raw:{sourceEpoch}"], plan!.Selections.Select(item => item.Reference));
-        Assert.Equal("SELECTED_HANDOFF_MARKER", (await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
-        Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Services.Database));
-        Assert.Equal(legacyRowsBefore, await CountLegacyRowsAsync(context.Services.Database));
 
-        runtime.SendException = new IOException("delivery failed");
-        workspace.LeaderPane.DraftMessage = "failed delivery";
-        await workspace.LeaderPane.SendAsync();
-        Assert.Equal(plan.Selections, (await new LeaderEpochContinuityRepository(context.Services.Database)
-            .GetAsync(workspace.Result.Project.Id, epochId))!.Selections);
-        Assert.Null((await context.Services.LeaderSessionEpochRepository.GetAsync(epochId))!.BootContextDeliveredAt);
-        Assert.Equal("SELECTED_HANDOFF_MARKER", (await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
-
-        runtime.SendException = null;
-        runtime.QueueTurn(new Workbench.Runtime.Agents.AgentTurnCompleted(
-            new Workbench.Runtime.Agents.AgentResult(Workbench.Runtime.Agents.AgentSessionId.New(), Workbench.Runtime.Agents.AgentSessionStatus.Completed, "new", null), context.Time.GetUtcNow()));
-        workspace.LeaderPane.DraftMessage = "continue";
-        await workspace.LeaderPane.SendAsync();
-
-        Assert.Contains("SELECTED_DAILY_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.Contains("SELECTED_HANDOFF_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.Contains("SELECTED_RAW_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.Contains("SELECTED_LIBRARY_OVERVIEW", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.Contains("SELECTED_LIBRARY_TIMELINE", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("UNSELECTED_DAILY_MARKER", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.Contains("continue", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.Empty(await context.Services.DailySummaryRepository.ListAsync(workspace.Result.Project.Id, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 15)));
-        Assert.Equal(synthesisJobsBefore, await CountSynthesisJobsAsync(context.Services.Database));
-        Assert.Empty((await new LeaderEpochContinuityRepository(context.Services.Database)
-            .GetAsync(workspace.Result.Project.Id, epochId))!.Selections);
-        Assert.Equal("SELECTED_LIBRARY_OVERVIEW", (await context.Services.ProjectLibraryEvolutionRepository
-            .GetObjectAsync(workspace.Result.Project.Id, libraryObject.Id))!.CurrentOverview);
-        Assert.Null((await context.Services.LeaderSessionEpochRepository.GetAsync(sourceEpoch))!.HandoffSummary);
-        Assert.Contains("SELECTED_RAW_MARKER", (await context.Services.LeaderMessageRepository.GetAllAsync(sourceEpoch)).Select(message => message.Text));
+        Assert.NotEqual(oldEpochId, workspace.LeaderPane.SessionEpochId);
+        Assert.Equal(requestCount, runtime.SentRequests.Count);
+        Assert.Equal(before, await CountLegacyRowsAsync(context.Services.Database));
+        Assert.Equal(candidate, await context.Services.ProjectMemoryService.GetMemoryItemAsync(candidate.Id));
+        Assert.Equal("r4-04", Assert.Single(await context.Services.ProjectMemoryService.GetSourcesAsync(candidate.Id)).SourceRef);
+        Assert.Equal("Retained summary", (await context.Services.ProjectMemoryApi.GetDailySummaryAsync(workspace.Result.Project.Id, day))!.Content);
+        Assert.Null((await context.Services.LeaderSessionEpochRepository.GetAsync(oldEpochId!.Value))!.HandoffSummary);
     }
 
-    private static async Task<long> CountSynthesisJobsAsync(WorkbenchDatabase database)
+    [Fact]
+    public async Task Restart_freezes_pending_jobs_and_preserves_legacy_readers_without_provider()
     {
-        await using var connection = database.CreateConnection();
-        await connection.OpenAsync();
-        var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM project_memory_synthesis_jobs;";
-        return Convert.ToInt64(await command.ExecuteScalarAsync());
+        using var directory = new TemporaryDirectory("legacy-memory-restart");
+        var databasePath = Path.Combine(directory.Path, "workbench.db");
+        var projectRoot = Path.Combine(directory.Path, "project");
+        Directory.CreateDirectory(projectRoot);
+        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-15T00:00:00+00:00"));
+        var services = AppServices.CreateForDatabasePath(databasePath, time, new AgentRuntimeRegistry());
+        await services.InitializeAsync();
+        var project = (await services.ProjectOpenService.OpenAsync(projectRoot)).Project;
+        var candidate = await services.ProjectMemoryService.CreateCandidateAsync(
+            project.Id,
+            "Legacy",
+            "Retained after restart",
+            [new("Manual", "restart-source")]);
+        var day = new DateOnly(2026, 8, 15);
+        await services.ProjectMemoryApi.UpsertDailySummaryAsync(
+            new(project.Id, day, "Retained daily", null, [new("Manual", "daily-source")]),
+            time.GetUtcNow());
+
+        var first = CreateEpoch(project.Id, time.GetUtcNow(), "first");
+        await services.ProjectLeaderRepository.CreateCurrentEpochAsync(
+            new(project.Id, null, time.GetUtcNow(), time.GetUtcNow()), first);
+        time.SetUtcNow(time.GetUtcNow().AddMinutes(1));
+        var second = CreateEpoch(project.Id, time.GetUtcNow(), "second");
+        await services.ProjectLeaderRepository.RolloverAsync(project.Id, first.Id, second, time.GetUtcNow(), "Test", null);
+        await services.ProjectMemorySynthesisRepository.QueueSynthesisForEpochAsync(first.Id);
+        time.SetUtcNow(time.GetUtcNow().AddMinutes(1));
+        var third = CreateEpoch(project.Id, time.GetUtcNow(), "third");
+        await services.ProjectLeaderRepository.RolloverAsync(project.Id, second.Id, third, time.GetUtcNow(), "Test", null);
+        await services.ProjectMemorySynthesisRepository.QueueSynthesisForEpochAsync(second.Id);
+        var running = await services.ProjectMemorySynthesisRepository.ClaimNextPendingAsync(project.Id);
+        Assert.Equal(first.Id, running!.EpochId);
+        var before = await CountLegacyRowsAsync(services.Database);
+        await services.DisposeAsync();
+
+        services = AppServices.CreateForDatabasePath(databasePath, time, new AgentRuntimeRegistry());
+        try
+        {
+            await services.InitializeAsync();
+            await services.InitializeAsync();
+            services.ScheduleMemorySynthesis(project.Id);
+            await Task.Delay(100);
+            var reopenedFirst = await services.ProjectMemorySynthesisRepository.GetAsync(first.Id);
+            var reopenedSecond = await services.ProjectMemorySynthesisRepository.GetAsync(second.Id);
+
+            Assert.Equal(ProjectMemorySynthesisJobStatus.Running, reopenedFirst!.Status);
+            Assert.Equal(1, reopenedFirst.AttemptCount);
+            Assert.Equal(ProjectMemorySynthesisJobStatus.Pending, reopenedSecond!.Status);
+            Assert.Equal(0, reopenedSecond.AttemptCount);
+            Assert.Equal(before, await CountLegacyRowsAsync(services.Database));
+            Assert.Equal(project.Id, (await services.ProjectOpenService.OpenAsync(projectRoot)).Project.Id);
+            Assert.Equal(project.Id, (await services.ProjectOpenService.OpenAsync(projectRoot)).Project.Id);
+            Assert.Equal("Retained after restart", (await services.ProjectMemoryService.GetMemoryItemAsync(candidate.Id))!.Content);
+            Assert.Equal("restart-source", Assert.Single(await services.ProjectMemoryService.GetSourcesAsync(candidate.Id)).SourceRef);
+            var daily = await services.ProjectMemoryApi.GetDailySummaryAsync(project.Id, day);
+            Assert.Equal("Retained daily", daily!.Content);
+            Assert.Equal("daily-source", Assert.Single(daily.Sources).SourceRef);
+        }
+        finally
+        {
+            await services.DisposeAsync();
+        }
     }
 
     private static async Task<long[]> CountLegacyRowsAsync(WorkbenchDatabase database)
     {
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        string[] tables = ["project_activity_events", "project_memory_items", "project_memory_sources", "project_library_entries"];
+        string[] tables =
+        [
+            "project_activity_events",
+            "project_memory_items",
+            "project_memory_sources",
+            "project_memory_synthesis_jobs",
+            "project_daily_summaries",
+            "project_daily_summary_sources"
+        ];
         var counts = new long[tables.Length];
         for (var index = 0; index < tables.Length; index++)
         {
@@ -139,4 +162,20 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         }
         return counts;
     }
+
+    private static StoredLeaderSessionEpoch CreateEpoch(Guid projectId, DateTimeOffset now, string suffix) =>
+        new(
+            Guid.NewGuid(),
+            projectId,
+            "offline-provider",
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            "offline-model",
+            Guid.NewGuid(),
+            $"offline-{suffix}",
+            "C:/Project",
+            now,
+            now,
+            null,
+            null,
+            null);
 }

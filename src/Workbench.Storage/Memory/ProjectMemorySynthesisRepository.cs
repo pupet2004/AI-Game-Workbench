@@ -140,20 +140,11 @@ public sealed class ProjectMemorySynthesisRepository(
         }
     }
 
-    public async Task RecoverRunningAsync(CancellationToken cancellationToken = default)
+    public Task RecoverRunningAsync(CancellationToken cancellationToken = default)
     {
-        var now = _timeProvider.GetUtcNow();
-        await using var connection = _database.CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-        var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE project_memory_synthesis_jobs
-            SET status = 'Pending', completed_at = NULL,
-                last_error = 'Interrupted before completion.', updated_at = $now
-            WHERE status = 'Running';
-            """;
-        command.Parameters.AddWithValue("$now", Format(now));
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        // Legacy synthesis jobs are retained for audit and never reactivated by startup.
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
     }
 
     public async Task<ProjectMemorySynthesisStatus> GetStatusAsync(
