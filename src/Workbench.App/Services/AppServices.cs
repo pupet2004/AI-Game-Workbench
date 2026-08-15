@@ -13,6 +13,7 @@ using Workbench.App.Memory;
 using Workbench.App.Worker;
 using System.Collections.Concurrent;
 using Workbench.Storage.Workers;
+using Workbench.Storage.Reviews;
 
 namespace Workbench.App.Services;
 
@@ -175,14 +176,15 @@ public sealed class AppServices : IAsyncDisposable
         var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
         var taskEvents = new TaskEventRepository(database);
         var reviewState = new AssignmentReviewStateRepository(database);
+        var typedReviewState = new LeaderReviewStateRepository(database);
         var leaderAuthoritySettings = new LeaderAuthoritySettingsService(
             new WorkbenchSettingsRepository(database), new ProjectSettingsRepository(database));
-        var leaderAutoProceed = new LeaderReviewAutoProceedExecutor(new TaskRepository(database), reviewState, leaderAuthoritySettings, effectiveTimeProvider);
-        var leaderAskUserGate = new LeaderReviewAskUserGate(new TaskRepository(database), reviewState, leaderAuthoritySettings, projectLeaders, effectiveTimeProvider);
-        var leaderUserResponseBinder = new LeaderReviewUserResponseBinder(new LeaderReviewUserResponseBindingRepository(database));
+        var leaderAutoProceed = new LeaderReviewAutoProceedExecutor(new TaskRepository(database), reviewState, typedReviewState, effectiveTimeProvider);
+        var leaderAskUserGate = new LeaderReviewAskUserGate(new TaskRepository(database), reviewState, typedReviewState, leaderAuthoritySettings, projectLeaders, leaderMessages, effectiveTimeProvider);
+        var leaderUserResponseBinder = new LeaderReviewUserResponseBinder(typedReviewState, taskEvents, effectiveTimeProvider);
         var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
             new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
-            new LeaderReviewRuntimeAdapter(), reviewState, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
+            new LeaderReviewRuntimeAdapter(), reviewState, typedReviewState, leaderAuthoritySettings, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
             leaderAutoProceed, leaderAskUserGate);
 
         return new AppServices(

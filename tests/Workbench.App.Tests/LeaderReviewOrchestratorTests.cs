@@ -3,9 +3,11 @@ using Workbench.App.Leader;
 using Workbench.App.Tests.Support;
 using Workbench.Core.Projects;
 using Workbench.Core.Tasks;
+using Workbench.Core.Leaders;
 using Workbench.Runtime.Agents;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Tasks;
+using Workbench.Storage.Reviews;
 using Workbench.Storage.Workers;
 using CoreProject = Workbench.Core.Projects.Project;
 
@@ -126,7 +128,7 @@ public sealed class LeaderReviewOrchestratorTests
             await context.Services.TaskRepository.CreateAsync(project.Id, new TaskDraft(taskId, "Task", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, now, revision, status));
             var leader = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", project.RootPath, "leader", AgentSessionStatus.Ready, now, now);
             if (createLeader) await context.Services.ProjectLeaderRepository.CreateCurrentEpochAsync(new StoredProjectLeader(project.Id, null, now, now), new StoredLeaderSessionEpoch(Guid.NewGuid(), project.Id, runtime.Provider.Id.Value, runtime.Account.Id.Value, "model-a", leader.Id.Value, leader.ExternalSessionId, leader.WorkingDirectory, now, now, null, null, null));
-            var orchestrator = new LeaderReviewOrchestrator(new LeaderReviewInputBuilder(context.Services.ProjectRepository, context.Services.TaskRepository, context.Services.TaskRevisionRepository, new TaskEventRepository(context.Services.Database)), new LeaderReviewRuntimeAdapter(), new AssignmentReviewStateRepository(context.Services.Database), context.Services.TaskRepository, context.Services.ProjectLeaderRepository, context.Services.LeaderSessionEpochRepository, context.Services.RuntimeRegistry, context.Time);
+            var orchestrator = new LeaderReviewOrchestrator(new LeaderReviewInputBuilder(context.Services.ProjectRepository, context.Services.TaskRepository, context.Services.TaskRevisionRepository, new TaskEventRepository(context.Services.Database)), new LeaderReviewRuntimeAdapter(), new AssignmentReviewStateRepository(context.Services.Database), new LeaderReviewStateRepository(context.Services.Database), context.Services.LeaderAuthoritySettings, context.Services.TaskRepository, context.Services.ProjectLeaderRepository, context.Services.LeaderSessionEpochRepository, context.Services.RuntimeRegistry, context.Time);
             return new Fixture(context, project, taskId, revision, runtime, leader, orchestrator);
         }
         public async Task<(Guid EventId, AgentSessionId WorkerSessionId)> AddFinalReportAsync()
@@ -138,7 +140,7 @@ public sealed class LeaderReviewOrchestratorTests
             return (eventId, worker);
         }
         public void QueueDecision(Guid eventId, string outcome) => Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(LeaderSession.Id, AgentSessionStatus.Completed, $$"""{"taskId":"{{TaskId}}","taskRevisionId":"{{Revision.Id}}","finalReportEventId":"{{eventId}}","outcome":"{{outcome}}","actionLevel":"{{(outcome == "ASK_USER" ? "L3_DECISION_REQUIRED" : "L1_LOCAL_FIX")}}","reviewDepth":"REPORT_ONLY","summary":"ok","nextAction":"none"}""", null), DateTimeOffset.UtcNow));
-        public Task RecordDecisionAsync(Guid eventId) => Decisions.TryRecordLeaderReviewDecisionAsync(new LeaderReviewDecisionPersistenceRequest(Guid.NewGuid(), Project.Id, TaskId, Revision.Id, eventId, "Pass", "L1LocalFix", "ReportOnly", "ok", null, "none", null, Context.Time.GetUtcNow()));
+        public async Task RecordDecisionAsync(Guid eventId) { var id = Guid.NewGuid(); await Decisions.TryRecordLeaderReviewDecisionAsync(new LeaderReviewDecisionPersistenceRequest(id, Project.Id, TaskId, Revision.Id, eventId, "Pass", "L1LocalFix", "ReportOnly", "ok", null, "none", null, Context.Time.GetUtcNow())); var legacy = (await Decisions.GetLeaderReviewDecisionAsync(Project.Id, TaskId, Revision.Id, eventId))!; var authority = await Context.Services.LeaderAuthoritySettings.GetEffectiveLeaderAuthorityModeAsync(Project.Id); await new LeaderReviewStateRepository(Context.Services.Database).InsertDecisionIfAbsentAsync(new(legacy.EventId, Project.Id, TaskId, Revision.Id, eventId, "Pass", "L1LocalFix", LeaderAuthorityResolver.Resolve(authority, LeaderReviewActionLevel.L1LocalFix, LeaderReviewOutcome.Pass).ToString(), authority, legacy.CreatedAt)); }
         public ValueTask DisposeAsync() => Context.DisposeAsync();
     }
 }

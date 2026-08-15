@@ -5,6 +5,7 @@ using Workbench.Core.Leaders;
 using Workbench.Core.Tasks;
 using Workbench.Storage.Settings;
 using Workbench.Storage.Tasks;
+using Workbench.Storage.Reviews;
 
 namespace Workbench.App.Leader;
 
@@ -20,26 +21,20 @@ public interface ILeaderReviewAutoProceedExecutor
 public sealed class LeaderReviewAutoProceedExecutor(
     TaskRepository tasks,
     AssignmentReviewStateRepository reviewState,
-    LeaderAuthoritySettingsService authoritySettings,
+    LeaderReviewStateRepository typedReviewState,
     TimeProvider timeProvider) : ILeaderReviewAutoProceedExecutor
 {
     public async Task<LeaderReviewAutoProceedResult> TryExecuteAsync(Guid projectId, Guid taskId, Guid taskRevisionId, Guid finalReportEventId, CancellationToken cancellationToken = default)
     {
         var task = await tasks.GetAsync(projectId, taskId, cancellationToken);
         if (task is null || task.Status != TaskLifecycleStatus.Reviewing) return new(LeaderReviewAutoProceedResultKind.NoWork);
-        var decision = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, taskRevisionId, finalReportEventId, cancellationToken);
-        if (decision is null || decision.Outcome != nameof(LeaderReviewOutcome.Pass) || decision.TaskRevisionId != task.CurrentRevisionId) return new(LeaderReviewAutoProceedResultKind.NoWork);
+        var decision = await typedReviewState.GetDecisionByFinalReportAsync(projectId, taskId, finalReportEventId, cancellationToken);
+        if (decision is null || decision.Outcome != nameof(LeaderReviewOutcome.Pass) || decision.RevisionId != taskRevisionId || decision.RevisionId != task.CurrentRevisionId || decision.AuthorityResolution != nameof(LeaderAuthorityResolution.AutoProceed)) return new(LeaderReviewAutoProceedResultKind.NoWork);
+        var authority = decision.AuthorityMode;
+        if (authority is null) return new(LeaderReviewAutoProceedResultKind.NoWork);
 
-        LeaderAuthorityMode authority;
-        try { authority = await authoritySettings.GetEffectiveLeaderAuthorityModeAsync(projectId, cancellationToken); }
-        catch (Exception exception) when (exception is not OperationCanceledException) { return new(LeaderReviewAutoProceedResultKind.RetryableFailure, "Authority settings were unavailable."); }
-        LeaderAuthorityResolution resolution;
-        try { resolution = LeaderAuthorityResolver.Resolve(authority, Enum.Parse<LeaderReviewActionLevel>(decision.ActionLevel), LeaderReviewOutcome.Pass); }
-        catch (Exception exception) when (exception is ArgumentException) { return new(LeaderReviewAutoProceedResultKind.RetryableFailure, "The persisted review decision was invalid."); }
-        if (resolution != LeaderAuthorityResolution.AutoProceed) return new(LeaderReviewAutoProceedResultKind.NoWork);
-
-        var eventId = CompletionEventId(decision.EventId);
-        var payload = JsonSerializer.Serialize(new { ReviewDecisionEventId = decision.EventId, decision.TaskRevisionId, decision.FinalReportEventId, Outcome = decision.Outcome, Authority = authority.ToString(), Resolution = resolution.ToString() });
+        var eventId = CompletionEventId(decision.ReviewDecisionId);
+        var payload = JsonSerializer.Serialize(new { ReviewDecisionEventId = decision.ReviewDecisionId, TaskRevisionId = decision.RevisionId, decision.FinalReportEventId, decision.Outcome, Authority = authority.ToString(), Resolution = decision.AuthorityResolution });
         try
         {
             var transition = await reviewState.TryTransitionAsync(projectId, taskId, TaskLifecycleStatus.Reviewing, TaskLifecycleStatus.Completed, eventId, "AssignmentAutoCompleted", payload, timeProvider.GetUtcNow(), cancellationToken);
@@ -55,9 +50,9 @@ public sealed class LeaderReviewAutoProceedExecutor(
 
     public async Task<IReadOnlyList<LeaderReviewAutoProceedResult>> RecoverAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
-        var decisions = await reviewState.ListReviewingPassDecisionsAsync(projectId, cancellationToken);
+        var decisions = await typedReviewState.GetReviewingPassDecisionsAsync(projectId, cancellationToken);
         var results = new List<LeaderReviewAutoProceedResult>(decisions.Count);
-        foreach (var decision in decisions) results.Add(await TryExecuteAsync(projectId, decision.TaskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken));
+        foreach (var decision in decisions) results.Add(await TryExecuteAsync(projectId, decision.TaskId, decision.RevisionId, decision.FinalReportEventId, cancellationToken));
         return results;
     }
 

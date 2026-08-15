@@ -51,6 +51,8 @@ public sealed record LeaderReviewUserGateRecord(
     DateTimeOffset? RespondedAt,
     string State);
 
+public sealed record PendingLeaderReviewSubject(Guid TaskId, Guid FinalReportEventId);
+
 public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
 {
     private readonly WorkbenchDatabase _database = database ?? throw new ArgumentNullException(nameof(database));
@@ -85,6 +87,32 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
         return await ReadDecisionByFinalReportAsync(connection, null, projectId, taskId, finalReportEventId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<LeaderReviewDecisionRecord>> GetReviewingPassDecisionsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT d.review_decision_id,d.project_id,d.task_id,d.revision_id,d.final_report_event_id,d.outcome,d.action_level,d.authority_mode,d.authority_mode_recording,d.authority_resolution,d.created_at FROM task_review_decisions d JOIN tasks t ON t.id=d.task_id AND t.project_id=d.project_id WHERE d.project_id=$p AND t.status='Reviewing' AND d.outcome='Pass' ORDER BY d.created_at,d.review_decision_id;";
+        Add(command, "$p", projectId);
+        return await ReadDecisionListAsync(command, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PendingLeaderReviewSubject>> ListPendingReviewSubjectsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT final.task_id,final.id FROM task_events final JOIN tasks task ON task.id=final.task_id AND task.project_id=final.project_id WHERE final.project_id=$p AND final.event_type='WorkerFinalReportReceived' AND NOT EXISTS (SELECT 1 FROM task_review_decisions decision WHERE decision.project_id=final.project_id AND decision.task_id=final.task_id AND decision.final_report_event_id=final.id) ORDER BY final.created_at,final.id;";
+        Add(command, "$p", projectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var subjects = new List<PendingLeaderReviewSubject>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var taskId = Guid.Parse(reader.GetString(0));
+            var reportId = Guid.Parse(reader.GetString(1));
+            subjects.Add(new(taskId, reportId));
+        }
+        return subjects;
+    }
+
     public async Task<LeaderReviewWriteResult> OpenUserGateIfAbsentAsync(LeaderReviewUserGateWriteRequest request, CancellationToken cancellationToken = default)
     {
         if (request.ReviewDecisionId == Guid.Empty || request.ProjectId == Guid.Empty || request.TaskId == Guid.Empty || request.RevisionId == Guid.Empty) return LeaderReviewWriteResult.Conflict;
@@ -94,7 +122,7 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
         if (existing is not null)
         {
             await transaction.CommitAsync(cancellationToken);
-            return existing.State == "Open" && existing.RevisionId == request.RevisionId && existing.QuestionMessageId == request.QuestionMessageId && existing.OpenedAt == request.OpenedAt ? LeaderReviewWriteResult.Existing : LeaderReviewWriteResult.Conflict;
+            return existing.State == "Open" && existing.RevisionId == request.RevisionId && existing.QuestionMessageId == request.QuestionMessageId ? LeaderReviewWriteResult.Existing : LeaderReviewWriteResult.Conflict;
         }
         var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "INSERT INTO task_review_user_gates(review_decision_id,project_id,task_id,revision_id,question_message_id,user_message_id,opened_at,responded_at,state) VALUES($id,$p,$t,$r,$q,NULL,$opened,NULL,'Open');";
@@ -110,12 +138,21 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
         return await ReadGatesAsync(command, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<LeaderReviewUserGateRecord>> GetUserGatesAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT review_decision_id,project_id,task_id,revision_id,question_message_id,user_message_id,opened_at,responded_at,state FROM task_review_user_gates WHERE project_id=$p ORDER BY review_decision_id;";
+        Add(command, "$p", projectId);
+        return await ReadGatesAsync(command, cancellationToken);
+    }
+
     public async Task<bool> TryBindFirstUserResponseAsync(Guid projectId, Guid taskId, Guid reviewDecisionId, long userMessageId, DateTimeOffset respondedAt, CancellationToken cancellationToken = default)
     {
         if (projectId == Guid.Empty || taskId == Guid.Empty || reviewDecisionId == Guid.Empty || userMessageId <= 0) return false;
         await using var connection = _database.CreateConnection(); await connection.OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = "UPDATE task_review_user_gates SET state='Responded',user_message_id=$user,responded_at=$responded WHERE review_decision_id=$id AND project_id=$p AND task_id=$t AND state='Open' AND user_message_id IS NULL AND responded_at IS NULL AND EXISTS (SELECT 1 FROM leader_messages m JOIN leader_session_epochs e ON e.id=m.epoch_id WHERE m.id=$user AND e.project_id=$p);";
+        command.CommandText = "UPDATE task_review_user_gates SET state='Responded',user_message_id=$user,responded_at=$responded WHERE review_decision_id=$id AND project_id=$p AND task_id=$t AND state='Open' AND user_message_id IS NULL AND responded_at IS NULL AND EXISTS (SELECT 1 FROM leader_messages m JOIN leader_session_epochs e ON e.id=m.epoch_id WHERE m.id=$user AND m.role='user' AND e.project_id=$p);";
         Add(command, "$user", userMessageId); Add(command, "$responded", Format(respondedAt)); Add(command, "$id", reviewDecisionId); Add(command, "$p", projectId); Add(command, "$t", taskId);
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
@@ -165,6 +202,16 @@ public sealed class LeaderReviewStateRepository(WorkbenchDatabase database)
         while (await reader.ReadAsync(cancellationToken)) result.Add(ReadGate(reader));
         return result;
     }
+
+    private static async Task<IReadOnlyList<LeaderReviewDecisionRecord>> ReadDecisionListAsync(SqliteCommand command, CancellationToken cancellationToken)
+    {
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<LeaderReviewDecisionRecord>();
+        while (await reader.ReadAsync(cancellationToken)) result.Add(ReadDecision(reader));
+        return result;
+    }
+
+    private static LeaderReviewDecisionRecord ReadDecision(SqliteDataReader reader) => new(Guid.Parse(reader.GetString(0)), Guid.Parse(reader.GetString(1)), Guid.Parse(reader.GetString(2)), Guid.Parse(reader.GetString(3)), Guid.Parse(reader.GetString(4)), reader.GetString(5), reader.GetString(6), reader.IsDBNull(7) ? null : Enum.Parse<LeaderAuthorityMode>(reader.GetString(7)), reader.GetString(8), reader.GetString(9), Parse(reader.GetString(10)));
 
     private static LeaderReviewUserGateRecord ReadGate(SqliteDataReader reader) => new(Guid.Parse(reader.GetString(0)), Guid.Parse(reader.GetString(1)), Guid.Parse(reader.GetString(2)), Guid.Parse(reader.GetString(3)), reader.IsDBNull(4) ? null : reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetInt64(5), Parse(reader.GetString(6)), reader.IsDBNull(7) ? null : Parse(reader.GetString(7)), reader.GetString(8));
     private static bool Matches(LeaderReviewDecisionRecord existing, LeaderReviewDecisionWriteRequest request) => existing.RevisionId == request.RevisionId && existing.FinalReportEventId == request.FinalReportEventId && existing.Outcome == request.Outcome && existing.ActionLevel == request.ActionLevel && existing.AuthorityMode == request.AuthorityMode && existing.AuthorityModeRecording == "Recorded" && existing.AuthorityResolution == request.AuthorityResolution && existing.CreatedAt == request.CreatedAt;

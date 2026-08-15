@@ -5,6 +5,9 @@ using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Tasks;
+using Workbench.Storage.Reviews;
+using Workbench.Storage.Settings;
+using Workbench.Core.Leaders;
 
 namespace Workbench.App.Leader;
 
@@ -31,6 +34,8 @@ public sealed class LeaderReviewOrchestrator(
     LeaderReviewInputBuilder inputBuilder,
     LeaderReviewRuntimeAdapter runtimeAdapter,
     AssignmentReviewStateRepository reviewState,
+    LeaderReviewStateRepository typedReviewState,
+    LeaderAuthoritySettingsService authoritySettings,
     TaskRepository tasks,
     ProjectLeaderRepository leaders,
     LeaderSessionEpochRepository epochs,
@@ -45,12 +50,12 @@ public sealed class LeaderReviewOrchestrator(
 
         var task = await tasks.GetAsync(projectId, taskId, cancellationToken);
         if (task is null || task.Status != TaskLifecycleStatus.Reviewing) return new(LeaderReviewOrchestrationResultKind.NoWork);
-        var existing = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, task.CurrentRevisionId, finalReportEventId, cancellationToken);
-        if (existing is not null)
+        var existingTyped = await typedReviewState.GetDecisionByFinalReportAsync(projectId, taskId, finalReportEventId, cancellationToken);
+        if (existingTyped is not null)
         {
-            if (autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, existing.TaskRevisionId, existing.FinalReportEventId, cancellationToken);
-            if (askUserGate is not null) await askUserGate.TryOpenAsync(projectId, taskId, existing.TaskRevisionId, existing.FinalReportEventId, cancellationToken);
-            return new(LeaderReviewOrchestrationResultKind.ExistingDecision, existing);
+            if (autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, existingTyped.RevisionId, existingTyped.FinalReportEventId, cancellationToken);
+            if (askUserGate is not null) await askUserGate.TryOpenAsync(projectId, taskId, existingTyped.RevisionId, existingTyped.FinalReportEventId, cancellationToken);
+            return new(LeaderReviewOrchestrationResultKind.ExistingDecision);
         }
 
         var input = await inputBuilder.BuildAsync(projectId, taskId, finalReportEventId, cancellationToken);
@@ -75,20 +80,23 @@ public sealed class LeaderReviewOrchestrator(
         var decision = runtimeResult.Decision!;
         try
         {
-            var persisted = await reviewState.TryRecordLeaderReviewDecisionAsync(new LeaderReviewDecisionPersistenceRequest(Guid.NewGuid(), projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, decision.Outcome.ToString(), decision.ActionLevel.ToString(), decision.ReviewDepth.ToString(), decision.Summary, decision.Issue, decision.NextAction, decision.ImportantNote, timeProvider.GetUtcNow()), cancellationToken);
+            var authority = await authoritySettings.GetEffectiveLeaderAuthorityModeAsync(projectId, cancellationToken);
+            var resolution = LeaderAuthorityResolver.Resolve(authority, decision.ActionLevel, decision.Outcome);
+            var decisionId = Guid.NewGuid();
+            var typed = await typedReviewState.InsertDecisionIfAbsentAsync(new LeaderReviewDecisionWriteRequest(decisionId, projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, decision.Outcome.ToString(), decision.ActionLevel.ToString(), resolution.ToString(), authority, timeProvider.GetUtcNow()), cancellationToken);
+            if (typed is LeaderReviewWriteResult.Conflict) return new(LeaderReviewOrchestrationResultKind.PersistenceFailure, Error: typed.ToString());
+            var persisted = await reviewState.TryRecordLeaderReviewDecisionAsync(new LeaderReviewDecisionPersistenceRequest(decisionId, projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, decision.Outcome.ToString(), decision.ActionLevel.ToString(), decision.ReviewDepth.ToString(), decision.Summary, decision.Issue, decision.NextAction, decision.ImportantNote, timeProvider.GetUtcNow()), cancellationToken);
             if (persisted == AssignmentStateTransitionResult.Applied)
             {
-                var stored = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
-                if (stored is not null && autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, stored.TaskRevisionId, stored.FinalReportEventId, cancellationToken);
-                if (stored is not null && askUserGate is not null) await askUserGate.TryOpenAsync(projectId, taskId, stored.TaskRevisionId, stored.FinalReportEventId, cancellationToken);
-                return new(LeaderReviewOrchestrationResultKind.Recorded, stored);
+                if (autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
+                if (askUserGate is not null) await askUserGate.TryOpenAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
+                return new(LeaderReviewOrchestrationResultKind.Recorded);
             }
             if (persisted == AssignmentStateTransitionResult.Idempotent)
             {
-                var stored = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
-                if (stored is not null && autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, stored.TaskRevisionId, stored.FinalReportEventId, cancellationToken);
-                if (stored is not null && askUserGate is not null) await askUserGate.TryOpenAsync(projectId, taskId, stored.TaskRevisionId, stored.FinalReportEventId, cancellationToken);
-                return new(LeaderReviewOrchestrationResultKind.ExistingDecision, stored);
+                if (autoProceed is not null) await autoProceed.TryExecuteAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
+                if (askUserGate is not null) await askUserGate.TryOpenAsync(projectId, taskId, decision.TaskRevisionId, decision.FinalReportEventId, cancellationToken);
+                return new(LeaderReviewOrchestrationResultKind.ExistingDecision);
             }
             return new(LeaderReviewOrchestrationResultKind.PersistenceFailure, Error: persisted.ToString());
         }
@@ -98,7 +106,7 @@ public sealed class LeaderReviewOrchestrator(
 
     public async Task<IReadOnlyList<LeaderReviewOrchestrationResult>> RecoverAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
-        var pending = await reviewState.ListPendingReviewReportsAsync(projectId, cancellationToken);
+        var pending = await typedReviewState.ListPendingReviewSubjectsAsync(projectId, cancellationToken);
         var results = new List<LeaderReviewOrchestrationResult>(pending.Count);
         foreach (var item in pending)
         {

@@ -5,6 +5,7 @@ using Workbench.Core.Projects;
 using Workbench.Core.Leaders;
 using Workbench.Core.Tasks;
 using Workbench.Storage.Tasks;
+using Workbench.Storage.Reviews;
 using Workbench.Storage.Workers;
 using CoreProject = Workbench.Core.Projects.Project;
 
@@ -71,12 +72,15 @@ public sealed class LeaderReviewAutoProceedExecutorTests
             var context = await AppTestContext.CreateAsync(); var now = context.Time.GetUtcNow(); var project = new CoreProject(Guid.NewGuid(), "E1", "C:/E1", ProjectType.Generic, null, now, now); await context.Services.ProjectRepository.UpsertAsync(project);
             var taskId = Guid.NewGuid(); var profile = ExecutionProfile.Create("provider", "account", "model", "runtime"); var revision = new TaskRevision(taskId, 1, "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, "initial", TaskRevisionApprover.User, now, null);
             await context.Services.TaskRepository.CreateAsync(project.Id, new TaskDraft(taskId, "Task", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, now, revision, TaskLifecycleStatus.Reviewing));
-            return new Fixture(context, project, taskId, revision, new LeaderReviewAutoProceedExecutor(context.Services.TaskRepository, new AssignmentReviewStateRepository(context.Services.Database), context.Services.LeaderAuthoritySettings, context.Time));
+            return new Fixture(context, project, taskId, revision, new LeaderReviewAutoProceedExecutor(context.Services.TaskRepository, new AssignmentReviewStateRepository(context.Services.Database), new LeaderReviewStateRepository(context.Services.Database), context.Time));
         }
         public async Task<StoredLeaderReviewDecision> RecordDecisionAsync(LeaderReviewOutcome outcome, LeaderReviewActionLevel action)
         {
             var reportId = Guid.NewGuid(); var events = new TaskEventRepository(Context.Services.Database); await events.AppendAsync(new StoredTaskEvent(reportId, Project.Id, TaskId, null, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = Guid.NewGuid(), Message = "done" }), Context.Time.GetUtcNow()));
             var state = new AssignmentReviewStateRepository(Context.Services.Database); Assert.Equal(AssignmentStateTransitionResult.Applied, await state.TryRecordLeaderReviewDecisionAsync(new LeaderReviewDecisionPersistenceRequest(Guid.NewGuid(), Project.Id, TaskId, Revision.Id, reportId, outcome.ToString(), action.ToString(), "ReportOnly", "summary", null, "next", null, Context.Time.GetUtcNow())));
+            var authority = await Context.Services.LeaderAuthoritySettings.GetEffectiveLeaderAuthorityModeAsync(Project.Id);
+            var legacy = (await state.GetLeaderReviewDecisionAsync(Project.Id, TaskId, Revision.Id, reportId))!;
+            await new LeaderReviewStateRepository(Context.Services.Database).InsertDecisionIfAbsentAsync(new(legacy.EventId, Project.Id, TaskId, Revision.Id, reportId, outcome.ToString(), action.ToString(), LeaderAuthorityResolver.Resolve(authority, action, outcome).ToString(), authority, legacy.CreatedAt));
             return (await state.GetLeaderReviewDecisionAsync(Project.Id, TaskId, Revision.Id, reportId))!;
         }
         public async Task<long> CountEventsAsync(string type) => await CountTableAsync("task_events", type);
