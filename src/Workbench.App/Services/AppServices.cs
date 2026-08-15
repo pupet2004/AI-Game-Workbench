@@ -51,6 +51,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLibraryEvolutionRepository projectLibraryEvolutionRepository,
         WorkerSessionRouter workerSessionRouter,
         IWorkerRoutingStore workerRoutingStore,
+        WorkerExecutionRepository workerExecutionRepository,
         ILeaderReviewOrchestrator leaderReviewOrchestrator,
         LeaderAuthoritySettingsService leaderAuthoritySettings,
         ILeaderReviewAutoProceedExecutor leaderReviewAutoProceed,
@@ -84,6 +85,7 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLibraryEvolutionRepository = projectLibraryEvolutionRepository;
         WorkerSessionRouter = workerSessionRouter;
         WorkerRoutingStore = workerRoutingStore;
+        WorkerExecutionRepository = workerExecutionRepository;
         LeaderReviewOrchestrator = leaderReviewOrchestrator;
         LeaderAuthoritySettings = leaderAuthoritySettings;
         LeaderReviewAutoProceed = leaderReviewAutoProceed;
@@ -127,6 +129,7 @@ public sealed class AppServices : IAsyncDisposable
     public ProjectLibraryEvolutionRepository ProjectLibraryEvolutionRepository { get; }
     public WorkerSessionRouter WorkerSessionRouter { get; }
     public IWorkerRoutingStore WorkerRoutingStore { get; }
+    public WorkerExecutionRepository WorkerExecutionRepository { get; }
     public ILeaderReviewOrchestrator LeaderReviewOrchestrator { get; }
     public LeaderAuthoritySettingsService LeaderAuthoritySettings { get; }
     public ILeaderReviewAutoProceedExecutor LeaderReviewAutoProceed { get; }
@@ -187,6 +190,8 @@ public sealed class AppServices : IAsyncDisposable
             new LeaderReviewRuntimeAdapter(), reviewState, typedReviewState, leaderAuthoritySettings, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
             leaderAutoProceed, leaderAskUserGate);
 
+        var workerExecutionRepository = new WorkerExecutionRepository(database);
+        var workerRoutingStore = new TaskEventWorkerRoutingStore(taskEvents, workerExecutionRepository);
         return new AppServices(
             database,
             projectRepository,
@@ -220,8 +225,9 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, new TaskEventWorkerRoutingStore(taskEvents), effectiveTimeProvider, reviewState, leaderReviewOrchestrator),
-            new TaskEventWorkerRoutingStore(taskEvents),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository),
+            workerRoutingStore,
+            workerExecutionRepository,
             leaderReviewOrchestrator,
             leaderAuthoritySettings,
             leaderAutoProceed,

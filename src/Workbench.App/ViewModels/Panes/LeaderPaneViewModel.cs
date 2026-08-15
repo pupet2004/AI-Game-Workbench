@@ -11,6 +11,8 @@ using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
 using Workbench.App.Memory;
 using Workbench.Core.Tasks;
+using Workbench.Core.Workers;
+using Workbench.Project.Git;
 using Workbench.Storage.Memory;
 using CoreProject = Workbench.Core.Projects.Project;
 
@@ -36,6 +38,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly TimeProvider _timeProvider;
     private readonly Func<CancellationToken, Task>? _refreshLibraryPane;
     private readonly ILeaderReviewUserResponseBinder? _responseBinder;
+    private readonly GitSnapshot? _git;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -58,7 +61,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         IProjectMemoryApi? projectMemoryApi = null,
         TimeProvider? timeProvider = null,
         Func<CancellationToken, Task>? refreshLibraryPane = null,
-        ILeaderReviewUserResponseBinder? responseBinder = null)
+        ILeaderReviewUserResponseBinder? responseBinder = null,
+        GitSnapshot? git = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -78,6 +82,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _timeProvider = timeProvider ?? TimeProvider.System;
         _refreshLibraryPane = refreshLibraryPane;
         _responseBinder = responseBinder;
+        _git = git;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -953,9 +958,18 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         var confirmation = DraftConfirmation ?? throw new InvalidOperationException("No draft confirmation is active.");
         if (_workerSessionRouter is null) return;
-        var result = await _workerSessionRouter.StartAsync(new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Revision.Id, confirmation.Title,
-            confirmation.Revision.RecommendedExecutionProfile, confirmation.Goal, null, "Worker",
-            (handoff, token) => _sessionManager.IngestWorkerHandoffAsync(handoff, token)), cancellationToken);
+        var profile = confirmation.Revision.RecommendedExecutionProfile;
+        var request = new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Revision.Id, confirmation.Title,
+            profile, confirmation.Goal, null, "Worker",
+            (handoff, token) => _sessionManager.IngestWorkerHandoffAsync(handoff, token));
+        if (_git is { IsRepository: true, HeadCommit: not null, BranchName: not null } git)
+        {
+            var executionId = Guid.NewGuid();
+            var identity = WorkerExecutionIdentity.Start(confirmation.Revision.CreateReference(), git.HeadCommit, git.BranchName,
+                ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId), profile, git.BranchName, _project.RootPath);
+            request = request with { ExecutionId = executionId, ExecutionIdentity = identity };
+        }
+        var result = await _workerSessionRouter.StartAsync(request, cancellationToken);
         if (!result.Succeeded)
         {
             AddErrorMessage("Worker could not be started.");

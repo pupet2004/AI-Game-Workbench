@@ -94,8 +94,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             refreshWorkPane: cancellationToken => WorkPane.LoadAsync(result.Project.Id, cancellationToken),
             projectMemoryApi: projectMemoryApi,
             timeProvider: _timeProvider,
-             refreshLibraryPane: LibraryPane.LoadLibraryAsync,
-             responseBinder: responseBinder);
+            refreshLibraryPane: LibraryPane.LoadLibraryAsync,
+            responseBinder: responseBinder,
+            git: result.Git);
     }
 
     public ProjectOpenResult Result { get; }
