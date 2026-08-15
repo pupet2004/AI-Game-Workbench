@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class TypedLeaderReviewMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_creates_only_the_two_typed_review_tables_at_v15()
+    public async Task Fresh_database_creates_only_the_two_typed_review_tables_at_v16()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -16,7 +16,7 @@ public sealed class TypedLeaderReviewMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(15L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(16L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(2L, await ScalarAsync<long>(connection, """
             SELECT COUNT(*)
             FROM sqlite_master
@@ -32,7 +32,7 @@ public sealed class TypedLeaderReviewMigrationTests
 
         var decisionColumns = await TableColumnsAsync(connection, "task_review_decisions");
         Assert.Equal(
-            ["review_decision_id", "project_id", "task_id", "revision_id", "source_event_id", "outcome", "action_level", "authority_mode", "authority_resolution", "created_at"],
+            ["review_decision_id", "project_id", "task_id", "revision_id", "source_event_id", "outcome", "action_level", "authority_mode", "authority_resolution", "authority_mode_recording", "created_at"],
             decisionColumns.Select(column => column.Name));
         Assert.Equal("review_decision_id", decisionColumns.Single(column => column.PrimaryKeyPosition == 1).Name);
         Assert.Contains(decisionColumns, column => column.Name == "source_event_id" && !column.NotNull);
@@ -50,7 +50,7 @@ public sealed class TypedLeaderReviewMigrationTests
     }
 
     [Fact]
-    public async Task V13_to_v15_adds_typed_review_schema_idempotently_and_preserves_foreign_key_integrity()
+    public async Task V13_to_v16_adds_typed_review_schema_idempotently_and_preserves_foreign_key_integrity()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -62,7 +62,7 @@ public sealed class TypedLeaderReviewMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(15L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(16L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }
 
@@ -143,7 +143,7 @@ public sealed class TypedLeaderReviewMigrationTests
         ExecuteAsync(connection, "INSERT INTO task_revisions (id,task_id,revision_number,goal,scope,out_of_scope,acceptance_json,risk_level,recommended_provider_id,recommended_provider_account_id,recommended_model_profile_id,recommended_agent_runtime_id,change_reason,approved_by,created_at) VALUES ($id,$task,1,'Goal','Scope','None','[]','Low','codex','account','model','runtime','Initial','Leader',$at);", ("$id", revisionId), ("$task", taskId), ("$at", timestamp));
 
     private static Task InsertDecisionAsync(SqliteConnection connection, string decisionId, string projectId, string taskId, string revisionId, string? sourceEventId, string outcome = "Pass", string actionLevel = "L1LocalFix", string authorityMode = "Balanced", string authorityResolution = "AutoProceed") =>
-        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,source_event_id,outcome,action_level,authority_mode,authority_resolution,created_at) VALUES ($id,$project,$task,$revision,$source,$outcome,$action,$authority,$resolution,'2026-08-15T00:01:00+00:00');", ("$id", decisionId), ("$project", projectId), ("$task", taskId), ("$revision", revisionId), ("$source", sourceEventId), ("$outcome", outcome), ("$action", actionLevel), ("$authority", authorityMode), ("$resolution", authorityResolution));
+        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,source_event_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES ($id,$project,$task,$revision,$source,$outcome,$action,$authority,$resolution,'Recorded','2026-08-15T00:01:00+00:00');", ("$id", decisionId), ("$project", projectId), ("$task", taskId), ("$revision", revisionId), ("$source", sourceEventId), ("$outcome", outcome), ("$action", actionLevel), ("$authority", authorityMode), ("$resolution", authorityResolution));
 
     private static Task InsertGateAsync(SqliteConnection connection, string decisionId, string projectId, string taskId, string revisionId, long questionMessageId, long? userMessageId, string? respondedAt, string state) =>
         ExecuteAsync(connection, "INSERT INTO task_review_user_gates (review_decision_id,project_id,task_id,revision_id,question_message_id,user_message_id,opened_at,responded_at,state) VALUES ($decision,$project,$task,$revision,$question,$user,'2026-08-15T00:01:00+00:00',$responded,$state);", ("$decision", decisionId), ("$project", projectId), ("$task", taskId), ("$revision", revisionId), ("$question", questionMessageId), ("$user", userMessageId), ("$responded", respondedAt), ("$state", state));

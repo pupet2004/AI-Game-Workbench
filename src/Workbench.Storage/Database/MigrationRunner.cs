@@ -88,6 +88,13 @@ internal static class MigrationRunner
                 Migration015ReviewGateReferenceDecoupling.ApplyAsync,
                 cancellationToken);
         }
+        if (currentVersion < Migration016HistoricalAuthorityRecording.Version)
+        {
+            await ApplyWithForeignKeysTemporarilyDisabledAsync(
+                connection,
+                Migration016HistoricalAuthorityRecording.ApplyAsync,
+                cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

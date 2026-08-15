@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class ReviewGateReferenceDecouplingMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_reaches_v15_with_nullable_set_null_message_locators()
+    public async Task Fresh_database_reaches_v16_with_nullable_set_null_message_locators()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -15,7 +15,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(15L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(16L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         var columns = await ColumnsAsync(connection);
         Assert.Contains(columns, column => column.Name == "question_message_id" && !column.NotNull);
         Assert.Contains(columns, column => column.Name == "user_message_id" && !column.NotNull);
@@ -26,7 +26,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
     }
 
     [Fact]
-    public async Task V14_to_v15_preserves_open_and_responded_gates_and_is_idempotent()
+    public async Task V14_to_v16_preserves_open_and_responded_gates_and_is_idempotent()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -48,7 +48,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
 
         await using var verified = database.CreateConnection();
         await verified.OpenAsync();
-        Assert.Equal(15L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
+        Assert.Equal(16L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
         Assert.Equal(("Open", (long?)1, (long?)null, (string?)null), await ReadGateAsync(verified, "open"));
         Assert.Equal(("Responded", (long?)1, (long?)2, "2026-08-15T00:02:00+00:00"), await ReadGateAsync(verified, "responded"));
         Assert.Equal(0L, await ScalarAsync<long>(verified, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
@@ -144,7 +144,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
     }
 
     private static Task InsertDecisionAsync(SqliteConnection connection, string id, string projectId, string taskId, string revisionId) =>
-        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,outcome,action_level,authority_mode,authority_resolution,created_at) VALUES ($id,$project,$task,$revision,'AskUser','L3DecisionRequired','Balanced','AskUser','2026-08-15T00:01:00+00:00');", ("$id", id), ("$project", projectId), ("$task", taskId), ("$revision", revisionId));
+        ExecuteAsync(connection, "INSERT INTO task_review_decisions (review_decision_id,project_id,task_id,revision_id,outcome,action_level,authority_mode,authority_resolution,authority_mode_recording,created_at) VALUES ($id,$project,$task,$revision,'AskUser','L3DecisionRequired','Balanced','AskUser','Recorded','2026-08-15T00:01:00+00:00');", ("$id", id), ("$project", projectId), ("$task", taskId), ("$revision", revisionId));
 
     private static Task InsertGateAsync(SqliteConnection connection, string decisionId, string projectId, string taskId, string revisionId, long? questionMessageId, long? userMessageId, string? respondedAt, string state) =>
         ExecuteAsync(connection, "INSERT INTO task_review_user_gates (review_decision_id,project_id,task_id,revision_id,question_message_id,user_message_id,opened_at,responded_at,state) VALUES ($id,$project,$task,$revision,$question,$user,'2026-08-15T00:01:00+00:00',$responded,$state);", ("$id", decisionId), ("$project", projectId), ("$task", taskId), ("$revision", revisionId), ("$question", questionMessageId), ("$user", userMessageId), ("$responded", respondedAt), ("$state", state));
