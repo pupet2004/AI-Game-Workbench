@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class ReviewGateReferenceDecouplingMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_reaches_v16_with_nullable_set_null_message_locators()
+    public async Task Fresh_database_reaches_v17_with_nullable_set_null_message_locators()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -15,7 +15,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(16L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(17L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         var columns = await ColumnsAsync(connection);
         Assert.Contains(columns, column => column.Name == "question_message_id" && !column.NotNull);
         Assert.Contains(columns, column => column.Name == "user_message_id" && !column.NotNull);
@@ -26,7 +26,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
     }
 
     [Fact]
-    public async Task V14_to_v16_preserves_open_and_responded_gates_and_is_idempotent()
+    public async Task V14_to_v17_preserves_open_and_responded_gates_and_is_idempotent()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -48,7 +48,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
 
         await using var verified = database.CreateConnection();
         await verified.OpenAsync();
-        Assert.Equal(16L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
+        Assert.Equal(17L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
         Assert.Equal(("Open", (long?)1, (long?)null, (string?)null), await ReadGateAsync(verified, "open"));
         Assert.Equal(("Responded", (long?)1, (long?)2, "2026-08-15T00:02:00+00:00"), await ReadGateAsync(verified, "responded"));
         Assert.Equal(0L, await ScalarAsync<long>(verified, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));

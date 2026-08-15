@@ -95,6 +95,10 @@ internal static class MigrationRunner
                 Migration016HistoricalAuthorityRecording.ApplyAsync,
                 cancellationToken);
         }
+        if (currentVersion < Migration017TypedLeaderReviewBackfill.Version)
+        {
+            await ApplyAsync(connection, Migration017TypedLeaderReviewBackfill.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

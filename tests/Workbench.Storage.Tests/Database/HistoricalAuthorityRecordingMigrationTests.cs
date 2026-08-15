@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class HistoricalAuthorityRecordingMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_reaches_v16_with_explicit_authority_recording()
+    public async Task Fresh_database_reaches_v17_with_explicit_authority_recording()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -14,7 +14,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(16L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(17L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
 
         var columns = await ColumnsAsync(connection, "task_review_decisions");
         Assert.Contains(columns, column => column.Name == "authority_mode" && !column.NotNull);
@@ -22,7 +22,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
     }
 
     [Fact]
-    public async Task V15_to_v16_preserves_recorded_decisions_and_leaves_gate_schema_and_rows_unchanged()
+    public async Task V15_to_v17_preserves_recorded_decisions_and_leaves_gate_schema_and_rows_unchanged()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -46,7 +46,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
 
         await using var verified = database.CreateConnection();
         await verified.OpenAsync();
-        Assert.Equal(16L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
+        Assert.Equal(17L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
         Assert.Equal(("Balanced", "Recorded"), await ReadAuthorityAsync(verified, "recorded"));
         Assert.Equal(1L, await ScalarAsync<long>(verified, "SELECT COUNT(*) FROM task_review_user_gates WHERE review_decision_id = 'recorded';"));
         Assert.Equal(gateSql, await ScalarAsync<string>(verified, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_review_user_gates';"));
