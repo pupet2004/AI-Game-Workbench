@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Workbench.App.Services;
 using Workbench.App.Leader;
 using Workbench.App.Worker;
 using Workbench.Core.Projects;
@@ -34,6 +35,66 @@ public sealed class LeaderReviewInputBuilderTests
         Assert.Equal("final report body", input.FinalReport.Body);
         Assert.Equal("validation preserved verbatim", input.FinalReport.ValidationSummary);
         Assert.Equal(TaskLifecycleStatus.Reviewing, input.AssignmentStatus);
+        Assert.Equal(LeaderReviewHandoffBindingKind.Canonical, input.HandoffBinding);
+    }
+
+    [Fact]
+    public async Task Thin_handoff_resolves_report_from_its_canonical_source_event()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var report = await fixture.AddFinalReportAsync(thinHandoff: true);
+
+        var input = await fixture.Builder.BuildAsync(fixture.Project.Id, fixture.TaskId, report.EventId);
+
+        Assert.NotNull(input);
+        Assert.Equal("final report body", input.FinalReport.Body);
+        Assert.Equal(LeaderReviewHandoffBindingKind.Canonical, input.HandoffBinding);
+    }
+
+    [Fact]
+    public async Task Thin_handoff_resolves_report_after_app_restart()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var report = await fixture.AddFinalReportAsync(thinHandoff: true);
+
+        var input = await fixture.BuildAfterRestartAsync(report.EventId);
+
+        Assert.NotNull(input);
+        Assert.Equal("final report body", input.FinalReport.Body);
+        Assert.Equal(report.EventId, input.FinalReportEventId);
+        Assert.Equal(LeaderReviewHandoffBindingKind.Canonical, input.HandoffBinding);
+    }
+
+    [Fact]
+    public async Task Legacy_handoff_without_source_event_uses_explicit_legacy_compat_fallback()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var report = await fixture.AddFinalReportAsync(legacyHandoff: true);
+
+        var input = await fixture.Builder.BuildAsync(fixture.Project.Id, fixture.TaskId, report.EventId);
+
+        Assert.NotNull(input);
+        Assert.Equal("final report body", input.FinalReport.Body);
+        Assert.Equal(LeaderReviewHandoffBindingKind.LegacyCompat, input.HandoffBinding);
+    }
+
+    [Fact]
+    public async Task Wrong_source_event_binding_is_rejected_without_latest_event_guessing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var report = await fixture.AddFinalReportAsync(handoffSourceEventId: Guid.NewGuid());
+
+        Assert.Null(await fixture.Builder.BuildAsync(fixture.Project.Id, fixture.TaskId, report.EventId));
+    }
+
+    [Fact]
+    public async Task Duplicate_canonical_handoff_bindings_are_rejected()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var report = await fixture.AddFinalReportAsync(thinHandoff: true);
+        await fixture.AppendDuplicateHandoffAsync(report);
+
+        Assert.Null(await fixture.Builder.BuildAsync(fixture.Project.Id, fixture.TaskId, report.EventId));
     }
 
     [Fact]
@@ -134,7 +195,7 @@ public sealed class LeaderReviewInputBuilderTests
             return new Fixture(context, project, taskId, r1, r2);
         }
 
-        public async Task<Report> AddFinalReportAsync(Guid? taskRevisionId = null, Guid? handoffTaskId = null)
+        public async Task<Report> AddFinalReportAsync(Guid? taskRevisionId = null, Guid? handoffTaskId = null, bool legacyHandoff = false, bool thinHandoff = false, Guid? handoffSourceEventId = null)
         {
             var workerSessionId = AgentSessionId.New();
             var eventId = Guid.NewGuid();
@@ -144,10 +205,36 @@ public sealed class LeaderReviewInputBuilderTests
                 Project.Id, TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing, eventId, "WorkerFinalReportReceived",
                 JsonSerializer.Serialize(new { WorkerSessionId = workerSessionId.Value, Message = "final report body", ValidationSummary = "validation preserved verbatim" }), _context.Time.GetUtcNow());
             var handoff = new WorkerHandoff(Project.Id, handoffTaskId ?? TaskId, workerSessionId, "Worker", AgentSessionStatus.Completed,
-                "final report body", _context.Time.GetUtcNow(), WorkerHandoffKind.FinalReport, "validation preserved verbatim", eventId, taskRevisionId ?? CurrentRevision.Id);
-            await new TaskEventRepository(_context.Services.Database).AppendAsync(new StoredTaskEvent(Guid.NewGuid(), Project.Id, TaskId, null,
-                "WorkerToLeaderHandoff", JsonSerializer.Serialize(handoff), _context.Time.GetUtcNow()));
+                "final report body", _context.Time.GetUtcNow(), WorkerHandoffKind.FinalReport,
+                "validation preserved verbatim", legacyHandoff ? null : handoffSourceEventId ?? eventId, taskRevisionId ?? CurrentRevision.Id);
+            if (thinHandoff)
+            {
+                await new TaskEventWorkerRoutingStore(new TaskEventRepository(_context.Services.Database)).AppendHandoffAsync(handoff);
+            }
+            else
+            {
+                await new TaskEventRepository(_context.Services.Database).AppendAsync(new StoredTaskEvent(Guid.NewGuid(), Project.Id, TaskId, null,
+                    "WorkerToLeaderHandoff", JsonSerializer.Serialize(handoff), _context.Time.GetUtcNow()));
+            }
             return new Report(eventId, workerSessionId);
+        }
+
+        public Task AppendDuplicateHandoffAsync(Report report) => new TaskEventWorkerRoutingStore(new TaskEventRepository(_context.Services.Database)).AppendHandoffAsync(
+            new WorkerHandoff(Project.Id, TaskId, report.WorkerSessionId, "Worker", AgentSessionStatus.Completed,
+                "final report body", _context.Time.GetUtcNow(), WorkerHandoffKind.FinalReport,
+                "validation preserved verbatim", report.EventId, CurrentRevision.Id));
+
+        public async Task<LeaderReviewInput?> BuildAfterRestartAsync(Guid finalReportEventId)
+        {
+            await _context.Services.DisposeAsync();
+            await using var services = AppServices.CreateForDatabasePath(_context.DatabasePath, _context.Time, new Workbench.Runtime.Registry.AgentRuntimeRegistry());
+            await services.InitializeAsync();
+            var builder = new LeaderReviewInputBuilder(
+                services.ProjectRepository,
+                services.TaskRepository,
+                services.TaskRevisionRepository,
+                new TaskEventRepository(services.Database));
+            return await builder.BuildAsync(Project.Id, TaskId, finalReportEventId);
         }
 
         public async Task<Guid> AppendPlainHandoffAsync()

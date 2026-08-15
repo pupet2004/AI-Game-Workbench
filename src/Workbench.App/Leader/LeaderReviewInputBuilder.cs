@@ -9,6 +9,12 @@ namespace Workbench.App.Leader;
 
 public sealed record LeaderReviewFinalReport(string Body, string? ValidationSummary);
 
+public enum LeaderReviewHandoffBindingKind
+{
+    Canonical,
+    LegacyCompat
+}
+
 public sealed record LeaderReviewInput(
     Guid ProjectId,
     string ProjectName,
@@ -21,7 +27,8 @@ public sealed record LeaderReviewInput(
     Guid WorkerSessionId,
     Guid FinalReportEventId,
     LeaderReviewFinalReport FinalReport,
-    TaskLifecycleStatus AssignmentStatus);
+    TaskLifecycleStatus AssignmentStatus,
+    LeaderReviewHandoffBindingKind HandoffBinding = LeaderReviewHandoffBindingKind.Canonical);
 
 public sealed class LeaderReviewInputBuilder(
     ProjectRepository projects,
@@ -64,7 +71,7 @@ public sealed class LeaderReviewInputBuilder(
             return null;
         }
 
-        var bindings = taskEvents
+        var compatibleHandoffs = taskEvents
             .Where(item => item.Type == "WorkerToLeaderHandoff")
             .Select(item => TryReadHandoff(item.Payload))
             .Where(item => item is not null)
@@ -73,10 +80,27 @@ public sealed class LeaderReviewInputBuilder(
                            item.TaskId == taskId &&
                            item.TaskRevisionId == currentRevision.Id &&
                            item.Kind == WorkerHandoffKind.FinalReport &&
-                           item.SourceEventId == finalReportEventId &&
                            item.WorkerSessionId.Value == finalReport.WorkerSessionId)
             .ToArray();
-        if (bindings.Length != 1)
+
+        if (compatibleHandoffs.Length != 1)
+        {
+            return null;
+        }
+
+        var handoff = compatibleHandoffs[0];
+        LeaderReviewHandoffBindingKind bindingKind;
+        if (handoff.SourceEventId == finalReportEventId)
+        {
+            bindingKind = LeaderReviewHandoffBindingKind.Canonical;
+        }
+        else if (handoff.SourceEventId is null &&
+                 handoff.Message == finalReport.Message &&
+                 handoff.ValidationSummary == finalReport.ValidationSummary)
+        {
+            bindingKind = LeaderReviewHandoffBindingKind.LegacyCompat;
+        }
+        else
         {
             return null;
         }
@@ -93,7 +117,8 @@ public sealed class LeaderReviewInputBuilder(
             finalReport.WorkerSessionId,
             finalReportEvent.EventId,
             new LeaderReviewFinalReport(finalReport.Message, finalReport.ValidationSummary),
-            task.Status);
+            task.Status,
+            bindingKind);
     }
 
     private static bool TryReadFinalReport(string payload, out FinalReportEventPayload value)
@@ -120,7 +145,15 @@ public sealed class LeaderReviewInputBuilder(
     {
         try
         {
-            return JsonSerializer.Deserialize<WorkerHandoff>(payload);
+            var parsed = JsonSerializer.Deserialize<HandoffEventPayload>(payload);
+            if (parsed is null || parsed.ProjectId == Guid.Empty || parsed.TaskId == Guid.Empty || !TryReadGuid(parsed.WorkerSessionId, out var workerSessionId))
+            {
+                return null;
+            }
+
+            return new WorkerHandoff(parsed.ProjectId, parsed.TaskId, new Workbench.Runtime.Agents.AgentSessionId(workerSessionId),
+                parsed.WorkerLabel ?? string.Empty, parsed.Status, parsed.Message ?? string.Empty, parsed.CreatedAt,
+                parsed.Kind, parsed.ValidationSummary, parsed.SourceEventId, parsed.TaskRevisionId);
         }
         catch (JsonException)
         {
@@ -129,4 +162,25 @@ public sealed class LeaderReviewInputBuilder(
     }
 
     private sealed record FinalReportEventPayload(Guid WorkerSessionId, string Message, string? ValidationSummary);
+    private sealed record HandoffEventPayload(
+        Guid ProjectId,
+        Guid TaskId,
+        JsonElement WorkerSessionId,
+        string? WorkerLabel,
+        Workbench.Runtime.Agents.AgentSessionStatus Status,
+        string? Message,
+        DateTimeOffset CreatedAt,
+        WorkerHandoffKind Kind,
+        string? ValidationSummary,
+        Guid? SourceEventId,
+        Guid TaskRevisionId);
+
+    private static bool TryReadGuid(JsonElement value, out Guid result)
+    {
+        if (value.ValueKind == JsonValueKind.String && Guid.TryParse(value.GetString(), out result)) return true;
+        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("Value", out var nested) &&
+            nested.ValueKind == JsonValueKind.String && Guid.TryParse(nested.GetString(), out result)) return true;
+        result = Guid.Empty;
+        return false;
+    }
 }

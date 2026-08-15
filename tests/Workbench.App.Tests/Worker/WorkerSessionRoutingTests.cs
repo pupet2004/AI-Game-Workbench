@@ -98,7 +98,8 @@ public sealed class WorkerSessionRoutingTests
         await using var fixture = await Fixture.CreateAsync();
         Assert.True(await new TaskRepository(fixture.Database).UpdateStatusAsync(fixture.Project.Id, fixture.Task.TaskId,
             TaskLifecycleStatus.Draft, TaskLifecycleStatus.ReadyToStart));
-        var router = new WorkerSessionRouter(fixture.Registry, fixture.Events, TimeProvider.System,
+        var eventRepository = new TaskEventRepository(fixture.Database);
+        var router = new WorkerSessionRouter(fixture.Registry, new TaskEventWorkerRoutingStore(eventRepository), TimeProvider.System,
             new AssignmentReviewStateRepository(fixture.Database));
         fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
             FinalReport("delivered"), null), DateTimeOffset.UtcNow));
@@ -110,6 +111,53 @@ public sealed class WorkerSessionRoutingTests
             .GetRecoveryStateAsync(fixture.Project.Id, fixture.Task.TaskId))!;
         Assert.Equal(TaskLifecycleStatus.Reviewing, state.Task.Status);
         Assert.Single(state.Events, item => item.Type == "WorkerFinalReportReceived");
+        var events = await eventRepository.ListAsync(fixture.Project.Id, fixture.Task.TaskId, 100);
+        var finalReport = Assert.Single(events, item => item.Type == "WorkerFinalReportReceived");
+        var handoff = Assert.Single(events, item => item.Type == "WorkerToLeaderHandoff");
+        Assert.Contains("delivered", finalReport.Payload, StringComparison.Ordinal);
+        Assert.DoesNotContain("delivered", handoff.Payload, StringComparison.Ordinal);
+        using var handoffJson = JsonDocument.Parse(handoff.Payload);
+        Assert.Equal(finalReport.EventId.ToString(), handoffJson.RootElement.GetProperty("SourceEventId").GetString());
+    }
+
+    [Fact]
+    public async Task Replaying_final_report_does_not_create_a_second_canonical_body_or_handoff()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        Assert.True(await new TaskRepository(fixture.Database).UpdateStatusAsync(fixture.Project.Id, fixture.Task.TaskId,
+            TaskLifecycleStatus.Draft, TaskLifecycleStatus.ReadyToStart));
+        var eventRepository = new TaskEventRepository(fixture.Database);
+        var router = new WorkerSessionRouter(fixture.Registry, new TaskEventWorkerRoutingStore(eventRepository), TimeProvider.System,
+            new AssignmentReviewStateRepository(fixture.Database));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+            FinalReport("first"), null), DateTimeOffset.UtcNow));
+        var first = await router.StartAsync(fixture.NewRequest("prompt"));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+            FinalReport("replay"), null), DateTimeOffset.UtcNow));
+
+        var replay = await router.StartAsync(fixture.NewRequest("replay", first.WorkerSession!.Id));
+
+        Assert.True(replay.Succeeded);
+        var events = await eventRepository.ListAsync(fixture.Project.Id, fixture.Task.TaskId, 100);
+        Assert.Single(events, item => item.Type == "WorkerFinalReportReceived");
+        Assert.Single(events, item => item.Type == "WorkerToLeaderHandoff");
+    }
+
+    [Fact]
+    public async Task Non_final_report_handoff_keeps_its_only_persisted_message()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var eventRepository = new TaskEventRepository(fixture.Database);
+        var router = new WorkerSessionRouter(fixture.Registry, new TaskEventWorkerRoutingStore(eventRepository), TimeProvider.System);
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+            "unstructured worker result", null), DateTimeOffset.UtcNow));
+
+        Assert.True((await router.StartAsync(fixture.NewRequest("prompt"))).Succeeded);
+
+        var events = await eventRepository.ListAsync(fixture.Project.Id, fixture.Task.TaskId, 100);
+        var handoff = Assert.Single(events, item => item.Type == "WorkerToLeaderHandoff");
+        Assert.Contains("unstructured worker result", handoff.Payload, StringComparison.Ordinal);
+        Assert.DoesNotContain(events, item => item.Type == "WorkerFinalReportReceived");
     }
 
     private sealed class Fixture : IAsyncDisposable

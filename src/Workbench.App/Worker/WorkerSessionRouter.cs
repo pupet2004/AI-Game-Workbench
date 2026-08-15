@@ -98,9 +98,20 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
         return typedSessions.Concat(legacy.Where(item => !typedIds.Contains(item.Session.Id))).ToArray();
     }
 
-    public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) =>
-        _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), handoff.ProjectId, handoff.TaskId, null,
-            "WorkerToLeaderHandoff", JsonSerializer.Serialize(handoff), handoff.CreatedAt), cancellationToken);
+    public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default)
+    {
+        if (handoff.Kind == WorkerHandoffKind.FinalReport &&
+            (handoff.SourceEventId is null || handoff.SourceEventId == Guid.Empty))
+        {
+            throw new ArgumentException("A FinalReport handoff requires a canonical source event.", nameof(handoff));
+        }
+
+        var payload = handoff.Kind == WorkerHandoffKind.FinalReport
+            ? JsonSerializer.Serialize(StoredHandoff.From(handoff))
+            : JsonSerializer.Serialize(handoff);
+        return _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), handoff.ProjectId, handoff.TaskId, null,
+            "WorkerToLeaderHandoff", payload, handoff.CreatedAt), cancellationToken);
+    }
 
     public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) =>
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), removal.ProjectId, removal.TaskId, null,
@@ -162,7 +173,25 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
     }
     private static WorkerHandoff? TryDeserializeHandoff(StoredTaskEvent item)
     {
-        try { return JsonSerializer.Deserialize<WorkerHandoff>(item.Payload); } catch (JsonException) { return null; }
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<HandoffEventPayload>(item.Payload);
+            if (parsed is null || parsed.ProjectId == Guid.Empty || parsed.TaskId == Guid.Empty ||
+                !TryReadGuid(parsed.WorkerSessionId, out var workerSessionId)) return null;
+            return new WorkerHandoff(parsed.ProjectId, parsed.TaskId, new AgentSessionId(workerSessionId),
+                parsed.WorkerLabel ?? string.Empty, parsed.Status, parsed.Message ?? string.Empty, parsed.CreatedAt,
+                parsed.Kind, parsed.ValidationSummary, parsed.SourceEventId, parsed.TaskRevisionId);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static bool TryReadGuid(JsonElement value, out Guid result)
+    {
+        if (value.ValueKind == JsonValueKind.String && Guid.TryParse(value.GetString(), out result)) return true;
+        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("Value", out var nested) &&
+            nested.ValueKind == JsonValueKind.String && Guid.TryParse(nested.GetString(), out result)) return true;
+        result = Guid.Empty;
+        return false;
     }
 
     private static AgentSessionStatus StatusFor(WorkerExecutionState state) => state switch
@@ -173,6 +202,19 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
         WorkerExecutionState.Interrupted => AgentSessionStatus.Interrupted,
         _ => AgentSessionStatus.Ready
     };
+
+    private sealed record HandoffEventPayload(
+        Guid ProjectId,
+        Guid TaskId,
+        JsonElement WorkerSessionId,
+        string? WorkerLabel,
+        AgentSessionStatus Status,
+        string? Message,
+        DateTimeOffset CreatedAt,
+        WorkerHandoffKind Kind,
+        string? ValidationSummary,
+        Guid? SourceEventId,
+        Guid TaskRevisionId);
 }
 
 internal sealed record StoredSession(Guid ProjectId, Guid TaskId, string TaskTitle, Guid SessionId, Guid AccountId, string ProviderId,
@@ -189,6 +231,21 @@ internal sealed record StoredSession(Guid ProjectId, Guid TaskId, string TaskTit
         new AgentSession(new AgentSessionId(SessionId), new Workbench.Runtime.Providers.ProviderAccountId(AccountId),
             new Workbench.Runtime.Providers.ProviderId(ProviderId), ModelId, WorkingDirectory, ExternalSessionId, Status, CreatedAt, UpdatedAt),
         ExecutionProfile.Create(RecommendedProviderId, RecommendedAccountId, RecommendedModelId, RecommendedRuntimeId), Label, LastActiveAt);
+}
+
+internal sealed record StoredHandoff(
+    Guid ProjectId,
+    Guid TaskId,
+    Guid WorkerSessionId,
+    string WorkerLabel,
+    AgentSessionStatus Status,
+    DateTimeOffset CreatedAt,
+    WorkerHandoffKind Kind,
+    Guid? SourceEventId,
+    Guid TaskRevisionId)
+{
+    public static StoredHandoff From(WorkerHandoff value) => new(value.ProjectId, value.TaskId, value.WorkerSessionId.Value,
+        value.WorkerLabel, value.Status, value.CreatedAt, value.Kind, value.SourceEventId, value.TaskRevisionId);
 }
 
 public sealed class WorkerSessionRouter(

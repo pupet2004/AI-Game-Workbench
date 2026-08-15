@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Workbench.App.Leader;
 using Workbench.App.Services;
+using Workbench.App.Worker;
 using Workbench.App.Tests.Support;
 using Workbench.Core.Leaders;
 using Workbench.Core.Projects;
 using Workbench.Core.Tasks;
+using Workbench.Runtime.Agents;
 using Workbench.Runtime.Providers;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Reviews;
@@ -102,6 +104,23 @@ public sealed class LeaderReviewAuthorityRestartCertificationTests
         Assert.Equal(LeaderAuthorityMode.Balanced, decision.AuthorityMode);
         Assert.Equal("Open", (await fixture.TypedState.GetGateAsync(fixture.Project.Id, fixture.TaskId, fixture.ReviewDecisionId))!.State);
         Assert.Equal(beforeMessages, await fixture.CountMessagesAsync());
+    }
+
+    [Fact]
+    public async Task Missing_final_report_source_does_not_remove_typed_review_authority()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.DeleteFinalReportSourceAsync();
+        await fixture.RestartAsync();
+
+        await fixture.RecoverReviewOwnersAsync();
+
+        var decision = await fixture.TypedState.GetDecisionByFinalReportAsync(fixture.Project.Id, fixture.TaskId, fixture.FinalReportEventId);
+        Assert.NotNull(decision);
+        Assert.Equal(fixture.ReviewDecisionId, decision.ReviewDecisionId);
+        var gate = await fixture.TypedState.GetGateAsync(fixture.Project.Id, fixture.TaskId, fixture.ReviewDecisionId);
+        Assert.NotNull(gate);
+        Assert.Equal("Open", gate.State);
     }
 
     [Fact]
@@ -285,14 +304,18 @@ public sealed class LeaderReviewAuthorityRestartCertificationTests
                 new StoredLeaderSessionEpoch(epochId, project.Id, "provider", Guid.NewGuid(), "model", Guid.NewGuid(), "leader", project.RootPath, now, now, null, null, null));
 
             var finalReportEventId = Guid.NewGuid();
+            var workerSessionId = Guid.NewGuid();
             await new TaskEventRepository(services.Database).AppendAsync(new StoredTaskEvent(
                 finalReportEventId,
                 project.Id,
                 taskId,
                 null,
                 "WorkerFinalReportReceived",
-                JsonSerializer.Serialize(new { WorkerSessionId = Guid.NewGuid(), Message = "final report" }),
-                now));
+                 JsonSerializer.Serialize(new { WorkerSessionId = workerSessionId, Message = "final report" }),
+                 now));
+            await new TaskEventWorkerRoutingStore(new TaskEventRepository(services.Database)).AppendHandoffAsync(
+                new WorkerHandoff(project.Id, taskId, new AgentSessionId(workerSessionId), "Worker", AgentSessionStatus.Completed,
+                    "final report", now, WorkerHandoffKind.FinalReport, null, finalReportEventId, revision.Id));
 
             var reviewDecisionId = Guid.NewGuid();
             var legacy = new AssignmentReviewStateRepository(services.Database);
@@ -349,6 +372,17 @@ public sealed class LeaderReviewAuthorityRestartCertificationTests
             command.CommandText = "DELETE FROM task_review_user_gates WHERE project_id=$p AND review_decision_id=$d;";
             command.Parameters.AddWithValue("$p", Project.Id.ToString());
             command.Parameters.AddWithValue("$d", ReviewDecisionId.ToString());
+            Assert.Equal(1, await command.ExecuteNonQueryAsync());
+        }
+
+        public async Task DeleteFinalReportSourceAsync()
+        {
+            await using var connection = Services.Database.CreateConnection();
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM task_events WHERE project_id=$p AND id=$id;";
+            command.Parameters.AddWithValue("$p", Project.Id.ToString());
+            command.Parameters.AddWithValue("$id", FinalReportEventId.ToString());
             Assert.Equal(1, await command.ExecuteNonQueryAsync());
         }
 
