@@ -45,24 +45,7 @@ public sealed class LeaderReviewAskUserGate(
 
         var leader = await leaders.GetAsync(projectId, cancellationToken);
         if (leader?.CurrentEpochId is not Guid epochId) return new(LeaderReviewAskUserGateResultKind.RetryableFailure, "The current Leader conversation is unavailable.");
-        StoredLeaderReviewDecision? legacyDetail = null;
-        try
-        {
-            legacyDetail = await reviewState.GetLeaderReviewDecisionAsync(projectId, taskId, decision.RevisionId, finalReportEventId, cancellationToken);
-        }
-        catch (JsonException)
-        {
-            // Typed review state remains authoritative when the legacy explanation payload is corrupt.
-        }
-        catch (FormatException)
-        {
-            // Preserve recovery from typed state when a legacy timestamp or identifier is malformed.
-        }
-        catch (InvalidOperationException)
-        {
-            // A malformed legacy payload must not block the typed AskUser gate.
-        }
-        var question = BuildQuestion(projectId, taskId, decision, legacyDetail);
+        var question = BuildQuestion(projectId, taskId, decision);
         var eventId = GateEventId(decision.ReviewDecisionId);
         var payload = JsonSerializer.Serialize(new { ReviewDecisionEventId = decision.ReviewDecisionId, TaskRevisionId = decision.RevisionId, decision.FinalReportEventId, Resolution = resolution.ToString() });
         try
@@ -99,17 +82,8 @@ public sealed class LeaderReviewAskUserGate(
         return results;
     }
 
-    private static string BuildQuestion(Guid projectId, Guid taskId, LeaderReviewDecisionRecord decision, StoredLeaderReviewDecision? legacyDetail)
+    private static string BuildQuestion(Guid projectId, Guid taskId, LeaderReviewDecisionRecord decision)
     {
-        if (legacyDetail is not null)
-        {
-            var detailed = new List<string> { legacyDetail.Summary };
-            if (!string.IsNullOrWhiteSpace(legacyDetail.Issue)) detailed.Add($"核心问题：{legacyDetail.Issue}");
-            detailed.Add($"需要你决定：{legacyDetail.NextAction}");
-            if (!string.IsNullOrWhiteSpace(legacyDetail.ImportantNote)) detailed.Add($"说明：{legacyDetail.ImportantNote}");
-            detailed.Add($"[{AssignmentReviewStateRepository.UserDecisionQuestionMarker(projectId, taskId, decision.ReviewDecisionId)}]");
-            return string.Join("\n\n", detailed);
-        }
         var parts = new List<string> { $"Review outcome: {decision.Outcome}." };
         parts.Add($"需要你决定：{decision.ActionLevel}");
         parts.Add($"[{AssignmentReviewStateRepository.UserDecisionQuestionMarker(projectId, taskId, decision.ReviewDecisionId)}]");

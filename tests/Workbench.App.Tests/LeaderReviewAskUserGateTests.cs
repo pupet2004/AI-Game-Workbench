@@ -20,7 +20,7 @@ public sealed class LeaderReviewAskUserGateTests
     [InlineData(LeaderReviewOutcome.Pass, LeaderReviewActionLevel.L2TaskRework)]
     [InlineData(LeaderReviewOutcome.Fix, LeaderReviewActionLevel.L2TaskRework)]
     [InlineData(LeaderReviewOutcome.Continue, LeaderReviewActionLevel.L2TaskRework)]
-    public async Task Ask_user_resolution_opens_one_gate_and_uses_persisted_question_content(LeaderReviewOutcome outcome, LeaderReviewActionLevel action)
+    public async Task Ask_user_resolution_opens_one_gate_from_typed_review_state(LeaderReviewOutcome outcome, LeaderReviewActionLevel action)
     {
         await using var fixture = await Fixture.CreateAsync();
         await fixture.Context.Services.WorkbenchSettingsRepository.SaveLeaderAuthorityModeAsync(LeaderAuthorityMode.Cautious);
@@ -29,10 +29,12 @@ public sealed class LeaderReviewAskUserGateTests
         Assert.Equal(LeaderReviewAskUserGateResultKind.Opened, (await fixture.Gate.TryOpenAsync(fixture.Project.Id, fixture.TaskId, fixture.Revision.Id, decision.FinalReportEventId)).Kind);
         Assert.Equal(TaskLifecycleStatus.NeedsUserDecision, (await fixture.Context.Services.TaskRepository.GetAsync(fixture.Project.Id, fixture.TaskId))!.Status);
         var message = Assert.Single(await fixture.MessagesAsync());
-        Assert.Contains("summary", message.Text, StringComparison.Ordinal);
-        Assert.Contains("scope conflict", message.Text, StringComparison.Ordinal);
-        Assert.Contains("decide next", message.Text, StringComparison.Ordinal);
-        Assert.Contains("choose deliberately", message.Text, StringComparison.Ordinal);
+        Assert.Contains($"Review outcome: {outcome}.", message.Text, StringComparison.Ordinal);
+        Assert.Contains($"需要你决定：{action}", message.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("summary", message.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("scope conflict", message.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("decide next", message.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("choose deliberately", message.Text, StringComparison.Ordinal);
         Assert.Contains(AssignmentReviewStateRepository.UserDecisionQuestionMarker(fixture.Project.Id, fixture.TaskId, decision.EventId), message.Text, StringComparison.Ordinal);
     }
 
