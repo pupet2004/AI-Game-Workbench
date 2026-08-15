@@ -304,6 +304,98 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         return references;
     }
 
+    public async Task<ProjectLibraryLegacyCoverage?> GetLegacyEntryCoverageAsync(
+        Guid projectId,
+        Guid legacyEntryId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateGuid(projectId, nameof(projectId));
+        ValidateGuid(legacyEntryId, nameof(legacyEntryId));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var entry = await ReadLegacyEntryAsync(connection, projectId, legacyEntryId, cancellationToken);
+        if (entry is null) return null;
+        if (entry.Value.ParseError is not null)
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Indeterminate, null, null, entry.Value.ParseError);
+        }
+
+        var group = await ReadLegacyGroupAsync(connection, entry.Value.Category, entry.Value.Topic, projectId, cancellationToken);
+        if (group.Any(item => item.ParseError is not null))
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Indeterminate, null, null, "A legacy entry in the identity group has unreadable fields.");
+        }
+        var objects = await ReadObjectsByKeyAsync(connection, projectId,
+            ProjectLibraryIdentity.NormalizeKey(entry.Value.Category),
+            ProjectLibraryIdentity.NormalizeKey(entry.Value.Topic), cancellationToken);
+        if (objects.Count == 0)
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Uncovered, null, null, "Library Object is missing.");
+        }
+        if (objects.Count != 1)
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Indeterminate, null, null, "Library Object identity is ambiguous.");
+        }
+
+        var libraryObject = objects[0];
+        var orderedGroup = group.OrderBy(item => item.CreatedAt).ThenBy(item => item.Id).ToArray();
+        var earliest = orderedGroup[0];
+        var latest = orderedGroup[^1];
+        var expectedObjectId = earliest.Id;
+        var expectedCreatedAt = earliest.CreatedAt;
+        var expectedUpdatedAt = latest.CreatedAt;
+        if (libraryObject.Id != expectedObjectId ||
+            libraryObject.Category != ProjectLibraryIdentity.NormalizeDisplay(earliest.Category) ||
+            libraryObject.Topic != ProjectLibraryIdentity.NormalizeDisplay(earliest.Topic) ||
+            libraryObject.CreatedAt != expectedCreatedAt ||
+            libraryObject.UpdatedAt != expectedUpdatedAt)
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Indeterminate, libraryObject.Id, null, "Library Object identity or time conflicts with legacy entries.");
+        }
+
+        var nodes = await ReadNodesForObjectAsync(connection, projectId, libraryObject.Id, cancellationToken);
+        var node = nodes.SingleOrDefault(item => item.Id == legacyEntryId);
+        if (node is null)
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Uncovered, libraryObject.Id, null, "Timeline Node is missing.");
+        }
+        if (nodes.Count != group.Count || nodes.Select(item => item.Id).ToHashSet().SetEquals(group.Select(item => item.Id)) is false)
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Indeterminate, libraryObject.Id, null, "Timeline coverage does not match the legacy entry group.");
+        }
+        if (node.Content != entry.Value.Summary ||
+            node.LocalDate != DateOnly.FromDateTime(entry.Value.CreatedAt.UtcDateTime) ||
+            node.CreatedAt != entry.Value.CreatedAt ||
+            node.UpdatedAt != entry.Value.CreatedAt)
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Indeterminate, libraryObject.Id, node.Id, "Timeline content or time conflicts with the legacy entry.");
+        }
+
+        var references = await ReadMaterialReferencesAsync(connection, projectId, node.Id, cancellationToken);
+        var expectedReferences = new List<ExpectedLegacyReference>
+        {
+            new("AgentSession", entry.Value.SourceSessionId.ToString(), "Legacy source session", entry.Value.CreatedAt)
+        };
+        if (entry.Value.TaskId is not null)
+            expectedReferences.Add(new("Task", entry.Value.TaskId.Value.ToString(), "Legacy task", entry.Value.CreatedAt));
+        if (entry.Value.SourceReference is not null)
+            expectedReferences.Add(new("Reference", entry.Value.SourceReference, "Legacy source reference", entry.Value.CreatedAt));
+
+        var actual = references.Select(item => new ExpectedLegacyReference(item.MaterialKind, item.Reference, item.Label, item.CreatedAt)).ToHashSet();
+        var expected = expectedReferences.ToHashSet();
+        if (actual.Count > expected.Count || actual.Except(expected).Any())
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.Indeterminate, libraryObject.Id, node.Id, "Material references contain an unexpected mapping.");
+        }
+        if (!expected.IsSubsetOf(actual))
+        {
+            return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.PartiallyCovered, libraryObject.Id, node.Id, "Material references are incomplete.");
+        }
+
+        return new(projectId, legacyEntryId, ProjectLibraryCoverageCategory.FullyCovered, libraryObject.Id, node.Id, null);
+    }
+
     public async Task<IReadOnlyList<ProjectLibraryObject>> ListObjectsByCategoryAsync(
         Guid projectId,
         string category,
@@ -617,6 +709,159 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
 
     private const string ObjectSelect = "SELECT id,project_id,category,topic,category_key,topic_key,current_overview,overview_revision,created_at,updated_at FROM project_library_objects";
     private const string NodeSelect = "SELECT node.id,node.object_id,node.local_date,node.content,node.revision,node.created_at,node.updated_at FROM project_library_timeline_nodes node";
+
+    private static async Task<LegacyCoverageEntry?> ReadLegacyEntryAsync(
+        SqliteConnection connection,
+        Guid projectId,
+        Guid entryId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT id,project_id,source_session_id,task_id,category,topic,summary,source_reference,created_at FROM project_library_entries WHERE project_id=$projectId AND id=$entryId;";
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        command.Parameters.AddWithValue("$entryId", entryId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadLegacyCoverageEntry(reader) : null;
+    }
+
+    private static async Task<IReadOnlyList<LegacyCoverageEntry>> ReadLegacyGroupAsync(
+        SqliteConnection connection,
+        string category,
+        string topic,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT id,project_id,source_session_id,task_id,category,topic,summary,source_reference,created_at FROM project_library_entries WHERE project_id=$projectId;";
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var entries = new List<LegacyCoverageEntry>();
+        var categoryKey = ProjectLibraryIdentity.NormalizeKey(category);
+        var topicKey = ProjectLibraryIdentity.NormalizeKey(topic);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var entry = ReadLegacyCoverageEntry(reader);
+            if (ProjectLibraryIdentity.NormalizeKey(entry.Category) == categoryKey &&
+                ProjectLibraryIdentity.NormalizeKey(entry.Topic) == topicKey)
+            {
+                entries.Add(entry);
+            }
+        }
+        return entries;
+    }
+
+    private static async Task<IReadOnlyList<ProjectLibraryObject>> ReadObjectsByKeyAsync(
+        SqliteConnection connection,
+        Guid projectId,
+        string categoryKey,
+        string topicKey,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = $"{ObjectSelect} WHERE project_id=$projectId AND category_key=$categoryKey AND topic_key=$topicKey;";
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        command.Parameters.AddWithValue("$categoryKey", categoryKey);
+        command.Parameters.AddWithValue("$topicKey", topicKey);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var objects = new List<ProjectLibraryObject>();
+        while (await reader.ReadAsync(cancellationToken)) objects.Add(ReadObject(reader));
+        return objects;
+    }
+
+    private static async Task<IReadOnlyList<ProjectLibraryTimelineNode>> ReadNodesForObjectAsync(
+        SqliteConnection connection,
+        Guid projectId,
+        Guid objectId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = $"{NodeSelect} JOIN project_library_objects object ON object.id=node.object_id WHERE object.project_id=$projectId AND node.object_id=$objectId ORDER BY node.local_date,node.created_at,node.id;";
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        command.Parameters.AddWithValue("$objectId", objectId.ToString());
+        return await ReadNodesAsync(command, cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<LibraryMaterialReference>> ReadMaterialReferencesAsync(
+        SqliteConnection connection,
+        Guid projectId,
+        Guid nodeId,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT reference.node_id,reference.material_kind,reference.reference,reference.label,reference.created_at
+            FROM project_library_material_refs reference
+            JOIN project_library_timeline_nodes node ON node.id=reference.node_id
+            JOIN project_library_objects object ON object.id=node.object_id
+            WHERE object.project_id=$projectId AND node.id=$nodeId
+            ORDER BY reference.material_kind,reference.reference;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId.ToString());
+        command.Parameters.AddWithValue("$nodeId", nodeId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var references = new List<LibraryMaterialReference>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            references.Add(new(
+                Guid.Parse(reader.GetString(0)),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                ParseTimestamp(reader.GetString(4))));
+        }
+        return references;
+    }
+
+    private static LegacyCoverageEntry ReadLegacyCoverageEntry(SqliteDataReader reader)
+    {
+        var createdText = reader.GetString(8);
+        try
+        {
+            return new(
+                Guid.Parse(reader.GetString(0)),
+                Guid.Parse(reader.GetString(1)),
+                Guid.Parse(reader.GetString(2)),
+                reader.IsDBNull(3) ? null : Guid.Parse(reader.GetString(3)),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                DateTimeOffset.Parse(createdText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                null);
+        }
+        catch (Exception exception) when (exception is FormatException or OverflowException)
+        {
+            return new(
+                Guid.TryParse(reader.GetString(0), out var id) ? id : Guid.Empty,
+                Guid.TryParse(reader.GetString(1), out var project) ? project : Guid.Empty,
+                Guid.Empty,
+                null,
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                default,
+                $"Legacy entry fields are invalid: {exception.Message}");
+        }
+    }
+
+    private readonly record struct LegacyCoverageEntry(
+        Guid Id,
+        Guid ProjectId,
+        Guid SourceSessionId,
+        Guid? TaskId,
+        string Category,
+        string Topic,
+        string Summary,
+        string? SourceReference,
+        DateTimeOffset CreatedAt,
+        string? ParseError);
+
+    private readonly record struct ExpectedLegacyReference(
+        string MaterialKind,
+        string Reference,
+        string? Label,
+        DateTimeOffset CreatedAt);
 
     private static async Task<ProjectLibraryObject?> ReadObjectByKeyAsync(
         SqliteConnection connection,

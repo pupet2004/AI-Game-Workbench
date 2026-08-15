@@ -54,6 +54,84 @@ public sealed class ProjectLibraryLegacyImportTests
         Assert.Null(await library.GetObjectAsync(ProjectAId, OtherProjectEntryId));
         Assert.Equal(3L, await ScalarAsync(database, "SELECT COUNT(*) FROM project_library_entries;"));
         Assert.Equal(3L, await ScalarAsync(database, "SELECT COUNT(*) FROM project_library_timeline_nodes;"));
+
+        var firstCoverage = await library.GetLegacyEntryCoverageAsync(ProjectAId, FirstEntryId);
+        Assert.Equal(ProjectLibraryCoverageCategory.FullyCovered, firstCoverage!.Category);
+        Assert.Equal(FirstEntryId, firstCoverage.NodeId);
+        Assert.Equal(FirstEntryId, firstCoverage.ObjectId);
+        Assert.Equal(ProjectLibraryCoverageCategory.FullyCovered,
+            (await library.GetLegacyEntryCoverageAsync(ProjectAId, SecondEntryId))!.Category);
+        Assert.Equal(ProjectLibraryCoverageCategory.FullyCovered,
+            (await library.GetLegacyEntryCoverageAsync(ProjectBId, OtherProjectEntryId))!.Category);
+    }
+
+    [Fact]
+    public async Task Coverage_distinguishes_partial_uncovered_and_indeterminate_rows()
+    {
+        await using var partial = new TemporaryDatabase();
+        await CreateVersion8DatabaseAsync(partial.DatabasePath);
+        var partialDatabase = new WorkbenchDatabase(partial.DatabasePath);
+        await partialDatabase.InitializeAsync();
+        await ExecuteAsync(partialDatabase, $"DELETE FROM project_library_material_refs WHERE node_id='{FirstEntryId}' AND material_kind='Reference';");
+        var partialCoverage = await new ProjectLibraryEvolutionRepository(partialDatabase).GetLegacyEntryCoverageAsync(ProjectAId, FirstEntryId);
+        Assert.Equal(ProjectLibraryCoverageCategory.PartiallyCovered, partialCoverage!.Category);
+
+        await using var uncovered = new TemporaryDatabase();
+        await CreateVersion8DatabaseAsync(uncovered.DatabasePath);
+        var uncoveredDatabase = new WorkbenchDatabase(uncovered.DatabasePath);
+        await uncoveredDatabase.InitializeAsync();
+        await ExecuteAsync(uncoveredDatabase, $"DELETE FROM project_library_timeline_nodes WHERE id='{SecondEntryId}';");
+        var uncoveredCoverage = await new ProjectLibraryEvolutionRepository(uncoveredDatabase).GetLegacyEntryCoverageAsync(ProjectAId, SecondEntryId);
+        Assert.Equal(ProjectLibraryCoverageCategory.Uncovered, uncoveredCoverage!.Category);
+
+        await using var indeterminate = new TemporaryDatabase();
+        await CreateVersion8DatabaseAsync(indeterminate.DatabasePath);
+        var indeterminateDatabase = new WorkbenchDatabase(indeterminate.DatabasePath);
+        await indeterminateDatabase.InitializeAsync();
+        await ExecuteAsync(indeterminateDatabase, $"UPDATE project_library_timeline_nodes SET content='conflicting content' WHERE id='{FirstEntryId}';");
+        var indeterminateCoverage = await new ProjectLibraryEvolutionRepository(indeterminateDatabase).GetLegacyEntryCoverageAsync(ProjectAId, FirstEntryId);
+        Assert.Equal(ProjectLibraryCoverageCategory.Indeterminate, indeterminateCoverage!.Category);
+
+        await using var malformed = new TemporaryDatabase();
+        await CreateVersion8DatabaseAsync(malformed.DatabasePath);
+        var malformedDatabase = new WorkbenchDatabase(malformed.DatabasePath);
+        await malformedDatabase.InitializeAsync();
+        await ExecuteAsync(malformedDatabase, $"UPDATE project_library_entries SET created_at='not-a-timestamp' WHERE id='{FirstEntryId}';");
+        var malformedCoverage = await new ProjectLibraryEvolutionRepository(malformedDatabase).GetLegacyEntryCoverageAsync(ProjectAId, FirstEntryId);
+        Assert.Equal(ProjectLibraryCoverageCategory.Indeterminate, malformedCoverage!.Category);
+    }
+
+    [Fact]
+    public async Task Current_library_writes_do_not_create_legacy_entries()
+    {
+        await using var temporary = new TemporaryDatabase();
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+        await database.InitializeAsync();
+        var project = new Project(Guid.NewGuid(), "Current", "C:/Current", ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        await new ProjectRepository(database).UpsertAsync(project);
+        var library = new ProjectLibraryEvolutionRepository(database);
+        var libraryObject = await library.CreateObjectAsync(project.Id, "Design", "Current", DateTimeOffset.UtcNow);
+        await library.AddNodeAsync(project.Id, libraryObject.Id, new DateOnly(2026, 8, 15), "Current node", [new("Document", "docs/current.md", "Current")], DateTimeOffset.UtcNow);
+
+        Assert.Equal(0L, await ScalarAsync(database, "SELECT COUNT(*) FROM project_library_entries WHERE project_id='" + project.Id + "';"));
+        Assert.Single(await library.ListObjectsAsync(project.Id));
+    }
+
+    [Fact]
+    public async Task Legacy_reader_remains_available_for_an_unmigrated_entry()
+    {
+        await using var temporary = new TemporaryDatabase();
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+        await database.InitializeAsync();
+        var project = new Project(Guid.NewGuid(), "Legacy", "C:/Legacy", ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        await new ProjectRepository(database).UpsertAsync(project);
+        var entryId = Guid.NewGuid();
+        await ExecuteAsync(database, $"INSERT INTO project_library_entries (id,project_id,source_session_id,task_id,category,topic,summary,source_reference,created_at) VALUES ('{entryId}','{project.Id}','{Guid.NewGuid()}',NULL,'Design','Legacy','Legacy only','docs/legacy.md','2026-08-15T00:00:00+00:00');");
+
+        var legacy = Assert.Single(await new ProjectLibraryRepository(database).BrowseAsync(project.Id));
+        Assert.Equal(entryId, legacy.Id);
+        Assert.Equal(ProjectLibraryCoverageCategory.Uncovered,
+            (await new ProjectLibraryEvolutionRepository(database).GetLegacyEntryCoverageAsync(project.Id, entryId))!.Category);
     }
 
     [Fact]
@@ -78,6 +156,26 @@ public sealed class ProjectLibraryLegacyImportTests
         Assert.Equal(3L, await ScalarAsync(database, "SELECT COUNT(*) FROM project_library_timeline_nodes;"));
         Assert.Equal(6L, await ScalarAsync(database, "SELECT COUNT(*) FROM project_library_material_refs;"));
         Assert.Equal(3L, await ScalarAsync(database, "SELECT COUNT(*) FROM project_library_entries;"));
+    }
+
+    [Fact]
+    public async Task Imported_library_reads_survive_database_reopen()
+    {
+        await using var temporary = new TemporaryDatabase();
+        await CreateVersion8DatabaseAsync(temporary.DatabasePath);
+        var database = new WorkbenchDatabase(temporary.DatabasePath);
+        await database.InitializeAsync();
+
+        var reopened = new WorkbenchDatabase(temporary.DatabasePath);
+        await reopened.InitializeAsync();
+        var library = new ProjectLibraryEvolutionRepository(reopened);
+        var importedObject = Assert.Single(await library.ListObjectsByCategoryAsync(ProjectAId, "Design / Relics"));
+        var node = Assert.Single(await library.GetTimelineAsync(ProjectAId, importedObject.Id), item => item.Id == FirstEntryId);
+
+        Assert.Equal("First actual state", node.Content);
+        Assert.Contains(await library.GetMaterialReferencesAsync(ProjectAId, node.Id), reference => reference.Reference == "docs/relic-v2.md");
+        Assert.Equal(ProjectLibraryCoverageCategory.FullyCovered,
+            (await library.GetLegacyEntryCoverageAsync(ProjectAId, FirstEntryId))!.Category);
     }
 
     private static async Task CreateVersion8DatabaseAsync(string path)
@@ -123,5 +221,14 @@ public sealed class ProjectLibraryLegacyImportTests
         var command = connection.CreateCommand();
         command.CommandText = sql;
         return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task ExecuteAsync(WorkbenchDatabase database, string sql)
+    {
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
     }
 }
