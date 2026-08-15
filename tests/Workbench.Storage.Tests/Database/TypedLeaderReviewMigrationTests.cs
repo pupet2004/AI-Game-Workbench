@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class TypedLeaderReviewMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_creates_only_the_two_typed_review_tables_at_v14()
+    public async Task Fresh_database_creates_only_the_two_typed_review_tables_at_v15()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -16,7 +16,7 @@ public sealed class TypedLeaderReviewMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(14L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(15L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(2L, await ScalarAsync<long>(connection, """
             SELECT COUNT(*)
             FROM sqlite_master
@@ -43,13 +43,14 @@ public sealed class TypedLeaderReviewMigrationTests
             ["review_decision_id", "project_id", "task_id", "revision_id", "question_message_id", "user_message_id", "opened_at", "responded_at", "state"],
             gateColumns.Select(column => column.Name));
         Assert.Equal("review_decision_id", gateColumns.Single(column => column.PrimaryKeyPosition == 1).Name);
+        Assert.Contains(gateColumns, column => column.Name == "question_message_id" && !column.NotNull);
         Assert.Contains(gateColumns, column => column.Name == "user_message_id" && !column.NotNull);
         Assert.Contains(gateColumns, column => column.Name == "responded_at" && !column.NotNull);
         Assert.DoesNotContain(gateColumns, column => ContainsBodyName(column.Name));
     }
 
     [Fact]
-    public async Task V13_to_v14_adds_typed_review_schema_idempotently_and_preserves_foreign_key_integrity()
+    public async Task V13_to_v15_adds_typed_review_schema_idempotently_and_preserves_foreign_key_integrity()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -61,7 +62,7 @@ public sealed class TypedLeaderReviewMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(14L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(15L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }
 

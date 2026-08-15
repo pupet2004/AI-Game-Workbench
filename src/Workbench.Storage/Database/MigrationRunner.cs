@@ -81,6 +81,13 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration014TypedLeaderReviewState.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration015ReviewGateReferenceDecoupling.Version)
+        {
+            await ApplyWithForeignKeysTemporarilyDisabledAsync(
+                connection,
+                Migration015ReviewGateReferenceDecoupling.ApplyAsync,
+                cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(
