@@ -77,6 +77,10 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration013LeaderAuthoritySettings.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration014TypedLeaderReviewState.Version)
+        {
+            await ApplyAsync(connection, Migration014TypedLeaderReviewState.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(
