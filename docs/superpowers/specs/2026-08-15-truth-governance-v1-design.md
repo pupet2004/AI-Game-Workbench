@@ -5,6 +5,20 @@ Date: 2026-08-15
 Product: AI Game Workbench
 Intended repository path: `docs/superpowers/specs/2026-08-15-truth-governance-v1-design.md`
 
+### R5-A Amendment — Summary Delta Minimal Slice
+
+R5-A is the first implementation slice of this approved Truth Governance design. It is deliberately smaller than the complete V1 model described below. R5-A adds only optional Summary Delta emission from normal Leader cognition, mechanical append-only persistence, and a deterministic bounded Summary query.
+
+The governing rule is:
+
+> **Summary is not a Job. Summary is a by-product of normal Leader cognition.**
+>
+> **Never summarize what the Agent already knows. Persist only what the Project must remember after the Agent forgets.**
+>
+> **Understand once. Store only the delta.**
+
+R5-A does not implement Truth Heads, Intent/Implemented Heads, Alignment, DRIFT, Truth Proposal, Evolution, Recall, keyword/BM25/semantic retrieval, automatic boot injection, Session Summary, Daily Summary generation, synthesis jobs, a second model pass, legacy-memory migration, a global Source Platform, plugins, or a pagination framework. Those remain future slices of the complete design and must not become R5-A dependencies.
+
 ## 1. Scope
 
 Truth Governance V1 defines how AI Game Workbench preserves the minimum durable project continuity needed for a future Logical Leader to correctly understand the current project without rereading raw Agent history.
@@ -102,19 +116,21 @@ Only meaningful boundary events are eligible for Leader governance, such as:
 - a NeedsLeaderDecision / AskUser resolution;
 - a project-design discussion that reaches a real decision;
 - a failure or discovery that materially changes future decisions;
-- a stage boundary or Leader rollover requiring consolidation.
+- a stage boundary or Leader rollover requiring future Truth/Evolution consolidation, not automatic R5-A Summary.
 
-For an important boundary that the Leader is already required to understand, the same Leader cognition may derive:
+For an important boundary that the Leader is already required to understand, the same Leader cognition produces one `LeaderResult` that may contain:
 
 ```text
-Leader Decision
-├─ Review Decision       (when applicable)
-├─ Summary Delta
-├─ Truth Delta
-└─ Evolution Delta / Candidate
+LeaderResult
+├─ normal reply / review / decision
+└─ optional SummaryDelta[0..N]
+                 ↓ mechanical persistence
+         Summary entries
 ```
 
-These are products of one understanding pass, not separate LLM calls.
+Truth Delta, Review, and future Evolution remain separate governance products when applicable. Summary admission is the Leader's semantic responsibility; Summary persistence is Workbench's mechanical responsibility. These are products of one understanding pass, not separate LLM calls.
+
+R5-A does not add a session-end consolidation step. A normal Leader operation either returns no Summary Delta or returns the deltas it already recognized while doing its primary work.
 
 Most raw events should die below Summary. Most Summary entries should never become Current Truth. Most Current Head changes should never become Evolution nodes.
 
@@ -132,7 +148,7 @@ If the Leader has already read and understood an Assignment result, user decisio
 
 ### 6.2 Store only the delta
 
-Summary is appended as sparse semantic entries. Current Heads are updated directly. Existing Summary or Library text is not repeatedly regenerated because a new event occurred.
+Summary is appended as sparse semantic entries emitted by the same `LeaderResult` as the normal reply, review, or decision. Current Heads are updated directly. Existing Summary or Library text is not repeatedly regenerated because a new event occurred.
 
 ### 6.3 Highest-density sufficient layer
 
@@ -154,6 +170,8 @@ A higher-density layer replaces lower-density context by default; it does not ac
 
 A structured governance result must be durable enough to resume after crash. Recovery applies any unapplied delta idempotently instead of rereading the original Final Report or conversation and asking an LLM to decide again.
 
+R5-A explicitly forbids a second-read model pass, session-end summarization, background synthesis, automatic memory extraction, keyword-based admission, or Workbench guessing what deserves durable Summary. The Leader makes that semantic admission during normal cognition; Workbench only validates, orders, and persists the returned delta.
+
 ## 7. Project Summary / Continuity Journal
 
 ### 7.1 Purpose
@@ -168,31 +186,33 @@ Summary is explicitly not a shortened transcript, work diary, or流水账.
 
 ### 7.2 Grouping and time
 
-Summary entries are grouped by Project and Project-local calendar date for presentation. Storage may be entry-based rather than one mutable prose document.
+R5-A Summary is entry-based, not one mutable prose document. Presentation may group entries by Project and Project-local calendar date, but grouping is not a separate semantic object.
 
-Every entry records at least:
+The Leader-facing semantic payload is exactly:
 
-- `occurred_at`: when the decision/change actually occurred;
-- `created_at`: when the entry was written;
-- Project timezone;
-- semantic type;
-- concise statement;
-- concise reason / significance;
-- Source references.
+```text
+SummaryDelta
+├─ occurred_at
+├─ kind
+├─ text
+└─ source_refs[]
+```
 
-The project timeline uses `occurred_at`, not the later write time.
+`text` carries the complete durable meaning: what happened and why it will still matter. It is not split into `statement` and `reason`, and Summary is not a structured Knowledge Platform. Persistence metadata is separate from this semantic payload: `entry_id`, `result_id`, `delta_ordinal`, and `created_at` are Workbench-owned and are not Leader semantic fields.
 
-At least minute-level display precision is required for normal human navigation.
+The project timeline uses `occurred_at`, not the later write time. At least minute-level display precision is required for normal human navigation.
 
 ### 7.3 Eligible entry types
 
-A Summary entry should normally be one of:
+A Summary entry may use only one of these kinds:
 
 - **Decision** — a formal decision and why it was made;
 - **Change** — a material direction/state change and why it matters;
 - **Constraint** — a durable condition future work must respect and why;
 - **RejectedPath** — a route future agents should not repeat and why;
 - **Unresolved** — a genuinely open issue whose uncertainty affects future work.
+
+R5-A does not add generic `Fact`, `Note`, `Progress`, `Result`, `Memory`, `SessionSummary`, or `DailySummary` kinds.
 
 ### 7.4 Admission test
 
@@ -227,11 +247,11 @@ Summary is append-oriented semantic history. Later decisions do not silently rew
 
 If A was adopted at 10:12 and superseded by B at 13:42, preserve both decisions as separate entries if both passed the admission test. Do not edit the 10:12 entry to pretend B had always been the decision.
 
-Allowed maintenance is limited to non-semantic repair such as typo/format fixes, Source repair, and exact duplicate/idempotency cleanup. Periodic AI “re-summary of summaries” is prohibited by default.
+Allowed maintenance is limited to explicitly designed, non-semantic repair such as typo/format fixes, Source repair, and exact duplicate/idempotency cleanup. It is outside the automatic R5-A LeaderResult path, which remains append-only. Periodic AI “re-summary of summaries” is prohibited by default.
 
 ### 7.7 Authority
 
-The Leader may append Summary without a separate user confirmation because Summary has no authority to change Current Truth.
+Summary admission is the Leader's semantic responsibility. The Leader may append Summary without a separate user confirmation because Summary has no authority to change Current Truth. Summary persistence is Workbench's mechanical responsibility and must not infer, rewrite, or promote the content.
 
 However Summary must not:
 
@@ -239,6 +259,51 @@ However Summary must not:
 - silently change user Intent;
 - resolve uncertainty that remains unresolved;
 - represent Worker claims as verified engineering fact.
+
+### 7.8 R5-A result identity and persistence
+
+Before a Leader operation begins, Workbench creates a stable `result_id`. It is Workbench-owned, never model-generated, and is reused for retry/replay of the same operation. A `LeaderResult` contains the normal operation output plus optional `SummaryDelta[0..N]`.
+
+The recommended minimal persistence shape is:
+
+```text
+project_summary_entries
+├─ entry_id
+├─ project_id
+├─ occurred_at
+├─ created_at
+├─ kind
+├─ text
+├─ result_id
+└─ delta_ordinal
+
+project_summary_source_refs
+├─ entry_id
+├─ ordinal
+├─ source_kind
+└─ source_locator
+```
+
+`UNIQUE(result_id, delta_ordinal)` is the mechanical idempotency key. Replaying one LeaderResult cannot create duplicate Summary entries. A new Leader operation with identical text is still a new Summary event. Text, similarity, embeddings, or LLM judgments must never be used for deduplication.
+
+`source_refs[]` is 0..N. Attach a natural compact locator when one exists; otherwise leave it empty. Do not manufacture a Source, copy transcript/evidence bodies, or introduce a global Source Platform.
+
+### 7.9 Append-only rule
+
+The automatic LeaderResult path is append-only. It must not automatically update, delete, mutate, or rewrite an existing Summary entry. A later fact or decision is another `Change` or other appropriate kind. R5-A does not add `supersedes_id`, version graphs, effective intervals, validity graphs, or automatic user-data deletion/maintenance.
+
+### 7.10 Deterministic bounded query
+
+R5-A defines only a deterministic bounded `SummaryQuery`:
+
+```text
+required: project_id, limit
+optional: kinds[], occurred_from, occurred_to, source_kind, source_locator
+```
+
+Results are ordered by `occurred_at DESC`, then `created_at DESC`, then deterministic `entry_id` tie-break. Callers must provide `limit`; an allowed safety range is 1..200. That cap prevents accidental unbounded reads; it does not claim that the newest 200 entries are the most important.
+
+R5-A does not implement keyword search, BM25, embeddings, similarity, LLM filtering, automatic context selection, pagination, or Recall.
 
 ## 8. Project Library Object
 
@@ -520,6 +585,8 @@ Duration is not the criterion; explanatory value is.
 
 Stage consolidation receives bounded references to Head changes plus only the relevant Summary entries. It must not reread an entire month of transcripts or regenerate Library from scratch.
 
+This is future Truth/Evolution work, not an R5-A dependency. R5-A persists optional deltas already emitted by normal Leader cognition and does not schedule consolidation or a separate summary pass.
+
 ## 17. Source / Provenance
 
 ### 17.1 Principle
@@ -631,6 +698,8 @@ Boot should remain thin and normally contain:
 - active unconsumed Handoff if one exists;
 - bounded Source references for drill-down.
 
+R5-A does not automatically inject Summary content during Project reopen, Leader boot, session rollover, or provider resume. It does not use a "most recent N summaries" rule. When a Leader needs durable rationale, it explicitly requests a bounded `SummaryQuery`; automatic Recall/context selection remains future work.
+
 ### 20.3 Relevance
 
 Current responsibility determines which Library Objects are relevant. Workbench must not inject the full Library by default.
@@ -650,6 +719,8 @@ Specific Source metadata
         ↓ sufficient? yes → STOP
 Specific raw Source / Session
 ```
+
+For R5-A, the Summary step is available only through explicit bounded query, never automatic boot injection.
 
 Session is an exception path for audit, ambiguity, conflict, debugging, or precise semantic reconstruction. It is not the normal Leader recovery path.
 
@@ -819,6 +890,14 @@ These are observability goals, not V1 acceptance thresholds. They exist to falsi
 
 ## 29. Relationship to Existing / Future Work
 
+### 29.1 R5-A legacy Memory and Daily boundary
+
+R5-A does not migrate, promote, convert, bulk-copy, modify, or delete legacy M1.5 Memory or Daily data. Existing `project_memory_items` (20 rows), `project_memory_sources` (28 rows), and `project_memory_synthesis_jobs` (16 rows: `Completed` 3, `Pending` 13) remain `FROZEN_READ_ONLY`. Pending jobs are historical and must not be executed; synthesis runtime remains disabled.
+
+Legacy Daily Summary data/schema remains a frozen compatibility boundary. Having a new Summary destination does not imply immediate migration. Any future movement of legacy data requires a separate Legacy Memory Migration Audit that decides each item to migrate, retain for compatibility, or retire later; it is not part of R5-A.
+
+### 29.2 Future V1 relationship
+
 This design changes how later architecture work should interpret existing persistence:
 
 - Persistent Project identity and Logical Leader responsibility remain core continuity.
@@ -827,6 +906,8 @@ This design changes how later architecture work should interpret existing persis
 - existing legacy memory/session/library structures should not be expanded merely because they exist;
 - later kernel/provider/migration work must preserve authoritative Project state locally even if all external Providers are unavailable;
 - provider-native Sessions and replaceable runtime capabilities remain operational dependencies, not owners of Project Truth.
+
+R5-A is Summary Delta minimal slice only. Current Truth/Heads, governance, Alignment, DRIFT, Proposal, Evolution, and Recall remain the future V1 design described in this document. Summary and Truth Delta are independent: neither automatically requires the other.
 
 Concrete migration from current schema and legacy M1.5/v7 structures is outside this spec and belongs to the later implementation plan / architecture migration sequence.
 
@@ -853,20 +934,21 @@ Raw Agent/User Scene
         ↓ meaningful boundary only
 Persistent Logical Leader
         ↓ one understanding pass
-Summary Delta + Truth Delta (+ Review when applicable)
+LeaderResult
+├─ normal reply / review / decision
+└─ optional SummaryDelta[0..N]    R5-A: mechanical append-only persistence
         ↓
-Project Summary                  Project Library
-why / constraints / decisions    current Intent + Implemented
+Project Summary                  Future Project Library governance
+why / constraints / decisions    Truth Delta / Heads / Alignment / Evolution
         │                              │
         └──────── Source refs ─────────┘
-                       │
-                 Evolution
-              meaningful changes
                        │
                  drill down only
                        ↓
           Session / Git / Test / Docs
 ```
+
+Summary Delta does not automatically create a Truth Delta, and Truth change does not automatically create Summary. R5-A implements only the Summary side of this diagram.
 
 The governing product rules are:
 
