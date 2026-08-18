@@ -36,7 +36,7 @@ This specification covers:
 - conflict, uncertainty, supersession, retention, and cleanup;
 - token-economy constraints that govern all of the above.
 
-This is a behavioral and information-architecture contract. It does not prescribe concrete SQL tables, migrations, classes, UI layout, provider adapters, or implementation tasks.
+This is primarily a behavioral and information-architecture contract. R5-A additionally defines an approved minimal conceptual persistence shape consisting of `project_summary_entries` and `project_summary_source_refs`, including their required fields and `UNIQUE(result_id, delta_ordinal)` idempotency constraint. Exact SQL types, DDL, foreign-key/index implementation, Migration number, repository/class/API names, UI layout, provider adapters, and implementation tasks remain deferred to implementation planning.
 
 ## 2. Product Goal
 
@@ -962,7 +962,7 @@ The governing product rules are:
 
 ### Placeholder scan
 
-No implementation-affecting `TBD` / `TODO` remains. Concrete schema, class names, migrations, UI controls, exact retention jobs, and token thresholds are deliberately deferred to planning because they do not change the behavioral contract.
+No implementation-affecting `TBD` / `TODO` remains. The R5-A minimal conceptual persistence shape is determined; exact SQL/DDL/types, indexes, foreign keys, Migration number, repository/class/API names, UI controls, exact retention jobs, and token thresholds remain deliberately deferred to planning because they do not change the behavioral contract.
 
 ### Internal consistency
 
