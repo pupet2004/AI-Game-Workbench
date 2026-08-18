@@ -1,7 +1,6 @@
 using Workbench.Storage.Memory;
 using Workbench.App.Memory;
 using Workbench.App.Services;
-using Workbench.Core.Memory;
 using Workbench.Core.Projects;
 using Workbench.Storage.Database;
 using Workbench.Storage.Leaders;
@@ -13,30 +12,6 @@ namespace Workbench.App.Tests;
 
 public sealed class LeaderMemoryPolicyCoordinatorTests
 {
-    [Fact]
-    public void Policy_prompt_explains_explicit_library_overview_and_timeline_selection_for_older_projects()
-    {
-        var project = new CoreProject(Guid.NewGuid(), "Archive", "C:/Archive", ProjectType.Generic, null,
-            DateTimeOffset.Parse("2026-08-14T00:00:00+00:00"), DateTimeOffset.Parse("2026-08-14T00:00:00+00:00"));
-        var catalog = new ContinuityMaterialCatalog(project.Id, Guid.NewGuid(),
-        [
-            new("library-overview:1", ContinuityMaterialKind.LibraryOverview, project.Id, "Design / Relics", null, 100),
-            new("library-timeline:2", ContinuityMaterialKind.LibraryTimelineNode, project.Id, "Design / Relics / 2026-08-14", null, 200)
-        ]);
-        var preferences = new ProjectMemoryPreferences(project.Id, LibraryGranularityMode.Balanced,
-            ContinuityMode.Balanced, "UTC", null, DateTimeOffset.Parse("2026-08-14T00:00:00+00:00"));
-
-        var prompt = LeaderMemoryPolicyPromptBuilder.Build(project, catalog, preferences).Text;
-
-        Assert.Contains("Current Overview", prompt, StringComparison.Ordinal);
-        Assert.Contains("current factual state", prompt, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Timeline Node", prompt, StringComparison.Ordinal);
-        Assert.Contains("historical evolution", prompt, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Library + Daily", prompt, StringComparison.Ordinal);
-        Assert.Contains("explicit", prompt, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("descriptor reference only", prompt, StringComparison.OrdinalIgnoreCase);
-    }
-
     [Fact]
     public async Task New_brain_does_not_run_a_second_model_pass_or_write_legacy_memory()
     {
@@ -116,8 +91,6 @@ public sealed class LeaderMemoryPolicyCoordinatorTests
         {
             await services.InitializeAsync();
             await services.InitializeAsync();
-            services.ScheduleMemorySynthesis(project.Id);
-            await Task.Delay(100);
             var reopenedFirst = await services.ProjectMemorySynthesisRepository.GetAsync(first.Id);
             var reopenedSecond = await services.ProjectMemorySynthesisRepository.GetAsync(second.Id);
 

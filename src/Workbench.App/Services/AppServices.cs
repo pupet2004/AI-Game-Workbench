@@ -231,11 +231,6 @@ public sealed class AppServices : IAsyncDisposable
         await ProjectMemorySynthesisRepository.RecoverRunningAsync(cancellationToken);
     }
 
-    public void ScheduleMemorySynthesis(Guid projectId)
-    {
-        // Legacy Memory is frozen read-only; retained jobs are not scheduled.
-    }
-
     public async Task RetryRuntimeAsync(CancellationToken cancellationToken = default)
     {
         if (_runtimeFactory is null || Volatile.Read(ref _disposeRequested) != 0)

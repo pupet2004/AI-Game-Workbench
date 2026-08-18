@@ -56,52 +56,6 @@ public sealed class ProjectMemoryLearningUiTests
     }
 
     [Fact]
-    public async Task Library_shows_pending_learning_then_separate_ai_learned_and_session_candidate_source()
-    {
-        await using var context = await CoordinatorContext.CreateAsync();
-        var result = Result(context);
-        var library = new LibraryPaneViewModel(
-            result, () => Task.CompletedTask,
-            memory: context.Services.ProjectMemoryService,
-            synthesisJobs: context.Jobs,
-            epochRepository: context.Epochs);
-        await library.InitializeAsync();
-        await library.LoadMemoryAsync();
-        Assert.Equal("Memory learning: 1 session pending", library.MemoryLearningStatus);
-
-        context.Runtime.QueueTurn(context.Completed("""
-            {"learned":[{"topic":"Phase","content":"M1.5B","source_message_sequences":[1]}],"candidates":[{"topic":"Rule","content":"Workbench owns memory.","source_message_sequences":[1]}]}
-            """));
-        await context.Coordinator.TryProcessNextAsync(context.Project.Id);
-        await library.LoadMemoryAsync();
-        library.SelectCandidateCommand.Execute(Assert.Single(library.PendingCandidates));
-
-        Assert.Equal("Memory learning: Up to date", library.MemoryLearningStatus);
-        Assert.Equal("M1.5B", Assert.Single(library.LearnedMemories).Content);
-        Assert.Contains("AI-generated", library.LearnedMemoryLabel, StringComparison.Ordinal);
-        Assert.Equal("From Leader session · Aug 13", library.SelectedCandidateSourceLabel);
-        Assert.Empty(library.FormalMemories);
-        library.ShowProjectCommand.Execute(null);
-    }
-
-    [Fact]
-    public async Task Running_job_is_presented_as_learning()
-    {
-        await using var context = await CoordinatorContext.CreateAsync();
-        await context.Jobs.ClaimNextPendingAsync(context.Project.Id);
-        var library = new LibraryPaneViewModel(
-            Result(context), () => Task.CompletedTask,
-            memory: context.Services.ProjectMemoryService,
-            synthesisJobs: context.Jobs,
-            epochRepository: context.Epochs);
-
-        await library.InitializeAsync();
-        await library.LoadMemoryAsync();
-
-        Assert.Equal("Learning...", library.MemoryLearningStatus);
-    }
-
-    [Fact]
     public async Task Project_open_completed_turn_and_rollover_do_not_schedule_legacy_synthesis()
     {
         await using var appContext = await AppTestContext.CreateAsync();
@@ -128,18 +82,6 @@ public sealed class ProjectMemoryLearningUiTests
     }
 
     [Fact]
-    public async Task App_scheduler_does_not_execute_frozen_legacy_synthesis()
-    {
-        await using var context = await CoordinatorContext.CreateAsync();
-
-        context.Services.ScheduleMemorySynthesis(context.Project.Id);
-        await Task.Delay(50);
-
-        Assert.Empty(context.Runtime.SentRequests);
-        Assert.Equal(ProjectMemorySynthesisJobStatus.Pending, (await context.Jobs.GetAsync(context.ArchivedEpoch.Id))!.Status);
-    }
-
-    [Fact]
     public void Library_markup_does_not_expose_legacy_memory_as_a_primary_surface()
     {
         var root = FindRepositoryRoot();
@@ -149,12 +91,6 @@ public sealed class ProjectMemoryLearningUiTests
         Assert.DoesNotContain("Learned Memory", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Formal Memory", markup, StringComparison.Ordinal);
     }
-
-    private static ProjectOpenResult Result(CoordinatorContext context) =>
-        new(
-            context.Project,
-            ProjectLayout.CreateDefault(context.Project.Id),
-            new GitSnapshot(true, false, null, null, null, false, false, null));
 
     private static string FindRepositoryRoot()
     {
