@@ -438,7 +438,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             try
             {
                 runtimeRequest = await _bootContextBuilder!.BuildAsync(_project, text, cancellationToken);
-                runtimeRequest = new AgentRequest(runtimeRequest.Text, LeaderResponseSchema.Json);
+                runtimeRequest = new AgentRequest(
+                    $"{runtimeRequest.Text}\n\n{LeaderSummaryAdmissionInstruction.Text}",
+                    LeaderResponseSchema.Json);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -456,7 +458,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
         else
         {
-            runtimeRequest = new AgentRequest(text, LeaderResponseSchema.Json);
+            runtimeRequest = new AgentRequest(
+                $"{text}\n\n{LeaderSummaryAdmissionInstruction.Text}",
+                LeaderResponseSchema.Json);
         }
 
         if (_responseBinder is not null && await _responseBinder.HasSingletonOpenGateAsync(_project.Id, cancellationToken))

@@ -1,4 +1,5 @@
 using Workbench.App.Tests.Support;
+using Workbench.App.Leader;
 using Workbench.App.ViewModels.Leader;
 using Workbench.App.ViewModels.Panes;
 using Workbench.Core.Projects;
@@ -401,6 +402,96 @@ public sealed class LeaderPaneViewModelTests
         Assert.Same(pane.Session, Assert.Single(runtime.StoppedSessions));
     }
 
+    [Fact]
+    public async Task Admission_instruction_is_present_in_the_same_sent_request_as_output_schema()
+    {
+        var (pane, runtime, _) = CreatePane();
+        QueueCompletedTurn(runtime, "done");
+        await pane.InitializeAsync();
+        pane.DraftMessage = "Assess the architecture.";
+
+        await pane.SendAsync();
+
+        var request = Assert.Single(runtime.SentRequests);
+        Assert.Contains("SPARSE DURABLE RATIONALE", request.Text, StringComparison.Ordinal);
+        Assert.NotNull(request.OutputSchema);
+        Assert.Contains("summary_deltas", request.OutputSchema, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Admission_instruction_forbids_routine_facts_and_fabricated_sources()
+    {
+        var (pane, runtime, _) = CreatePane();
+        QueueCompletedTurn(runtime, "done");
+        await pane.InitializeAsync();
+        pane.DraftMessage = "Continue.";
+
+        await pane.SendAsync();
+
+        var text = Assert.Single(runtime.SentRequests).Text;
+        Assert.Contains("tests passed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("build passed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("files changed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Worker PASS", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("routine tool output", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Fact, Note, Progress, Result, or Memory", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("do not fabricate", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("source_refs = []", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task One_normal_leader_operation_uses_one_runtime_send()
+    {
+        var (pane, runtime, _) = CreatePane();
+        QueueCompletedTurn(runtime, "done");
+        await pane.InitializeAsync();
+        pane.DraftMessage = "One operation.";
+
+        await pane.SendAsync();
+
+        Assert.Single(runtime.SentRequests);
+        Assert.Single(runtime.SentSessions);
+    }
+
+    [Fact]
+    public async Task Direct_user_text_and_summary_instruction_share_same_request()
+    {
+        var (pane, runtime, _) = CreatePane();
+        QueueCompletedTurn(runtime, "done");
+        await pane.InitializeAsync();
+        pane.DraftMessage = "DIRECT USER MEANING MUST REMAIN";
+
+        await pane.SendAsync();
+
+        var request = Assert.Single(runtime.SentRequests);
+        Assert.Contains("DIRECT USER MEANING MUST REMAIN", request.Text, StringComparison.Ordinal);
+        Assert.Contains("If deletion does not materially increase future decision error, emit no Summary.", request.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Boot_generated_text_and_summary_instruction_share_same_request()
+    {
+        var runtime = new FakeAgentRuntime();
+        var manager = new ProjectLeaderSessionManager();
+        var pane = new LeaderPaneViewModel(
+            CreateProject(),
+            CreateRegistry(runtime),
+            manager,
+            () => Task.CompletedTask,
+            bootContextBuilder: new TestBootContextBuilder());
+        QueueCompletedTurn(runtime, "done");
+        await pane.InitializeAsync();
+        pane.DraftMessage = "BOOT USER MEANING MUST REMAIN";
+
+        await pane.SendAsync();
+
+        var request = Assert.Single(runtime.SentRequests);
+        Assert.Contains("BOOT GENERATED CONTEXT", request.Text, StringComparison.Ordinal);
+        Assert.Contains("BOOT USER MEANING MUST REMAIN", request.Text, StringComparison.Ordinal);
+        Assert.Contains("SPARSE DURABLE RATIONALE", request.Text, StringComparison.Ordinal);
+        Assert.Contains("summary_deltas", request.OutputSchema!, StringComparison.Ordinal);
+    }
+
     private static (LeaderPaneViewModel Pane, FakeAgentRuntime Runtime, ProjectLeaderSessionManager Manager) CreatePane()
     {
         var runtime = new FakeAgentRuntime();
@@ -455,5 +546,14 @@ public sealed class LeaderPaneViewModelTests
         _ = pane.SendAsync();
         await runtime.WaitForApprovalAsync();
         return (pane, runtime, approval);
+    }
+
+    private sealed class TestBootContextBuilder : ILeaderBootContextBuilder
+    {
+        public Task<AgentRequest> BuildAsync(
+            CoreProject project,
+            string originalUserText,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AgentRequest($"BOOT GENERATED CONTEXT\n{originalUserText}"));
     }
 }

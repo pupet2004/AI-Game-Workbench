@@ -33,6 +33,173 @@ public sealed class LeaderDraftProposalTests
         Assert.False(libraryObject.GetProperty("additionalProperties").GetBoolean());
         Assert.Contains("memory_commands", document.RootElement.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
     }
+
+    [Fact]
+    public void Schema_requires_nullable_summary_deltas_under_existing_strict_convention()
+    {
+        using var document = JsonDocument.Parse(LeaderResponseSchema.Json);
+        var root = document.RootElement;
+        Assert.False(root.GetProperty("additionalProperties").GetBoolean());
+        Assert.Contains("summary_deltas", root.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
+
+        var summary = root.GetProperty("properties").GetProperty("summary_deltas");
+        var branches = summary.GetProperty("anyOf").EnumerateArray().ToArray();
+        Assert.Contains(branches, branch => branch.GetProperty("type").GetString() == "null");
+        var array = Assert.Single(branches, branch => branch.GetProperty("type").GetString() == "array");
+        var item = array.GetProperty("items");
+        Assert.False(item.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(
+            ["occurred_at", "kind", "text", "source_refs"],
+            item.GetProperty("required").EnumerateArray().Select(value => value.GetString()));
+        var source = item.GetProperty("properties").GetProperty("source_refs").GetProperty("items");
+        Assert.False(source.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(
+            ["source_kind", "source_locator"],
+            source.GetProperty("required").EnumerateArray().Select(value => value.GetString()));
+    }
+
+    [Fact]
+    public void Valid_summary_sidecar_parses_without_polluting_visible_response()
+    {
+        var json = """
+            {"response":"Visible answer only.","draft_proposal":null,"memory_commands":null,"summary_deltas":[{"occurred_at":"2026-08-20T10:15:30.0000000+00:00","kind":"Decision","text":"Keep the same cognition envelope.","source_refs":[{"source_kind":"LeaderMessage","source_locator":"message-42"}]}]}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        Assert.Equal("Visible answer only.", parsed.Response);
+        var delta = Assert.Single(parsed.SummaryDeltas);
+        Assert.Equal(new DateTimeOffset(2026, 8, 20, 10, 15, 30, TimeSpan.Zero), delta.OccurredAt);
+        Assert.Equal(SummaryDeltaKind.Decision, delta.Kind);
+        Assert.Equal("Keep the same cognition envelope.", delta.Text);
+        var source = Assert.Single(delta.SourceRefs);
+        Assert.Equal("LeaderMessage", source.SourceKind);
+        Assert.Equal("message-42", source.SourceLocator);
+        Assert.Null(parsed.SummaryDeltaError);
+    }
+
+    [Fact]
+    public void Null_summary_sidecar_is_normal_no_summary()
+    {
+        const string json = "{\"response\":\"No durable rationale.\",\"draft_proposal\":null,\"memory_commands\":null,\"summary_deltas\":null}";
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        Assert.Empty(parsed.SummaryDeltas);
+        Assert.Null(parsed.SummaryDeltaError);
+    }
+
+    [Theory]
+    [InlineData("2026-08-20T10:15:30Z")]
+    [InlineData("2026-08-20T10:15:30+00:00")]
+    [InlineData("2026-08-20T10:15:30.123Z")]
+    [InlineData("2026-08-20T10:15:30.1234567+00:00")]
+    public void Iso_timestamp_variants_parse_with_an_explicit_offset(string occurredAt)
+    {
+        var json = $$"""
+            {"response":"Visible.","draft_proposal":null,"memory_commands":null,"summary_deltas":[{"occurred_at":"{{occurredAt}}","kind":"Change","text":"Valid timestamp.","source_refs":[]}]}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        Assert.Single(parsed.SummaryDeltas);
+        Assert.Null(parsed.SummaryDeltaError);
+    }
+
+    [Theory]
+    [InlineData("Fact", "Valid text")]
+    [InlineData("Decision", " ")]
+    public void Invalid_kind_or_blank_text_discards_only_summary_sidecar(string kind, string text)
+    {
+        var json = $$"""
+            {"response":"Core remains visible.","draft_proposal":null,"memory_commands":null,"summary_deltas":[{"occurred_at":"2026-08-20T10:15:30.0000000+00:00","kind":"{{kind}}","text":"{{text}}","source_refs":[]}]}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        Assert.Equal("Core remains visible.", parsed.Response);
+        Assert.Empty(parsed.SummaryDeltas);
+        Assert.NotNull(parsed.SummaryDeltaError);
+    }
+
+    [Theory]
+    [InlineData(" ", "message-42")]
+    [InlineData("LeaderMessage", " ")]
+    public void Blank_summary_source_fields_discard_the_sidecar(string sourceKind, string sourceLocator)
+    {
+        var json = $$"""
+            {"response":"Core remains visible.","draft_proposal":null,"memory_commands":null,"summary_deltas":[{"occurred_at":"2026-08-20T10:15:30.0000000+00:00","kind":"Decision","text":"Valid text","source_refs":[{"source_kind":"{{sourceKind}}","source_locator":"{{sourceLocator}}"}]}]}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        Assert.Equal("Core remains visible.", parsed.Response);
+        Assert.Empty(parsed.SummaryDeltas);
+        Assert.NotNull(parsed.SummaryDeltaError);
+    }
+
+    [Fact]
+    public void Invalid_later_summary_item_discards_the_entire_sidecar()
+    {
+        var json = """
+            {"response":"Core remains visible.","draft_proposal":null,"memory_commands":null,"summary_deltas":[{"occurred_at":"2026-08-20T10:15:30.0000000+00:00","kind":"Decision","text":"Valid first item","source_refs":[]},{"occurred_at":"2026-08-20T10:16:30.0000000+00:00","kind":"Fact","text":"Invalid later item","source_refs":[]}]}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        Assert.Equal("Core remains visible.", parsed.Response);
+        Assert.Empty(parsed.SummaryDeltas);
+        Assert.NotNull(parsed.SummaryDeltaError);
+    }
+
+    [Fact]
+    public void Malformed_summary_item_keeps_core_response_and_proposal()
+    {
+        var projectId = Guid.NewGuid();
+        var json = """
+            {"response":"Draft remains available.","draft_proposal":{"title":"Title","goal":"goal","scope":"scope","outOfScope":"out","acceptance":["accept"],"riskLevel":"Low","recommendedExecutionProfile":{"providerHint":null,"modelHint":null,"runtimeHint":null}},"memory_commands":null,"summary_deltas":[{"occurred_at":"not-a-timestamp","kind":"Decision","text":"Bad timestamp","source_refs":[]}]}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, projectId, out var parsed));
+
+        Assert.Equal("Draft remains available.", parsed.Response);
+        Assert.Equal("Title", parsed.Proposal!.Title);
+        Assert.Empty(parsed.SummaryDeltas);
+        Assert.NotNull(parsed.SummaryDeltaError);
+    }
+
+    [Fact]
+    public void Malformed_summary_item_keeps_valid_memory_command()
+    {
+        var json = """
+            {"response":"Memory remains available.","draft_proposal":null,"memory_commands":{"daily_summary":null,"library_proposal":{"action":"CreateNode","target_object_id":null,"target_node_id":null,"expected_node_revision":null,"expected_overview_revision":0,"category":"Design","topic":"Relics","local_date":"2026-08-14","node_content":"Mechanism is implemented.","current_overview":null,"materials":[]}},"summary_deltas":[{"occurred_at":"not-a-timestamp","kind":"Decision","text":"Bad timestamp","source_refs":[]}]}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        Assert.Equal("Memory remains available.", parsed.Response);
+        Assert.Null(parsed.MemoryCommandError);
+        Assert.Equal("Relics", parsed.MemoryCommands!.LibraryProposal!.Topic);
+        Assert.Empty(parsed.SummaryDeltas);
+        Assert.NotNull(parsed.SummaryDeltaError);
+    }
+
+    [Fact]
+    public void Existing_structured_fields_keep_current_behavior()
+    {
+        var projectId = Guid.NewGuid();
+        var json = """
+            {"response":"Existing fields remain.","draft_proposal":{"title":"Title","goal":"goal","scope":"scope","outOfScope":"out","acceptance":["accept"],"riskLevel":"Medium","recommendedExecutionProfile":{"providerHint":"provider","modelHint":"model","runtimeHint":"runtime"}},"memory_commands":null,"summary_deltas":null}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, projectId, out var parsed));
+
+        Assert.Equal("Existing fields remain.", parsed.Response);
+        Assert.Equal(projectId, parsed.Proposal!.ProjectId);
+        Assert.Equal(TaskRiskLevel.Medium, parsed.Proposal.RiskLevel);
+        Assert.Null(parsed.MemoryCommands);
+        Assert.Null(parsed.MemoryCommandError);
+    }
     [Fact]
     public async Task Leader_turn_request_carries_output_schema_but_worker_request_does_not()
     {
@@ -40,7 +207,7 @@ public sealed class LeaderDraftProposalTests
         var registry = new AgentRuntimeRegistry(); registry.Register(runtime);
         await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
-        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "{\"response\":\"ok\",\"draft_proposal\":null,\"memory_commands\":null}", null), DateTimeOffset.UtcNow));
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "{\"response\":\"ok\",\"draft_proposal\":null,\"memory_commands\":null,\"summary_deltas\":null}", null), DateTimeOffset.UtcNow));
         await workspace.LeaderPane.InitializeAsync();
         workspace.LeaderPane.DraftMessage = "ordinary";
         await workspace.LeaderPane.SendAsync();
@@ -60,7 +227,7 @@ public sealed class LeaderDraftProposalTests
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
         runtime.QueueTurn(new AgentTurnCompleted(
             new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
-                "{\"response\":\"The project currently has no active worker.\"}", null), DateTimeOffset.UtcNow));
+                "{\"response\":\"The project currently has no active worker.\",\"draft_proposal\":null,\"memory_commands\":null,\"summary_deltas\":null}", null), DateTimeOffset.UtcNow));
         await workspace.LeaderPane.InitializeAsync();
         workspace.LeaderPane.DraftMessage = "Explain the current project state.";
 
@@ -80,7 +247,7 @@ public sealed class LeaderDraftProposalTests
     public void Structured_envelope_parses_without_provider_specific_fields()
     {
         var projectId = Guid.NewGuid();
-        var json = "{\"response\":\"I drafted this task.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"Codex\",\"modelHint\":\"GPT-5.6-Sol\",\"runtimeHint\":\"codex-app-server\"}}}";
+        var json = "{\"response\":\"I drafted this task.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"Codex\",\"modelHint\":\"GPT-5.6-Sol\",\"runtimeHint\":\"codex-app-server\"}},\"memory_commands\":null,\"summary_deltas\":null}";
         Assert.True(LeaderStructuredResponse.TryParse(json, projectId, out var parsed));
         Assert.Equal("I drafted this task.", parsed.Response);
         Assert.Equal(projectId, parsed.Proposal!.ProjectId);
@@ -92,7 +259,7 @@ public sealed class LeaderDraftProposalTests
     {
         var projectId = Guid.NewGuid();
         var json = """
-            {"response":"Stage is closed.","draft_proposal":null,"memory_commands":{"daily_summary":null,"library_proposal":{"action":"CreateNode","target_object_id":null,"target_node_id":null,"expected_node_revision":null,"expected_overview_revision":0,"category":"Design","topic":"Relics","local_date":"2026-08-14","node_content":"Mechanism is implemented.","current_overview":"Current relic state.","materials":[{"kind":"GitCommit","reference":"abc123","label":"Implementation"}]}}}
+            {"response":"Stage is closed.","draft_proposal":null,"memory_commands":{"daily_summary":null,"library_proposal":{"action":"CreateNode","target_object_id":null,"target_node_id":null,"expected_node_revision":null,"expected_overview_revision":0,"category":"Design","topic":"Relics","local_date":"2026-08-14","node_content":"Mechanism is implemented.","current_overview":"Current relic state.","materials":[{"kind":"GitCommit","reference":"abc123","label":"Implementation"}]}},"summary_deltas":null}
             """;
 
         Assert.True(LeaderStructuredResponse.TryParse(json, projectId, out var parsed));
@@ -114,7 +281,7 @@ public sealed class LeaderDraftProposalTests
         await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
         runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
-            "{\"response\":\"The stage assessment is still visible.\",\"draft_proposal\":null,\"memory_commands\":{\"daily_summary\":null,\"library_proposal\":{\"action\":\"CreateNode\"}}}", null), DateTimeOffset.UtcNow));
+            "{\"response\":\"The stage assessment is still visible.\",\"draft_proposal\":null,\"memory_commands\":{\"daily_summary\":null,\"library_proposal\":{\"action\":\"CreateNode\"}},\"summary_deltas\":null}", null), DateTimeOffset.UtcNow));
         await workspace.LeaderPane.InitializeAsync();
         workspace.LeaderPane.DraftMessage = "close stage";
 
@@ -214,7 +381,7 @@ public sealed class LeaderDraftProposalTests
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
         runtime.QueueTurn(new AgentTurnCompleted(
             new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
-                "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}", null),
+                "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}},\"memory_commands\":null,\"summary_deltas\":null}", null),
             DateTimeOffset.UtcNow));
         await workspace.LeaderPane.InitializeAsync();
         workspace.LeaderPane.DraftMessage = "Plan onboarding";
@@ -239,7 +406,7 @@ public sealed class LeaderDraftProposalTests
         await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
         var workspace = await context.CreateWorkspaceForNewProjectAsync();
         runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
-            "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}", null), DateTimeOffset.UtcNow));
+            "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Title\",\"goal\":\"goal\",\"scope\":\"scope\",\"outOfScope\":\"out\",\"acceptance\":[\"accept\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}},\"memory_commands\":null,\"summary_deltas\":null}", null), DateTimeOffset.UtcNow));
         runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Worker complete", null), DateTimeOffset.UtcNow));
         await workspace.LeaderPane.InitializeAsync();
         workspace.LeaderPane.SelectedModel = workspace.LeaderPane.AvailableModels[0];

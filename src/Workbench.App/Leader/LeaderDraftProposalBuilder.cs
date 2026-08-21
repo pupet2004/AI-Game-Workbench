@@ -3,6 +3,7 @@ using Workbench.Storage.Tasks;
 using Workbench.Storage.Memory;
 using System.Text.Json;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace Workbench.App.Leader;
 
@@ -44,6 +45,13 @@ public sealed record LeaderStructuredResponse(
     LeaderMemoryCommands? MemoryCommands = null,
     string? MemoryCommandError = null)
 {
+    private static readonly Regex SummaryOccurredAtPattern = new(
+        @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})$",
+        RegexOptions.CultureInvariant);
+
+    public IReadOnlyList<SummaryDelta> SummaryDeltas { get; init; } = [];
+    public string? SummaryDeltaError { get; init; }
+
     public static bool TryParse(string? text, Guid projectId, out LeaderStructuredResponse result)
     {
         result = new LeaderStructuredResponse(text ?? string.Empty, null);
@@ -73,20 +81,37 @@ public sealed record LeaderStructuredResponse(
             }
 
             var visibleResponse = response.GetString() ?? string.Empty;
-            if (!root.TryGetProperty("memory_commands", out var memory) || memory.ValueKind == JsonValueKind.Null)
+            LeaderMemoryCommands? memoryCommands = null;
+            string? memoryCommandError = null;
+            if (root.TryGetProperty("memory_commands", out var memory) && memory.ValueKind != JsonValueKind.Null)
             {
-                result = new LeaderStructuredResponse(visibleResponse, proposal);
-                return true;
+                try
+                {
+                    memoryCommands = ParseMemoryCommands(memory);
+                }
+                catch (Exception)
+                {
+                    memoryCommandError = "Library memory command could not be processed.";
+                }
             }
 
+            IReadOnlyList<SummaryDelta> summaryDeltas = [];
+            string? summaryDeltaError = null;
             try
             {
-                result = new LeaderStructuredResponse(visibleResponse, proposal, ParseMemoryCommands(memory));
+                if (!root.TryGetProperty("summary_deltas", out var summary)) throw new JsonException();
+                summaryDeltas = ParseSummaryDeltas(summary);
             }
             catch (Exception)
             {
-                result = new LeaderStructuredResponse(visibleResponse, proposal, null, "Library memory command could not be processed.");
+                summaryDeltaError = "Summary delta sidecar could not be processed.";
             }
+
+            result = new LeaderStructuredResponse(visibleResponse, proposal, memoryCommands, memoryCommandError)
+            {
+                SummaryDeltas = summaryDeltas,
+                SummaryDeltaError = summaryDeltaError
+            };
             return true;
         }
         catch (Exception) { return false; }
@@ -122,6 +147,47 @@ public sealed record LeaderStructuredResponse(
             RequiredString(library, "node_content"),
             OptionalString(library, "current_overview"),
             materials));
+    }
+
+    private static IReadOnlyList<SummaryDelta> ParseSummaryDeltas(JsonElement summary)
+    {
+        if (summary.ValueKind == JsonValueKind.Null) return [];
+        if (summary.ValueKind != JsonValueKind.Array) throw new JsonException();
+
+        var deltas = new List<SummaryDelta>();
+        foreach (var item in summary.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) throw new JsonException();
+            var occurredAtText = RequiredString(item, "occurred_at");
+            if (!SummaryOccurredAtPattern.IsMatch(occurredAtText) ||
+                !DateTimeOffset.TryParse(
+                    occurredAtText,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out var occurredAt))
+            {
+                throw new FormatException("Summary occurred_at must use the round-trip format.");
+            }
+
+            var kindText = RequiredString(item, "kind");
+            if (!Enum.TryParse<SummaryDeltaKind>(kindText, false, out var kind) || !Enum.IsDefined(kind))
+            {
+                throw new ArgumentException("Unsupported Summary Delta kind.");
+            }
+
+            var text = RequiredString(item, "text");
+            if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Summary Delta text is required.");
+
+            var sourceArray = item.GetProperty("source_refs");
+            if (sourceArray.ValueKind != JsonValueKind.Array) throw new JsonException();
+            var sourceRefs = sourceArray.EnumerateArray()
+                .Select(source => new SummarySourceRef(
+                    RequiredString(source, "source_kind"),
+                    RequiredString(source, "source_locator")))
+                .ToArray();
+            deltas.Add(new SummaryDelta(occurredAt, kind, text, sourceRefs));
+        }
+        return deltas;
     }
 
     private static string RequiredString(JsonElement value, string property) =>
@@ -164,7 +230,7 @@ public static class LeaderResponseSchema
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["response", "draft_proposal", "memory_commands"],
+          "required": ["response", "draft_proposal", "memory_commands", "summary_deltas"],
           "properties": {
             "response": { "type": "string" },
             "draft_proposal": {
@@ -242,9 +308,56 @@ public static class LeaderResponseSchema
                 },
                 { "type": "null" }
               ]
+            },
+            "summary_deltas": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["occurred_at", "kind", "text", "source_refs"],
+                    "properties": {
+                      "occurred_at": { "type": "string" },
+                      "kind": { "type": "string", "enum": ["Decision", "Change", "Constraint", "RejectedPath", "Unresolved"] },
+                      "text": { "type": "string" },
+                      "source_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["source_kind", "source_locator"],
+                          "properties": {
+                            "source_kind": { "type": "string" },
+                            "source_locator": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                { "type": "null" }
+              ]
             }
           }
         }
+        """;
+}
+
+public static class LeaderSummaryAdmissionInstruction
+{
+    public const string Text = """
+        WORKBENCH SUMMARY ADMISSION
+        A Summary Delta is SPARSE DURABLE RATIONALE, not a routine activity log.
+        Emit a Summary Delta only when deleting it would make a future Leader more likely to make a wrong decision, repeat an important dead end, or misunderstand the reason for a current constraint or decision.
+        If deletion does not materially increase future decision error, emit no Summary.
+
+        Allowed kinds are only Decision, Change, Constraint, RejectedPath, and Unresolved.
+        Do not emit tests passed, build passed, files changed, Worker PASS, git status, ordinary implementation steps, routine tool output, session chatter, or a generic Fact, Note, Progress, Result, or Memory.
+
+        Add source_refs only when a natural source locator exists. When none exists, use source_refs = [].
+        Do not fabricate a Source, session locator, Git ref, evidence locator, or other provenance.
+        Do not copy evidence bodies, transcripts, logs, or diffs into source_refs.
         """;
 }
 

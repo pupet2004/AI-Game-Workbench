@@ -26,7 +26,8 @@ public sealed class LeaderBootIntegrationTests
 
         Assert.Contains("WORKBENCH PROJECT CONTEXT", runtime.SentRequests[0].Text, StringComparison.Ordinal);
         Assert.Contains("MEMORY_BOOT_FORMAL_731", runtime.SentRequests[0].Text, StringComparison.Ordinal);
-        Assert.Equal("Continue.", runtime.SentRequests[1].Text);
+        Assert.StartsWith("Continue.", runtime.SentRequests[1].Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH SUMMARY ADMISSION", runtime.SentRequests[1].Text, StringComparison.Ordinal);
         Assert.Equal(["What is the marker?", "MEMORY_BOOT_FORMAL_731", "Continue.", "later"],
             pane.Messages.Select(message => message.Text));
         var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
@@ -131,7 +132,8 @@ public sealed class LeaderBootIntegrationTests
         await pane.SendAsync();
 
         Assert.DoesNotContain("WORKBENCH PROJECT CONTEXT", runtime.SentRequests[1].Text, StringComparison.Ordinal);
-        Assert.Equal("retry", runtime.SentRequests[1].Text);
+        Assert.StartsWith("retry", runtime.SentRequests[1].Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH SUMMARY ADMISSION", runtime.SentRequests[1].Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -152,7 +154,8 @@ public sealed class LeaderBootIntegrationTests
         await pane.SendAsync();
 
         Assert.Contains("SEND_TIME_MARKER", runtime.SentRequests[0].Text, StringComparison.Ordinal);
-        Assert.Equal("second", runtime.SentRequests[1].Text);
+        Assert.StartsWith("second", runtime.SentRequests[1].Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH SUMMARY ADMISSION", runtime.SentRequests[1].Text, StringComparison.Ordinal);
         Assert.DoesNotContain("NO_LIVE_PATCH_MARKER", runtime.SentRequests[1].Text, StringComparison.Ordinal);
     }
 
@@ -178,7 +181,8 @@ public sealed class LeaderBootIntegrationTests
         resumed.DraftMessage = "second";
         await resumed.SendAsync();
 
-        Assert.Equal("second", Assert.Single(resumedRuntime.SentRequests).Text);
+        Assert.StartsWith("second", Assert.Single(resumedRuntime.SentRequests).Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH SUMMARY ADMISSION", resumedRuntime.SentRequests[0].Text, StringComparison.Ordinal);
         Assert.DoesNotContain("RESUME_MARKER", resumedRuntime.SentRequests[0].Text, StringComparison.Ordinal);
     }
 

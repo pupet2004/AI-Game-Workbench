@@ -97,7 +97,8 @@ public sealed class LeaderRolloverPolicyTests
         Assert.False(pane.HasPendingRotationDecision);
         Assert.Equal(oldEpoch, pane.SessionEpochId);
         Assert.Single(runtime.CreatedSessions);
-        Assert.Equal("pending draft", runtime.SentRequests[1].Text);
+        Assert.StartsWith("pending draft", runtime.SentRequests[1].Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH SUMMARY ADMISSION", runtime.SentRequests[1].Text, StringComparison.Ordinal);
         Assert.Equal(context.T1, (await context.Epochs.GetAsync(oldEpoch!.Value))!.LastActiveAt);
     }
 
@@ -150,7 +151,8 @@ public sealed class LeaderRolloverPolicyTests
 
         Assert.Equal(oldEpoch, pane.SessionEpochId);
         Assert.Single(runtime.CreatedSessions);
-        Assert.Equal("next day", runtime.SentRequests[1].Text);
+        Assert.StartsWith("next day", runtime.SentRequests[1].Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH SUMMARY ADMISSION", runtime.SentRequests[1].Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -270,7 +272,8 @@ public sealed class LeaderRolloverPolicyTests
 
         Assert.Equal(epoch, pane.SessionEpochId);
         Assert.Single(runtime.CreatedSessions);
-        Assert.Equal("second", runtime.SentRequests[1].Text);
+        Assert.StartsWith("second", runtime.SentRequests[1].Text, StringComparison.Ordinal);
+        Assert.Contains("WORKBENCH SUMMARY ADMISSION", runtime.SentRequests[1].Text, StringComparison.Ordinal);
     }
 
     [Fact]
