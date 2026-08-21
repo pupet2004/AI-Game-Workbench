@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class TypedLeaderReviewBackfillMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_reaches_v18_and_is_idempotent()
+    public async Task Fresh_database_reaches_v19_and_is_idempotent()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -15,7 +15,7 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(18L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(19L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }
 
@@ -24,7 +24,7 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
-        await database.InitializeAsync();
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 16);
         var fixture = await PrepareV16FixtureAsync(database);
         await AppendAsync(database, fixture, fixture.DecisionPass, "LeaderReviewDecisionRecorded", $"{{\"TaskRevisionId\":\"{fixture.Revision}\",\"FinalReportEventId\":\"{Guid.NewGuid()}\",\"Outcome\":\"Pass\",\"ActionLevel\":\"L1LocalFix\",\"ReviewDepth\":\"ReportOnly\",\"Summary\":\"pass\",\"NextAction\":\"none\"}}", fixture.At);
         await AppendAsync(database, fixture, fixture.DecisionAsk, "LeaderReviewDecisionRecorded", $"{{\"TaskRevisionId\":\"{fixture.Revision}\",\"FinalReportEventId\":\"{Guid.NewGuid()}\",\"Outcome\":\"AskUser\",\"ActionLevel\":\"L3DecisionRequired\",\"ReviewDepth\":\"ReportOnly\",\"Summary\":\"ask\",\"NextAction\":\"choose\"}}", fixture.At);
@@ -36,7 +36,7 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
 
         await database.InitializeAsync();
         await using var connection = database.CreateConnection(); await connection.OpenAsync();
-        Assert.Equal(18L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(19L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(("Autonomous", "Recorded"), await ReadAuthorityAsync(connection, fixture.DecisionPass));
         Assert.Equal(("", "LegacyNotRecorded"), await ReadAuthorityAsync(connection, fixture.DecisionAsk));
         Assert.Equal(("Responded", (long?)null, (long?)null), await ReadGateAsync(connection, fixture.DecisionAsk));
@@ -47,15 +47,13 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
-        await database.InitializeAsync();
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 16);
         var fixture = await PrepareV16FixtureAsync(database);
         var validDecision = Guid.NewGuid();
         var validReport = Guid.NewGuid();
         await AppendAsync(database, fixture, validDecision, "LeaderReviewDecisionRecorded", $"{{\"TaskRevisionId\":\"{fixture.Revision}\",\"FinalReportEventId\":\"{validReport}\",\"Outcome\":\"Pass\",\"ActionLevel\":\"L1LocalFix\",\"ReviewDepth\":\"ReportOnly\",\"Summary\":\"pass\",\"NextAction\":\"none\"}}", fixture.At);
         await AppendAsync(database, fixture, Guid.NewGuid(), "AssignmentAutoCompleted", $"{{\"ReviewDecisionEventId\":\"{validDecision}\",\"TaskRevisionId\":\"{fixture.Revision}\",\"FinalReportEventId\":\"{validReport}\",\"Outcome\":\"Pass\",\"Authority\":\"Autonomous\",\"Resolution\":\"AutoProceed\"}}", fixture.At);
         await AppendAsync(database, fixture, fixture.DecisionPass, "LeaderReviewDecisionRecorded", "{\"TaskRevisionId\":\"bad\"}", fixture.At);
-        await SetVersionAsync(database, 16);
-
         await Assert.ThrowsAsync<DatabaseInitializationException>(() => database.InitializeAsync());
         await using var connection = database.CreateConnection(); await connection.OpenAsync();
         Assert.Equal(16L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
@@ -67,10 +65,9 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
-        await database.InitializeAsync();
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 16);
         var fixture = await PrepareV16FixtureAsync(database);
         await AppendAsync(database, fixture, Guid.NewGuid(), "WorkerCompleted", "{\"Message\":\"done\"}", fixture.At);
-        await SetVersionAsync(database, 16);
         await database.InitializeAsync();
         await using var connection = database.CreateConnection(); await connection.OpenAsync();
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM task_review_decisions;"));
@@ -94,19 +91,6 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
         await ExecuteAsync(connection, "INSERT INTO leader_session_epochs(id,project_id,provider_id,provider_account_id,model_id,agent_session_id,started_at,last_active_at) VALUES($e,$p,'provider','account','model','session',$a,$a);", ("$e", fixture.Epoch.ToString()), ("$p", fixture.Project.ToString()), ("$a", fixture.At.ToString("O")));
         await ExecuteAsync(connection, "UPDATE project_leaders SET current_epoch_id=$e WHERE project_id=$p;", ("$e", fixture.Epoch.ToString()), ("$p", fixture.Project.ToString()));
         await ExecuteAsync(connection, "INSERT INTO leader_messages(id,epoch_id,sequence,role,text,created_at) VALUES(999,$e,1,'user',$text,$a);", ("$e", fixture.Epoch.ToString()), ("$text", $"Question review-user-decision:{fixture.Project:D}:{fixture.Task:D}:{fixture.DecisionAsk:D}"), ("$a", fixture.At.ToString("O")));
-        await ExecuteAsync(connection, "PRAGMA foreign_keys = OFF;");
-        await ExecuteAsync(connection, "DROP TABLE task_review_decisions;");
-        await ExecuteAsync(connection, """
-            CREATE TABLE task_review_decisions (
-                review_decision_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL, revision_id TEXT NOT NULL,
-                source_event_id TEXT NULL UNIQUE, outcome TEXT NOT NULL, action_level TEXT NOT NULL, authority_mode TEXT NULL,
-                authority_resolution TEXT NOT NULL, authority_mode_recording TEXT NOT NULL, created_at TEXT NOT NULL
-            );
-            CREATE UNIQUE INDEX ux_task_review_decisions_identity
-            ON task_review_decisions(review_decision_id, project_id, task_id, revision_id);
-            """);
-        await ExecuteAsync(connection, "PRAGMA foreign_keys = ON;");
-        await SetVersionAsync(database, 16);
         return fixture;
     }
 
@@ -114,12 +98,6 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
     {
         await using var connection = database.CreateConnection(); await connection.OpenAsync();
         await ExecuteAsync(connection, "INSERT INTO task_events(id,project_id,task_id,execution_id,event_type,payload_json,created_at) VALUES($i,$p,$t,NULL,$type,$payload,$at);", ("$i", id.ToString()), ("$p", fixture.Project.ToString()), ("$t", fixture.Task.ToString()), ("$type", type), ("$payload", payload), ("$at", at.ToString("O")));
-    }
-
-    private static async Task SetVersionAsync(WorkbenchDatabase database, long version)
-    {
-        await using var connection = database.CreateConnection(); await connection.OpenAsync();
-        await ExecuteAsync(connection, $"PRAGMA user_version = {version};");
     }
 
     private static async Task<Guid> ReadEventPayloadAsync(WorkbenchDatabase database, Guid eventId)

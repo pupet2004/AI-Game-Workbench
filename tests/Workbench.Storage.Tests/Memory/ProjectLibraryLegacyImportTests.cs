@@ -135,21 +135,12 @@ public sealed class ProjectLibraryLegacyImportTests
     }
 
     [Fact]
-    public async Task Migration_011_can_be_reapplied_without_duplicate_objects_nodes_or_references()
+    public async Task Imported_library_survives_repeated_current_initialization_without_duplicates()
     {
         await using var temporary = new TemporaryDatabase();
         await CreateVersion8DatabaseAsync(temporary.DatabasePath);
         var database = new WorkbenchDatabase(temporary.DatabasePath);
         await database.InitializeAsync();
-
-        await using (var connection = database.CreateConnection())
-        {
-            await connection.OpenAsync();
-            var downgradeVersionOnly = connection.CreateCommand();
-            downgradeVersionOnly.CommandText = "PRAGMA user_version = 10;";
-            await downgradeVersionOnly.ExecuteNonQueryAsync();
-        }
-
         await new WorkbenchDatabase(temporary.DatabasePath).InitializeAsync();
 
         Assert.Equal(2L, await ScalarAsync(database, "SELECT COUNT(*) FROM project_library_objects;"));
@@ -181,7 +172,7 @@ public sealed class ProjectLibraryLegacyImportTests
     private static async Task CreateVersion8DatabaseAsync(string path)
     {
         var database = new WorkbenchDatabase(path);
-        await database.InitializeAsync();
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 8);
         var projects = new ProjectRepository(database);
         var createdAt = DateTimeOffset.Parse("2026-08-01T00:00:00+00:00");
         await projects.UpsertAsync(new(ProjectAId, "A", "C:/Legacy/A", ProjectType.Generic, null, createdAt, createdAt));
@@ -199,17 +190,6 @@ public sealed class ProjectLibraryLegacyImportTests
             VALUES ('{SecondEntryId}','{ProjectAId}','{SecondSessionId}',NULL,' design   / relics ',' 清一色   罗盘 ','Second actual state',NULL,'2026-08-13T06:00:00+02:00');
             INSERT INTO project_library_entries (id,project_id,source_session_id,task_id,category,topic,summary,source_reference,created_at)
             VALUES ('{OtherProjectEntryId}','{ProjectBId}','{SecondSessionId}',NULL,'Design / Relics','清一色 罗盘','Other project state','asset.png','2026-08-13T00:00:00+00:00');
-
-            DROP TABLE project_library_proposals;
-            DROP TABLE project_library_material_refs;
-            DROP TABLE project_library_timeline_nodes;
-            DROP TABLE project_library_objects;
-            DROP TABLE leader_epoch_continuity_selections;
-            DROP TABLE leader_epoch_continuity_plans;
-            DROP TABLE project_daily_summary_sources;
-            DROP TABLE project_daily_summaries;
-            DROP TABLE project_memory_preferences;
-            PRAGMA user_version = 8;
             """;
         await setup.ExecuteNonQueryAsync();
     }

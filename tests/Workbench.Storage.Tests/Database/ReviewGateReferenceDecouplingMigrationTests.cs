@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class ReviewGateReferenceDecouplingMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_reaches_v18_with_nullable_set_null_message_locators()
+    public async Task Fresh_database_reaches_v19_with_nullable_set_null_message_locators()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -15,7 +15,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(18L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(19L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         var columns = await ColumnsAsync(connection);
         Assert.Contains(columns, column => column.Name == "question_message_id" && !column.NotNull);
         Assert.Contains(columns, column => column.Name == "user_message_id" && !column.NotNull);
@@ -30,8 +30,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
-        await database.InitializeAsync();
-        await PrepareV14SchemaAsync(database);
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 14);
 
         await using (var connection = database.CreateConnection())
         {
@@ -96,48 +95,6 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
         await Assert.ThrowsAsync<SqliteException>(() => InsertGateAsync(connection, "invalid-open-time", fixture.ProjectId, fixture.TaskId, fixture.RevisionId, null, null, fixture.RespondedAt, "Open"));
         await InsertDecisionAsync(connection, "invalid-responded-time", fixture.ProjectId, fixture.TaskId, fixture.RevisionId);
         await Assert.ThrowsAsync<SqliteException>(() => InsertGateAsync(connection, "invalid-responded-time", fixture.ProjectId, fixture.TaskId, fixture.RevisionId, null, null, null, "Responded"));
-    }
-
-    private static async Task PrepareV14SchemaAsync(WorkbenchDatabase database)
-    {
-        await using var connection = database.CreateConnection();
-        await connection.OpenAsync();
-        await ExecuteAsync(connection, "PRAGMA foreign_keys = OFF;");
-        await ExecuteAsync(connection, "DROP TABLE task_review_decisions;");
-        await ExecuteAsync(connection, "DROP TABLE task_review_user_gates;");
-        await ExecuteAsync(connection, """
-            CREATE TABLE task_review_decisions (
-                review_decision_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL, revision_id TEXT NOT NULL,
-                source_event_id TEXT NULL UNIQUE, outcome TEXT NOT NULL, action_level TEXT NOT NULL, authority_mode TEXT NOT NULL,
-                authority_resolution TEXT NOT NULL, created_at TEXT NOT NULL,
-                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                FOREIGN KEY(task_id, project_id) REFERENCES tasks(id, project_id) ON DELETE CASCADE,
-                FOREIGN KEY(revision_id, task_id) REFERENCES task_revisions(id, task_id) ON DELETE CASCADE
-            );
-            CREATE UNIQUE INDEX ux_task_review_decisions_identity ON task_review_decisions(review_decision_id, project_id, task_id, revision_id);
-            """);
-        await ExecuteAsync(connection, """
-            CREATE TABLE task_review_user_gates (
-                review_decision_id TEXT PRIMARY KEY,
-                project_id TEXT NOT NULL,
-                task_id TEXT NOT NULL,
-                revision_id TEXT NOT NULL,
-                question_message_id INTEGER NOT NULL,
-                user_message_id INTEGER NULL,
-                opened_at TEXT NOT NULL,
-                responded_at TEXT NULL,
-                state TEXT NOT NULL CHECK(state IN ('Open', 'Responded')),
-                CHECK(
-                    (state = 'Open' AND user_message_id IS NULL AND responded_at IS NULL) OR
-                    (state = 'Responded' AND user_message_id IS NOT NULL AND responded_at IS NOT NULL)),
-                FOREIGN KEY(review_decision_id, project_id, task_id, revision_id)
-                    REFERENCES task_review_decisions(review_decision_id, project_id, task_id, revision_id)
-                    ON DELETE CASCADE,
-                FOREIGN KEY(question_message_id) REFERENCES leader_messages(id) ON DELETE RESTRICT,
-                FOREIGN KEY(user_message_id) REFERENCES leader_messages(id) ON DELETE RESTRICT
-            );
-            """);
-        await ExecuteAsync(connection, "PRAGMA user_version = 14; PRAGMA foreign_keys = ON;");
     }
 
     private static async Task<Fixture> CreateFixtureAsync(SqliteConnection connection)

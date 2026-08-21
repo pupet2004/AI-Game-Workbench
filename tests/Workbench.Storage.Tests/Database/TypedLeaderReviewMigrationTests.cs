@@ -6,7 +6,7 @@ namespace Workbench.Storage.Tests.Database;
 public sealed class TypedLeaderReviewMigrationTests
 {
     [Fact]
-    public async Task Fresh_database_creates_only_the_two_typed_review_tables_at_v18()
+    public async Task Fresh_database_creates_only_the_two_typed_review_tables_at_v19()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -16,7 +16,7 @@ public sealed class TypedLeaderReviewMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(18L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(19L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(2L, await ScalarAsync<long>(connection, """
             SELECT COUNT(*)
             FROM sqlite_master
@@ -52,19 +52,18 @@ public sealed class TypedLeaderReviewMigrationTests
     }
 
     [Fact]
-    public async Task V13_to_v18_adds_typed_review_schema_idempotently_and_preserves_foreign_key_integrity()
+    public async Task V13_to_v19_adds_typed_review_schema_idempotently_and_preserves_foreign_key_integrity()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
-        await database.InitializeAsync();
-        await PrepareV13SchemaAsync(database);
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 13);
 
         await database.InitializeAsync();
         await database.InitializeAsync();
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(18L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(19L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }
 
@@ -101,17 +100,6 @@ public sealed class TypedLeaderReviewMigrationTests
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM task_review_decisions;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM task_review_user_gates;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
-    }
-
-    private static async Task PrepareV13SchemaAsync(WorkbenchDatabase database)
-    {
-        await using var connection = database.CreateConnection();
-        await connection.OpenAsync();
-        await ExecuteAsync(connection, "DROP TABLE IF EXISTS task_review_user_gates;");
-        await ExecuteAsync(connection, "DROP TABLE IF EXISTS task_review_decisions;");
-        await ExecuteAsync(connection, "DROP INDEX IF EXISTS ux_tasks_id_project_id;");
-        await ExecuteAsync(connection, "DROP INDEX IF EXISTS ux_task_revisions_id_task_id_v14;");
-        await ExecuteAsync(connection, "PRAGMA user_version = 13;");
     }
 
     private static async Task<ReviewFixture> CreateFixtureAsync(SqliteConnection connection)

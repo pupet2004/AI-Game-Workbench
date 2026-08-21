@@ -227,31 +227,19 @@ public sealed class AssignmentReviewStateTests
         var revisionId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         const string timestamp = "2026-08-14T09:00:00.0000000+00:00";
-        Directory.CreateDirectory(Path.GetDirectoryName(temporary.DatabasePath)!);
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 11);
 
         await using (var connection = database.CreateConnection())
         {
             await connection.OpenAsync();
             var seed = connection.CreateCommand();
             seed.CommandText = """
-                CREATE TABLE projects (id TEXT PRIMARY KEY);
-                CREATE TABLE tasks (
-                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL,
-                    status TEXT NOT NULL CHECK(status IN ('Draft','ReadyToStart','Cancelled')),
-                    current_revision_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                    cancelled_at TEXT NULL, FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
-                CREATE TABLE task_events (
-                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL,
-                    execution_id TEXT NULL, event_type TEXT NOT NULL, status TEXT NULL,
-                    payload_json TEXT NOT NULL, created_at TEXT NOT NULL,
-                    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
-                    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE);
-                INSERT INTO projects(id) VALUES($projectId);
+                INSERT INTO projects(id,name,root_path,project_type,git_root,created_at,last_opened_at)
+                    VALUES($projectId,'Legacy','C:/Legacy',0,NULL,$timestamp,$timestamp);
                 INSERT INTO tasks(id,project_id,title,status,current_revision_id,created_at,updated_at)
                     VALUES($taskId,$projectId,'Legacy','Draft',$revisionId,$timestamp,$timestamp);
                 INSERT INTO task_events(id,project_id,task_id,event_type,payload_json,created_at)
                     VALUES($eventId,$projectId,$taskId,'LegacyEvent','{}',$timestamp);
-                PRAGMA user_version = 11;
                 """;
             seed.Parameters.AddWithValue("$projectId", projectId.ToString());
             seed.Parameters.AddWithValue("$taskId", taskId.ToString());
@@ -270,7 +258,7 @@ public sealed class AssignmentReviewStateTests
         await verified.OpenAsync();
         var version = verified.CreateCommand();
         version.CommandText = "PRAGMA user_version;";
-        Assert.Equal(18L, Convert.ToInt64(await version.ExecuteScalarAsync()));
+        Assert.Equal(19L, Convert.ToInt64(await version.ExecuteScalarAsync()));
     }
 
     private sealed class Fixture : IAsyncDisposable

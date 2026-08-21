@@ -22,7 +22,7 @@ public sealed class WorkbenchDatabaseTests
     }
 
     [Fact]
-    public async Task Latest_migrations_set_user_version_to_16()
+    public async Task Latest_migrations_set_user_version_to_19()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,11 +34,11 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(18L, await command.ExecuteScalarAsync());
+        Assert.Equal(19L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
-    public async Task Migrating_v11_database_to_v18_preserves_continuity_data_and_is_idempotent()
+    public async Task Migrating_v11_database_to_v19_preserves_continuity_data_and_is_idempotent()
     {
         await using var temporary = new TemporaryDatabase();
         await CreateV11MigrationFixtureAsync(temporary.DatabasePath);
@@ -55,7 +55,7 @@ public sealed class WorkbenchDatabaseTests
         await database.InitializeAsync();
 
         var firstSnapshot = await ReadV11ContinuitySnapshotAsync(database);
-        Assert.Equal(18L, firstSnapshot.UserVersion);
+        Assert.Equal(19L, firstSnapshot.UserVersion);
         Assert.Equal("Migration Project", firstSnapshot.ProjectName);
         Assert.Equal("00000000-0000-0000-0000-000000000102", firstSnapshot.TaskId);
         Assert.Equal("00000000-0000-0000-0000-000000000103", firstSnapshot.CurrentRevisionId);
@@ -114,20 +114,18 @@ public sealed class WorkbenchDatabaseTests
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
-        await database.InitializeAsync();
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 5);
         await using (var connection = database.CreateConnection())
         {
             await connection.OpenAsync();
             var setup = connection.CreateCommand();
             setup.CommandText = """
-                ALTER TABLE leader_session_epochs DROP COLUMN boot_context_delivered_at;
                 INSERT INTO projects VALUES ('00000000-0000-0000-0000-000000000021', 'P', 'C:/Boot', 0, NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
                 INSERT INTO project_leaders VALUES ('00000000-0000-0000-0000-000000000021', NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
                 INSERT INTO leader_session_epochs VALUES ('00000000-0000-0000-0000-000000000022', '00000000-0000-0000-0000-000000000021', 'codex', '00000000-0000-0000-0000-000000000023', 'model', '00000000-0000-0000-0000-000000000024', 'old', 'C:/Boot', '2026-01-01T00:00:00+00:00', '2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00', 'Manual', 'handoff');
                 INSERT INTO leader_session_epochs VALUES ('00000000-0000-0000-0000-000000000025', '00000000-0000-0000-0000-000000000021', 'codex', '00000000-0000-0000-0000-000000000023', 'model', '00000000-0000-0000-0000-000000000026', 'fresh', 'C:/Boot', '2026-01-02T00:00:00+00:00', '2026-01-02T00:00:00+00:00', NULL, NULL, NULL);
                 UPDATE project_leaders SET current_epoch_id = '00000000-0000-0000-0000-000000000025' WHERE project_id = '00000000-0000-0000-0000-000000000021';
                 INSERT INTO leader_messages (epoch_id, sequence, role, text, created_at) VALUES ('00000000-0000-0000-0000-000000000022', 1, 'user', 'existing', '2026-01-01T00:00:00+00:00');
-                PRAGMA user_version = 5;
                 """;
             await setup.ExecuteNonQueryAsync();
         }
@@ -150,7 +148,7 @@ public sealed class WorkbenchDatabaseTests
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
-        await database.InitializeAsync();
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 4);
         await using (var connection = database.CreateConnection())
         {
             await connection.OpenAsync();
@@ -158,9 +156,6 @@ public sealed class WorkbenchDatabaseTests
             setup.CommandText = """
                 INSERT INTO projects VALUES ('00000000-0000-0000-0000-000000000011', 'P', 'C:/Memory', 0, NULL, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
                 INSERT INTO project_memory_items VALUES ('00000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000011', 'Formal', 'Rule', 'Keep me.', 'Active', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00');
-                DROP TABLE project_memory_synthesis_jobs;
-                ALTER TABLE leader_session_epochs DROP COLUMN boot_context_delivered_at;
-                PRAGMA user_version = 4;
                 """;
             await setup.ExecuteNonQueryAsync();
         }
@@ -237,45 +232,10 @@ public sealed class WorkbenchDatabaseTests
     private static async Task CreateV11MigrationFixtureAsync(string databasePath)
     {
         var database = new WorkbenchDatabase(databasePath);
-        await database.InitializeAsync();
+        await HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 11);
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-
-        var disableForeignKeys = connection.CreateCommand();
-        disableForeignKeys.CommandText = "PRAGMA foreign_keys = OFF;";
-        await disableForeignKeys.ExecuteNonQueryAsync();
-
-        var restoreV11Schema = connection.CreateCommand();
-        restoreV11Schema.CommandText = """
-            CREATE TABLE tasks_v11 (
-                id TEXT PRIMARY KEY,
-                project_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                status TEXT NOT NULL CHECK(status IN ('Draft','ReadyToStart','Cancelled')),
-                current_revision_id TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                cancelled_at TEXT NULL,
-                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
-            DROP TABLE tasks;
-            ALTER TABLE tasks_v11 RENAME TO tasks;
-            CREATE INDEX ix_tasks_project_status ON tasks(project_id,status);
-            CREATE INDEX ix_tasks_project_created ON tasks(project_id,created_at);
-
-            CREATE TABLE project_settings_v11 (
-                project_id TEXT PRIMARY KEY,
-                leader_session_rotation_policy TEXT NULL,
-                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
-            DROP TABLE project_settings;
-            ALTER TABLE project_settings_v11 RENAME TO project_settings;
-            PRAGMA user_version = 11;
-            """;
-        await restoreV11Schema.ExecuteNonQueryAsync();
-
-        var enableForeignKeys = connection.CreateCommand();
-        enableForeignKeys.CommandText = "PRAGMA foreign_keys = ON;";
-        await enableForeignKeys.ExecuteNonQueryAsync();
 
         var insert = connection.CreateCommand();
         insert.CommandText = """

@@ -106,6 +106,10 @@ internal static class MigrationRunner
                 Migration018ReviewDecisionSubject.ApplyAsync,
                 cancellationToken);
         }
+        if (currentVersion < Migration019ProjectSummary.Version)
+        {
+            await ApplyAsync(connection, Migration019ProjectSummary.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(
