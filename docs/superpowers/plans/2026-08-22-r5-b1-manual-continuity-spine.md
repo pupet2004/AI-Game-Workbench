@@ -215,6 +215,8 @@
 
   Define exactly these non-authoritative command records: `CreateAttemptCommand`, `SelectCurrentAttemptCommand`, `RecordClaimCommand`, `CreateHandoffCommand`, `SelectContinuationHandoffCommand`, `CreateSessionBindingCommand`, `SelectCurrentSessionBindingCommand`, `ClearCurrentSessionBindingCommand`. Define exactly these authority command records: `EstablishLogicalActorCommand`, `EstablishResponsibilityCommand`, `DelegateAssignmentCommand`, `DecideAssignmentCommand`, `ActivateAssignmentRevisionCommand`, `AuthorAcceptedStateCommand`. Every Application command carries a command-time `AuthenticatedOperatorRef`; in B1 it must equal the Project bootstrap `UserPrincipalRef`. That command-time operator is never persisted as Claimant or DecidingAuthority metadata. Each authority command separately carries its `DecidingAuthorityRef` and fixed effect shape; none accepts `IReadOnlyList<object>`, `Effects`, an arbitrary target string, or a custom scope.
 
+  `DecideAssignmentCommand` has one required disposition instruction and at most one of two closed optional branches: Revision activation, or same-Assignment replacement delegation. The replacement branch may include one optional `LogicalActorEstablishmentEffect` and use `AssignmentAssigneeTarget.EstablishedByThisDecision`; the command has no independent Actor-establishment branch when no replacement exists. This is the approved `Rejected|RevisionRequired + replacement + new assignee Actor` shape, not a caller-supplied effect list.
+
 - [ ] **Step 4: Run focused GREEN and Tasks 1–2 together.**
 
   ```powershell
@@ -245,24 +247,40 @@
       public static B1ProjectProjection Build(B1ProjectState state);
   }
 
-  public sealed record B1ProjectProjection(
+  public sealed record AcceptedProjectState(
       ProjectRef ProjectRef,
+      IReadOnlyDictionary<LogicalActorRef, LogicalActor> LogicalActors,
+      IReadOnlyDictionary<ResponsibilityRef, Responsibility> Responsibilities,
+      IReadOnlyDictionary<AssignmentRef, Assignment> Assignments,
+      IReadOnlyDictionary<RevisionRef, AssignmentRevision> Revisions,
+      IReadOnlyDictionary<RevisionRef, RevisionDispositionRecord> RevisionDispositions,
       IReadOnlyDictionary<AssignmentRef, RevisionRef> CurrentEffectiveRevisionRefs,
       IReadOnlySet<AssignmentRef> CurrentDelegationAssignments,
+      IReadOnlyList<AcceptedStateContribution> CurrentContributions);
+
+  public sealed record B1ProjectProjection(
+      ProjectRef ProjectRef,
+      AcceptedProjectState AcceptedProjectState,
       IReadOnlySet<AssignmentRef> EffectiveFulfillmentAssignments,
       IReadOnlyDictionary<AssignmentRef, AttemptRef?> StoredAttemptSelections,
       IReadOnlyDictionary<AssignmentRef, AttemptRef?> EffectiveCurrentAttemptRefs,
       IReadOnlyDictionary<AttemptRef, HandoffRef?> StoredHandoffSelections,
       IReadOnlyDictionary<AttemptRef, HandoffRef?> EffectiveCurrentHandoffRefs,
       IReadOnlyDictionary<AttemptRef, SessionBindingRef?> StoredBindingSelections,
-      IReadOnlyDictionary<AttemptRef, SessionBindingRef?> EffectiveCurrentBindingRefs,
-      AcceptedProjectState AcceptedProjectState);
+      IReadOnlyDictionary<AttemptRef, SessionBindingRef?> EffectiveCurrentBindingRefs);
   ```
 
-- [ ] **Step 1: Write failing projection tests.** Add `Initial_revision_is_current_until_one_authorized_successor`, `Each_revision_has_zero_or_one_disposition`, `Current_delegation_means_not_replaced`, `Effective_fulfillment_requires_current_unresolved_revision`, `Contributions_coexist_without_supersession`, `Explicit_supersession_removes_only_its_current_target`, `Stored_attempt_can_remain_when_effective_attempt_is_null`, `Effective_handoff_and_binding_require_effective_parent_attempt`, and `CreatedAt_never_changes_decision_order`.
+- [ ] **Step 1: Write failing projection tests.** Add `Accepted_state_contains_all_authoritative_current_projection`, `Initial_revision_is_current_until_one_authorized_successor`, `Each_revision_has_zero_or_one_disposition`, `Current_delegation_means_not_replaced`, `Effective_fulfillment_requires_current_unresolved_revision`, `Contributions_coexist_without_supersession`, `Explicit_supersession_removes_only_its_current_target`, `Stored_attempt_can_remain_when_effective_attempt_is_null`, `Effective_handoff_and_binding_require_effective_parent_attempt`, and `CreatedAt_never_changes_decision_order`.
 
   ```csharp
   var projection = B1Projector.Build(state);
+  Assert.Equal(actor, projection.AcceptedProjectState.LogicalActors[actorRef]);
+  Assert.Equal(responsibility, projection.AcceptedProjectState.Responsibilities[responsibilityRef]);
+  Assert.Equal(assignment, projection.AcceptedProjectState.Assignments[assignmentRef]);
+  Assert.Equal(revision, projection.AcceptedProjectState.Revisions[revisionRef]);
+  Assert.Equal(disposition, projection.AcceptedProjectState.RevisionDispositions[revisionRef]);
+  Assert.Equal(revisionRef, projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[assignmentRef]);
+  Assert.Contains(assignmentRef, projection.AcceptedProjectState.CurrentDelegationAssignments);
   Assert.Equal(attemptRef, projection.StoredAttemptSelections[assignmentRef]);
   Assert.Null(projection.EffectiveCurrentAttemptRefs[assignmentRef]);
   Assert.DoesNotContain(oldContribution, projection.AcceptedProjectState.CurrentContributions);
@@ -280,6 +298,7 @@
 - [ ] **Step 3: Implement a pure projector only.** `B1ProjectState` is immutable input loaded from authoritative/history tables. `B1Projector.Build`:
 
   - orders Decisions by `ProjectCommitSequence`, never `CreatedAt`;
+  - places every authority-established Actor, Responsibility, Assignment, and Revision identity/contract, every Revision disposition, current effective Revision, current delegation, and current non-superseded contribution in `AcceptedProjectState` itself;
   - identifies the unique Revision-chain leaf per Assignment as current;
   - treats missing current-Revision disposition as query-only `Unresolved`;
   - computes current delegations from explicit replacement edges only;
@@ -366,9 +385,9 @@
 - Consumes: the existing v19 migration chain, `MigrationRunner.ApplyAsync`, `HistoricalMigrationTestDatabase`, and `TemporaryDatabase`.
 - Produces: schema version 20 and only the additive `b1_*` landing zone below.
 
-- [ ] **Step 1: Write migration RED tests.** Add `Migration020_sets_user_version_and_creates_exact_b1_tables`, `Migration020_marks_only_projects_existing_at_upgrade_as_pre_b1`, `Post_migration_project_insert_is_not_legacy_eligible`, `Migration020_does_not_synthesize_any_b1_domain_or_authority_rows`, `Migration020_preserves_v19_schema_and_rows`, `B1_owned_foreign_keys_reject_cross_project_identity`, and `B1_tables_enforce_single_revision_disposition_and_single_superseder`.
+- [ ] **Step 1: Write migration RED tests.** Add `Migration020_sets_user_version_and_creates_exact_b1_tables`, `Migration020_marks_only_projects_existing_at_upgrade_as_pre_b1`, `Post_migration_project_insert_is_not_legacy_eligible`, `Migration020_does_not_synthesize_any_b1_domain_or_authority_rows`, `Migration020_preserves_v19_schema_and_rows`, `Historical_v11_chain_migrates_to_v20_without_legacy_or_b1_semantic_rewrite`, `B1_owned_foreign_keys_reject_cross_project_identity`, `B1_tables_enforce_single_revision_disposition_and_single_superseder`, and `B1_tables_enforce_single_assignment_replacement_target`.
 
-  Build a synthetic v19 database with two Projects plus representative epoch, Task/revision/event, review, Memory, Library, and R5-A Summary rows. Capture their counts and bounded values before migration; do not read the live database.
+  Build a synthetic v19 database with two Projects plus representative epoch, Task/revision/event, review, Memory, Library, and R5-A Summary rows. Separately call `HistoricalMigrationTestDatabase.InitializeThroughAsync(database, 11)`, seed the same bounded v11 continuity shape already certified by `WorkbenchDatabaseTests.Migrating_v11_database_to_v19_preserves_continuity_data_and_is_idempotent`, and then run the real complete v11 -> ... -> v19 -> v20 chain. Capture counts and bounded values before each migration run; do not read or copy the live database.
 
 - [ ] **Step 2: Run RED.**
 
@@ -436,11 +455,11 @@
       authority_decision_id, source_claim_id?)
   ```
 
-  Add `UNIQUE(id, project_id)` parent keys and composite child foreign keys for every B1-owned relationship. Add CHECK constraints for exact Claim payload columns by kind, exact scope discriminants, claimant/decider/considered-ref discriminants, initial-versus-successor Revision shape, nonblank contract/statement/locator text, and canonical non-null JSON arrays. Add one partial unique index for one initial Revision per Assignment and one unique prior-Revision edge so Revision history cannot branch. Add indexes for Project history order, Assignment/Revision reads, routing, Claims/Handoffs, current delegation replacement, and contribution supersession.
+  Add `UNIQUE(id, project_id)` parent keys and composite child foreign keys for every B1-owned relationship. Add CHECK constraints for exact Claim payload columns by kind, exact scope discriminants, claimant/decider/considered-ref discriminants, initial-versus-successor Revision shape, nonblank contract/statement/locator text, and canonical non-null JSON arrays. Add partial unique index `ux_b1_revisions_one_initial_per_assignment` on `b1_revisions(assignment_id) WHERE prior_revision_id IS NULL` and one unique prior-Revision edge so Revision history cannot branch. Add partial unique index `ux_b1_assignments_one_replacement_per_target` on `b1_assignments(replaces_assignment_id) WHERE replaces_assignment_id IS NOT NULL`, so one historical Assignment can be the replacement target of at most one committed delegation. Add indexes for Project history order, Assignment/Revision reads, routing, Claims/Handoffs, current delegation replacement, and contribution supersession.
 
   Every B1-owned entity table's `project_id` references `b1_project_governance(project_id)`; the origin and governance tables alone reference Legacy `projects`. At migration time only, insert every existing `projects.id` into `b1_legacy_project_origins` with `source_schema_version = 19`. Do not insert governance, Actor, Responsibility, Assignment, Revision, Claim, Handoff, Decision, disposition, routing, or contribution rows. Later Project inserts receive no origin row automatically.
 
-- [ ] **Step 4: Run focused GREEN and full Storage migration tests.**
+- [ ] **Step 4: Run focused GREEN and full Storage migration tests.** The historical-chain case must finish at `user_version = 20`, return `PRAGMA quick_check = ok` and zero `pragma_foreign_key_check` rows, preserve its bounded v11 Legacy snapshot through every real migration, and show that Migration020 added only one mechanical `b1_legacy_project_origins` row per Project present when v20 was applied. Governance, Actor, Responsibility, Assignment, Revision, Claim, Handoff, Decision, disposition, routing, and contribution tables remain empty.
 
   ```powershell
   dotnet test tests/Workbench.Storage.Tests/Workbench.Storage.Tests.csproj --filter "FullyQualifiedName~ManualContinuityMigrationTests|FullyQualifiedName~WorkbenchDatabaseTests|FullyQualifiedName~ProjectSummaryMigrationTests"
@@ -635,10 +654,18 @@
       public Task<AuthorityCommitResult> TryCommitAsync(ValidatedAuthorityDecision decision, CancellationToken ct = default);
   }
 
-  public enum AuthorityCommitResult { Committed, ProjectSequenceConflict }
+  public abstract record AuthorityCommitResult
+  {
+      private AuthorityCommitResult() { }
+
+      public sealed record Committed(AuthorityDecision Decision) : AuthorityCommitResult;
+      public sealed record ProjectSequenceConflict : AuthorityCommitResult;
+  }
   ```
 
-- [ ] **Step 1: Write failing round-trip and ordering tests.** Use `B1AuthorityEvaluator` to obtain validated commits from governed snapshots. Add `Decision_commit_assigns_next_project_sequence`, `Successful_decisions_reload_in_sequence_order`, `CreatedAt_does_not_override_commit_sequence`, `Structural_effects_and_initial_revision_commit_together`, `Disposition_activation_replacement_and_contributions_round_trip`, and `Considered_refs_and_proposal_source_round_trip_without_becoming_evidence_or_authority`.
+- [ ] **Step 1: Write failing round-trip and ordering tests.** Use `B1AuthorityEvaluator` to obtain validated commits from governed snapshots. Add `Decision_commit_returns_persisted_decision_with_assigned_sequence`, `Successful_decisions_reload_in_sequence_order`, `CreatedAt_does_not_override_commit_sequence`, `Structural_effects_and_initial_revision_commit_together`, `Assignment_initial_revision_round_trips_from_unique_root_revision`, `Missing_or_ambiguous_initial_revision_is_rejected_as_corrupt`, `Disposition_activation_replacement_and_contributions_round_trip`, and `Considered_refs_and_proposal_source_round_trip_without_becoming_evidence_or_authority`.
+
+  For corrupt-read coverage, use disposable databases only: delete the sole root Revision for the missing case; in a separate fixture drop `ux_b1_revisions_one_initial_per_assignment` and insert a second null-prior Revision for the ambiguous case. Both `LoadProjectStateAsync` calls must throw `InvalidDataException`. These test-only corruptions never run through a production repository write path.
 
 - [ ] **Step 2: Write failing atomicity/concurrency tests.** Add `Wrong_expected_sequence_commits_zero_rows`, `Constraint_failure_rolls_back_decision_and_every_effect`, `Concurrent_same_sequence_commits_one_winner`, `Failed_decision_consumes_no_successful_sequence`, `Supersession_unique_target_has_one_winner`, `Replacement_unique_target_has_one_winner`, and `Decision_with_zero_effects_cannot_reach_repository`.
 
@@ -650,7 +677,7 @@
 
   Expected RED: the state loader and atomic authority commit adapter do not exist.
 
-- [ ] **Step 4: Implement state load and one transaction boundary.** `LoadProjectStateAsync` reads only B1 governance/domain/routing tables and reconstructs closed records; it does not read Legacy, Runtime, transcript, Memory, Library, review, task_events, or Summary tables. Reject corrupt/unknown enum/union JSON rather than guessing.
+- [ ] **Step 4: Implement state load and one transaction boundary.** `LoadProjectStateAsync` reads only B1 governance/domain/routing tables and reconstructs closed records; it does not read Legacy, Runtime, transcript, Memory, Library, review, task_events, or Summary tables. Reconstruct each `Assignment.InitialRevisionRef` mechanically from that Assignment's unique Revision whose `PriorRevisionRef` is null. Zero root Revisions or more than one root Revision is corrupt persisted state and throws `InvalidDataException`; do not select the oldest row or guess from timestamps. Reject corrupt/unknown enum/union JSON rather than guessing.
 
   `TryCommitAsync` begins one SQLite transaction, executes:
 
@@ -661,7 +688,7 @@
     AND last_commit_sequence = $expectedSequence;
   ```
 
-  If the affected count is zero, roll back and return `ProjectSequenceConflict`. Otherwise insert the Decision at `$expectedSequence + 1`, considered refs, all resolved structural effects, initial/later Revisions, the empty routing row for each new Assignment, disposition, replacement edge, and contributions/supersession. Any insert or invariant failure rolls back the sequence update and every effect. Do not catch a constraint error and continue with a subset.
+  If the affected count is zero, roll back and return `AuthorityCommitResult.ProjectSequenceConflict`. Otherwise insert the Decision at `$expectedSequence + 1`, considered refs, all resolved structural effects, initial/later Revisions, the empty routing row for each new Assignment, disposition, replacement edge, and contributions/supersession. After the transaction commits, return `AuthorityCommitResult.Committed` carrying the exact persisted `AuthorityDecision`, including the assigned `ProjectCommitSequence`; the repository is the only layer that finalizes this record. Any insert or invariant failure rolls back the sequence update and every effect. Do not catch a constraint error and continue with a subset.
 
 - [ ] **Step 5: Run focused GREEN and migration tests.**
 
@@ -706,7 +733,7 @@
 
   Expected RED: named authority Application service is absent.
 
-- [ ] **Step 4: Implement a private optimistic execute loop, not a public builder.** Each public method loads state, calls only its matching evaluator overload, and tries the validated commit. On `ProjectSequenceConflict`, reload and re-evaluate so unrelated concurrent authority commits may proceed; target conflicts then fail through fresh stale validation. Cap retry count at three and throw `B1CommandException(B1FailureCode.ConcurrentProjectChange)` without effects if contention persists. The same public command is never decomposed into multiple Decisions.
+- [ ] **Step 4: Implement a private optimistic execute loop, not a public builder.** Each public method loads state, calls only its matching evaluator overload, and tries the validated commit. On `AuthorityCommitResult.Committed`, return its persisted `AuthorityDecision` directly. On `AuthorityCommitResult.ProjectSequenceConflict`, reload and re-evaluate so unrelated concurrent authority commits may proceed; target conflicts then fail through fresh stale validation. Cap retry count at three and throw `B1CommandException(B1FailureCode.ConcurrentProjectChange)` without effects if contention persists. The same public command is never decomposed into multiple Decisions, and App never fabricates or guesses the assigned sequence.
 
   The service may have a private generic helper constrained to evaluator delegates. It must not expose `ExecuteAsync`, `SubmitDecisionAsync`, `CommitEffectsAsync`, `AuthorityDecisionBuilder`, or raw effect collections publicly.
 
@@ -741,7 +768,9 @@
   public Task<AuthorityDecision> AuthorAcceptedStateAsync(AuthorAcceptedStateCommand command, CancellationToken ct = default);
   ```
 
-- [ ] **Step 1: Write failing disposition/activation tests.** Add `DecideAssignment_accepts_current_unresolved_revision_once`, `Stale_or_already_dispositioned_revision_rolls_back_whole_decision`, `RevisionRequired_can_atomically_activate_replacement_revision`, `RevisionRequired_can_receive_later_activation_only`, `Accepted_or_rejected_cannot_activate_revision`, `Revision_activation_source_must_be_proposed_revision_for_same_assignment`, `Stale_revision_proposal_remains_considered_history_but_new_contract_targets_current_revision`, `RevisionRequired_or_rejected_can_replace_same_assignment`, `Accepted_plus_replacement_is_invalid`, `Disposition_parallel_delegation_or_other_assignment_replacement_is_invalid`, `Historical_old_revision_claim_can_support_project_contribution_without_old_disposition`, and `Activation_creates_no_attempt_or_execution_state`.
+- [ ] **Step 1: Write failing disposition/activation tests.** Add `DecideAssignment_accepts_current_unresolved_revision_once`, `Stale_or_already_dispositioned_revision_rolls_back_whole_decision`, `RevisionRequired_can_atomically_activate_replacement_revision`, `RevisionRequired_can_receive_later_activation_only`, `Accepted_or_rejected_cannot_activate_revision`, `Revision_activation_source_must_be_proposed_revision_for_same_assignment`, `Stale_revision_proposal_remains_considered_history_but_new_contract_targets_current_revision`, `RevisionRequired_or_rejected_can_replace_same_assignment`, `Replacement_can_atomically_establish_new_assignee_with_delegate_and_actor_capabilities`, `Replacement_actor_establishment_without_project_capability_rolls_back_whole_decision`, `Accepted_plus_replacement_is_invalid`, `Disposition_parallel_delegation_or_other_assignment_replacement_is_invalid`, `Historical_old_revision_claim_can_support_project_contribution_without_old_disposition`, and `Activation_creates_no_attempt_or_execution_state`.
+
+  The positive replacement case gives the deciding Actor both local `DelegateAssignment` and explicitly delegated Project-level `EstablishLogicalActor`. The negative case retains `DelegateAssignment` but omits `EstablishLogicalActor`, then asserts zero Actor, Assignment, initial Revision, disposition, contribution, and sequence effects after the atomic failure.
 
 - [ ] **Step 2: Write failing accepted-state/supersession tests.** Add `AuthorAcceptedState_requires_one_or_more_contributions`, `Authority_can_adopt_modify_or_author_without_claim`, `Source_claim_must_be_same_project_proposed_state_claim`, `Proposal_scope_or_proposed_supersession_never_applies_automatically`, `Rejected_or_revision_required_decision_may_still_author_explicit_contributions`, `Contributions_default_to_coexistence`, `Supersession_requires_current_exact_scope_target`, `Contributions_in_same_decision_cannot_supersede_each_other`, `Concurrent_supersession_has_one_complete_winner`, `Prospective_scope_resolves_only_for_identity_created_by_same_command`, and `Contribution_failure_rolls_back_disposition_activation_and_replacement`.
 
@@ -889,7 +918,7 @@
   dotnet test tests/Workbench.App.Tests/Workbench.App.Tests.csproj --filter "FullyQualifiedName~WorkerSessionRoutingTests|FullyQualifiedName~LeaderReviewAutoProceedExecutorTests|FullyQualifiedName~TruthGovernanceR5ACertificationTests"
   ```
 
-- [ ] **Step 2: Write new failing coexistence certification.** Create a v19 disposable fixture containing a Legacy Project/Leader epoch/message, Task/revision/event, Worker completion-shaped event, typed review/AutoProceed state, Memory/Synthesis, Daily Summary, Library, and R5-A Summary. Migrate the disposable fixture to v20 and add tests:
+- [ ] **Step 2: Add the new coexistence certification.** Create a v19 disposable fixture containing a Legacy Project/Leader epoch/message, Task/revision/event, Worker completion-shaped event, typed review/AutoProceed state, Memory/Synthesis, Daily Summary, Library, and R5-A Summary. Migrate the disposable fixture to v20 and add tests:
 
   - `Migration_creates_only_legacy_origin_and_no_b1_identity_or_authority`;
   - `Legacy_leader_epoch_never_becomes_actor_or_session_binding`;
@@ -902,17 +931,17 @@
   - `Named_authority_command_is_required_before_any_accepted_contribution`;
   - `Legacy_rows_remain_byte_for_byte_equivalent_in_bounded_columns_after_b1_actions`.
 
-- [ ] **Step 3: Run RED.**
+- [ ] **Step 3: Run the new certification and require first-run PASS.**
 
   ```powershell
   dotnet test tests/Workbench.App.Tests/Workbench.App.Tests.csproj --filter FullyQualifiedName~B1LegacyCoexistenceCertificationTests
   ```
 
-  Expected RED: the new certification class and explicit B1 composition do not yet exist at the pre-task checkpoint; no existing green Legacy test may be relabeled as RED.
+  Expected: PASS using the production behavior completed by Tasks 1–13. Task 14 is certification-only and intentionally has no RED production gap; no existing green Legacy test may be relabeled as RED.
 
-- [ ] **Step 4: Add only test fixtures/assertions needed to prove coexistence.** Use the production migration and named B1 commands. Do not add compatibility mappers, background import, historical backdating, deduplication, Legacy back-write, cutover flag, or retirement behavior. A Legacy locator may enter `EvidenceRef` or considered context only through explicit current-time recording. AutoProceed may continue its Legacy behavior during coexistence, but B1 Decision and accepted-state counts must remain unchanged.
+- [ ] **Step 4: If certification fails, route the defect back to its owning implementation task.** Identify the earliest Task 1–13 responsibility whose promised behavior is missing, add a genuine failing regression there, and complete that task's RED -> GREEN cycle before rerunning this certification. Task 14 itself adds only its fixture/assertions and must not modify production. Use the production migration and named B1 commands. Do not add compatibility mappers, background import, historical backdating, deduplication, Legacy back-write, cutover flag, or retirement behavior. A Legacy locator may enter `EvidenceRef` or considered context only through explicit current-time recording. AutoProceed may continue its Legacy behavior during coexistence, but B1 Decision and accepted-state counts must remain unchanged.
 
-- [ ] **Step 5: Run focused GREEN and both baseline commands again.** Require the new one-way-boundary tests and every pre-task Legacy characterization suite to pass unchanged.
+- [ ] **Step 5: Re-run the certification PASS and both baseline commands.** Require the new one-way-boundary tests and every pre-task Legacy characterization suite to pass unchanged.
 
 - [ ] **Step 6: Commit independently.**
 
@@ -940,11 +969,13 @@
 
   ```text
   create unique TemporaryDatabase
-  initialize v19 synthetic Legacy fixture
-  migrate fixture through WorkbenchDatabase.InitializeAsync to v20
+  initialize approved synthetic v11 Legacy fixture through HistoricalMigrationTestDatabase
+  capture bounded v11 Legacy snapshot
+  migrate fixture through the real v11 -> ... -> v19 -> v20 chain
   require PRAGMA quick_check = ok
   require PRAGMA foreign_key_check returns zero rows
-  require bounded Legacy snapshot unchanged
+  require user_version = 20
+  require bounded v11 Legacy snapshot unchanged
   require only mechanical b1_legacy_project_origins rows exist before explicit adoption
   execute Manual certification through restart
   rebuild AcceptedProjectState twice and require structural equality
@@ -981,16 +1012,16 @@
 
 - [x] All approved spec sections 4–20 map to at least one implementation task; no semantic section depends only on prose.
 - [x] All referenced types and method names originate in an earlier task or the same task. Later tasks use `ProjectRef`, `RevisionRef`, `B1ProjectState`, `ValidatedAuthorityDecision`, and service method names exactly as introduced.
-- [x] Every task has a named focused RED, expected failure reason, minimal GREEN work, focused GREEN command, broader regression command where relevant, and one reviewable commit.
+- [x] Tasks 1–13 have a named focused RED, expected failure reason, minimal GREEN work, focused GREEN command, broader regression command where relevant, and one reviewable commit. Task 14 is an explicit certification-only exception whose new assertions must pass against Tasks 1–13 behavior; any failure is returned to the owning implementation task for a genuine RED -> GREEN fix.
 - [x] Existing green characterization suites are explicitly labeled baseline/regression evidence and never counted as failing TDD evidence.
 - [x] Public authority surface is exactly six named methods. Public non-authoritative surface contains the approved eight commands plus only the three approved create-and-select conveniences.
 - [x] Durable objects match the spec: no Responsibility owner, mutable assignee, mutable Revision, Session state, Claim status, Handoff status, persisted Unresolved disposition, open contribution scope, or independent AcceptedProjectState writer.
 - [x] Authority checks are per-effect, capability/locality aware, maximum/subset constrained, non-amplifying, pre-commit only, root-seeded, and unable to use prospective identities for same-Decision authority.
 - [x] Decision persistence increments ProjectCommitSequence and writes every effect in one SQLite transaction; any failure rolls back the sequence and all effects.
-- [x] Supersession and delegation replacement use uniqueness plus Project sequence concurrency so one conflicting Decision wins and the other fails in full.
+- [x] Supersession and delegation replacement targets are each protected by an explicit unique persistence invariant plus Project sequence concurrency, so one conflicting Decision wins and the other fails in full.
 - [x] Routing CAS compares stored nullable refs. Effective-null projection never clears stored refs or assigns execution status.
 - [x] Claims/Handoffs retain attribution and bounded locators only; EvidenceRef does not verify truth; primary Handoff Result belongs to immutable assignee Actor.
-- [x] Migration020 is additive, marks only Projects present at upgrade as pre-B1, synthesizes no B1 authority/history, and leaves migrations 001–019 untouched.
+- [x] Migration020 is additive, marks only Projects present at upgrade as pre-B1, synthesizes no B1 authority/history, and leaves migrations 001–019 untouched; a disposable synthetic v11 fixture certifies the full historical chain through v20.
 - [x] Legacy records remain independently readable and unchanged. All Legacy-to-B1 crossings are explicit, attributable, current-time, and one-way.
 - [x] Manual certification succeeds with zero SessionBindings, Agent API calls, transcript rows, Summary rows, Provider/runtime objects, Git/worktree data, and review execution.
 - [x] The plan adds no Gateway, execution engine, generic ACL, generic public Decision/effect builder, automatic Legacy migration, UI, or retirement work.
