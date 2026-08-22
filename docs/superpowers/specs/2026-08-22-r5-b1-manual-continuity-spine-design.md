@@ -171,7 +171,9 @@ All effect authority is evaluated against the pre-commit Project state. Prospect
 
 ## 5. Durable Domain Identities
 
-All B1 domain references, other than explicitly external EvidenceRefs, are Project-local. A referenced LogicalActor, Responsibility, Assignment, Revision, Attempt, SessionBinding, Claim, Handoff, contribution, or AuthorityDecision must belong to the same Project as the containing operation.
+All B1-owned durable domain entity references are Project-local. A referenced LogicalActor, Responsibility, Assignment, Revision, Attempt, SessionBinding, Claim, Handoff, contribution, or AuthorityDecision must belong to the same Project as the containing operation.
+
+`UserPrincipalRef`, `ExternalSessionRef`, and `EvidenceRef` refer to identities or locators outside the B1-owned Project entity set. They are governed by their explicit bootstrap, provenance, ownership, and evidence constraints rather than by pretending that the external identity itself is Project-local.
 
 ### 5.1 UserPrincipal and LogicalActor
 
@@ -181,8 +183,7 @@ All B1 domain references, other than explicitly external EvidenceRefs, are Proje
 
 ```text
 LogicalActorEstablishmentEffect
-├─ RoleKind
-└─ SourceClaimRef?             // optional considered source
+└─ RoleKind
 ```
 
 Successful commit creates:
@@ -223,8 +224,7 @@ ResponsibilityContract
 
 ```text
 ResponsibilityEstablishmentEffect
-├─ Contract
-└─ SourceClaimRef?
+└─ Contract
 ```
 
 Successful commit creates:
@@ -268,8 +268,7 @@ AssignmentDelegationEffect
 │  ├─ Existing(LogicalActorRef)
 │  └─ EstablishedByThisDecision
 ├─ InitialRevisionContract
-├─ ReplacesAssignmentRef?
-└─ SourceClaimRef?
+└─ ReplacesAssignmentRef?
 ```
 
 Successful delegation atomically creates:
@@ -345,6 +344,26 @@ AssignmentRevisionContract
 
 Every Assignment is created with exactly one initial Revision in the same Decision and transaction. There is no Assignment without a contract.
 
+Initial and later activated contracts use the same Revision identity:
+
+```text
+Revision
+├─ RevisionRef
+├─ AssignmentRef
+├─ PriorRevisionRef?          // null iff this is the initial Revision
+├─ Contract
+└─ AuthorizedByDecisionRef
+```
+
+For the initial Revision:
+
+```text
+PriorRevisionRef = null
+AuthorizedByDecisionRef = Assignment creation Decision
+```
+
+B1 does not define a separate `InitialRevision` object kind.
+
 Subsequent Revision proposals are Claims, not pending Revision entities:
 
 ```text
@@ -370,7 +389,7 @@ Successful activation creates:
 Revision
 ├─ RevisionRef
 ├─ AssignmentRef
-├─ PriorRevisionRef
+├─ PriorRevisionRef            // pre-commit CurrentEffectiveRevisionRef
 ├─ Contract
 └─ AuthorizedByDecisionRef
 ```
@@ -460,6 +479,7 @@ Claim
 ├─ SourceSessionBindingRef?    // provenance only
 ├─ Kind
 ├─ Payload
+├─ EvidenceRefs[]              // 0..N; provenance only
 └─ CreatedAt
 ```
 
@@ -496,6 +516,8 @@ ProposedAssignmentRevision(AssignmentRef, BaseEffectiveRevisionRef, ProposedCont
 A ProposedStateContribution scope and any proposed supersession reference must belong to the Claim's Project. A ProposedAssignmentRevision must reference an existing same-Project Assignment and one of its Revisions. The base or proposed supersession target may later become stale; staleness does not rewrite or invalidate the Claim, but Authority cannot apply the stale proposal without satisfying the actual pre-commit guards.
 
 Claims have no Accepted, Rejected, Disputed, Current, or truth status. Recording, parsing, validating the shape of, or selecting a Claim does not make it authoritative.
+
+`EvidenceRefs` allows a standalone Claim to retain bounded direct evidence provenance. Evidence presence does not verify the Claim, grant authority, or promote it into AcceptedProjectState.
 
 Workbench and Application code may mechanically persist a Claim, but they do not become its Claimant. External tool and CI results are EvidenceRefs or provenance; a responsibility-bearing UserPrincipal or LogicalActor must make the corresponding Claim.
 
@@ -545,6 +567,20 @@ Handoff references Claims and never copies a second mutable version of their pay
 
 Every referenced Claim must belong to the same Project, and every typed Claim reference must point to the corresponding closed Claim kind. B1 does not accept arbitrary Handoff payload extensions.
 
+Each `ProposedAssignmentRevisionClaimRef` included in a Handoff is additionally Attempt-bounded:
+
+```text
+Proposal.AssignmentRef
+= Handoff.Attempt.AssignmentRef
+
+AND
+
+Proposal.BaseEffectiveRevisionRef
+= Handoff.Attempt.EffectiveRevisionRef
+```
+
+An independent ProposedAssignmentRevision Claim may target any valid same-Project Assignment and Revision. The stricter identity match applies when the proposal is packaged as part of a particular Attempt's Handoff.
+
 For the primary ResultClaim:
 
 ```text
@@ -587,7 +623,7 @@ Selection rules are uniform:
 5. Selection uses expected-old compare-and-swap semantics.
 6. Expected-old compares the stored selected reference, not an effective current projection.
 7. Concurrent clients starting from the same stored selection permit at most one successful change.
-8. Clearing a selection is explicit and does not mutate or delete the selected object.
+8. Clearing a selection is explicit through the applicable nullable-selection or named clear command and does not mutate or delete the selected object.
 9. Selection never grants authority or changes AcceptedProjectState.
 
 The effective recovery chain is a query projection:
@@ -684,25 +720,59 @@ Historical authority loss does not invalidate a Decision that was valid when com
 
 ### 10.5 No Authority Amplification
 
-The bootstrap UserPrincipal may delegate any boundary that is a subset of the target Responsibility maximum.
-
-For a LogicalActor creating a new Assignment:
+For no-amplification checks, capability possession is locality-aware rather than a plain union. For a target Responsibility R:
 
 ```text
-NewAssignment.DelegatedAuthorityBoundary
-⊆ DeciderEffectiveCapabilities
-∩ Responsibility.MaximumDelegableAuthorityBoundary
+LogicalActor can exercise capability C for target R iff:
+
+if C is Project-level:
+    at least one effective pre-commit authority-source Assignment
+    grants C at its fixed Project locality
+
+if C is Responsibility-local:
+    at least one effective pre-commit authority-source Assignment
+    under R grants C
 ```
 
-For Revision activation:
+A capability obtained under another Responsibility cannot leak into the target Responsibility merely because the Actor's capabilities can be displayed as a union.
+
+For the bootstrap UserPrincipal, both new Assignment delegation and Revision activation use the root rule:
+
+```text
+NewBoundary
+⊆ TargetResponsibility.MaximumDelegableAuthorityBoundary
+```
+
+Bootstrap does not use Assignment-derived effective capabilities.
+
+For a LogicalActor creating a new Assignment under target Responsibility R:
+
+```text
+for every capability C in NewAssignment.DelegatedAuthorityBoundary:
+    C is exercisable by Decider for target R
+    in the pre-commit state
+
+AND
+
+NewAssignment.DelegatedAuthorityBoundary
+⊆ R.MaximumDelegableAuthorityBoundary
+```
+
+For a LogicalActor activating a Revision under target Responsibility R:
 
 ```text
 AddedCapabilities
 = NewRevision.DelegatedAuthorityBoundary
   - PriorRevision.DelegatedAuthorityBoundary
 
-AddedCapabilities
-⊆ DeciderEffectiveCapabilities
+for every capability C in AddedCapabilities:
+    C is exercisable by Decider for target R
+    in the pre-commit state
+
+AND
+
+NewRevision.DelegatedAuthorityBoundary
+⊆ R.MaximumDelegableAuthorityBoundary
 ```
 
 Retaining capabilities already present in the prior Revision does not require the Decider to hold them. Removing capabilities is permitted when the Decider is otherwise authorized to activate the Revision. No LogicalActor may use `DelegateAssignment` or `ActivateAssignmentRevision` to manufacture authority it did not already possess.
@@ -1124,6 +1194,8 @@ SelectCurrentSessionBinding
 ClearCurrentSessionBinding
 ```
 
+`SelectCurrentAttempt` and `SelectContinuationHandoff` accept a nullable new selected reference, so an explicit null performs their clear operation under the same stored expected-old CAS rule. Session connectivity uses the explicit `ClearCurrentSessionBinding` command. No selection is cleared merely because its effective projection becomes null.
+
 Named atomic conveniences may include:
 
 ```text
@@ -1455,7 +1527,7 @@ Later implementation design must preserve these boundaries:
 - WorkerExecution may contain future Attempt, Assignment, and Session provenance candidates, but Git/worktree/runtime state remains delegated.
 - Worker completion and review payloads are Claim/Handoff candidates, not AuthorityDecisions.
 - AutoProceed cannot be reinterpreted as attributable B1 authority.
-- Existing Task completion remains legacy Assignment-level state until an explicit reconciliation design maps it.
+- Existing Task completion remains legacy Task-level completion state until an explicit reconciliation design maps it.
 - R5-A Summary remains the approved append-only non-authoritative continuity path and is not recomputed from AcceptedProjectState.
 - Legacy Memory and Daily Summary retain distinct semantics and are not automatic Summary or accepted-state migration targets.
 - Project Library material may be referenced as context/evidence but does not become accepted state by name.
