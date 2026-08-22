@@ -104,6 +104,105 @@ public sealed class B1NonAuthoritativeCommandServiceTests
         Assert.Equal(0L, await fixture.CountAsync("b1_accepted_state_contributions"));
     }
 
+    [Fact]
+    public async Task RecordClaim_preserves_actor_claimant_when_bootstrap_user_operates_manually()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+
+        var claim = await fixture.Service.RecordClaimAsync(fixture.RecordResult("manual result"));
+
+        Assert.Equal(new ClaimantRef.LogicalActor(fixture.ActorRef), claim.ClaimantRef);
+        Assert.Null(claim.SourceSessionBindingRef);
+        Assert.Equal(fixture.PrincipalRef.Value, await fixture.ClaimOperatorAuthorityAsync());
+    }
+
+    [Fact]
+    public async Task CreateHandoff_does_not_create_decision_or_accepted_state()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var attemptRef = new AttemptRef(Guid.NewGuid());
+        await fixture.Service.CreateAttemptAsync(fixture.CreateAttempt(attemptRef));
+        var result = await fixture.Service.RecordClaimAsync(fixture.RecordResult("bounded result"));
+        var decisionsBefore = await fixture.CountAsync("b1_authority_decisions");
+
+        var handoff = await fixture.Service.CreateHandoffAsync(
+            fixture.CreateHandoff(attemptRef, result.ClaimRef));
+
+        Assert.Equal(attemptRef, handoff.AttemptRef);
+        Assert.Equal(decisionsBefore, await fixture.CountAsync("b1_authority_decisions"));
+        Assert.Equal(0L, await fixture.CountAsync("b1_revision_dispositions"));
+        Assert.Equal(0L, await fixture.CountAsync("b1_accepted_state_contributions"));
+    }
+
+    [Fact]
+    public async Task SelectContinuationHandoff_uses_expected_stored_ref()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var attemptRef = new AttemptRef(Guid.NewGuid());
+        await fixture.Service.CreateAttemptAsync(fixture.CreateAttempt(attemptRef));
+        var first = await fixture.AddHandoffAsync(attemptRef, "first");
+        var second = await fixture.AddHandoffAsync(attemptRef, "second");
+        await fixture.Service.SelectContinuationHandoffAsync(
+            fixture.SelectHandoff(attemptRef, expected: null, first.HandoffRef));
+
+        var stale = await Assert.ThrowsAsync<B1CommandException>(() =>
+            fixture.Service.SelectContinuationHandoffAsync(
+                fixture.SelectHandoff(attemptRef, expected: null, second.HandoffRef)));
+        Assert.Equal(B1FailureCode.StaleRoutingSelection, stale.Code);
+
+        await fixture.Service.SelectContinuationHandoffAsync(
+            fixture.SelectHandoff(attemptRef, first.HandoffRef, second.HandoffRef));
+        Assert.Equal(second.HandoffRef.Value.ToString(), await fixture.SelectedHandoffAsync(attemptRef));
+    }
+
+    [Fact]
+    public async Task CreateHandoffAndSelect_rolls_back_on_stale_selection()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var attemptRef = new AttemptRef(Guid.NewGuid());
+        await fixture.Service.CreateAttemptAsync(fixture.CreateAttempt(attemptRef));
+        var selected = await fixture.AddHandoffAsync(attemptRef, "selected");
+        await fixture.Service.SelectContinuationHandoffAsync(
+            fixture.SelectHandoff(attemptRef, expected: null, selected.HandoffRef));
+        var result = await fixture.Service.RecordClaimAsync(fixture.RecordResult("rejected"));
+        var rejected = fixture.CreateHandoff(attemptRef, result.ClaimRef);
+
+        var exception = await Assert.ThrowsAsync<B1CommandException>(() =>
+            fixture.Service.CreateHandoffAndSelectAsync(rejected, expectedStored: null));
+
+        Assert.Equal(B1FailureCode.StaleRoutingSelection, exception.Code);
+        Assert.Equal(0L, await fixture.CountByIdAsync("b1_handoffs", rejected.Handoff.HandoffRef.Value));
+        Assert.Equal(selected.HandoffRef.Value.ToString(), await fixture.SelectedHandoffAsync(attemptRef));
+    }
+
+    [Fact]
+    public void Public_non_authoritative_surface_contains_only_eight_commands_and_three_conveniences()
+    {
+        var methods = typeof(B1NonAuthoritativeCommandService)
+            .GetMethods()
+            .Where(method => method.DeclaringType == typeof(B1NonAuthoritativeCommandService))
+            .Select(method => method.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            new[]
+            {
+                "ClearCurrentSessionBindingAsync",
+                "CreateAttemptAndSelectAsync",
+                "CreateAttemptAsync",
+                "CreateHandoffAndSelectAsync",
+                "CreateHandoffAsync",
+                "CreateSessionBindingAndSelectAsync",
+                "CreateSessionBindingAsync",
+                "RecordClaimAsync",
+                "SelectContinuationHandoffAsync",
+                "SelectCurrentAttemptAsync",
+                "SelectCurrentSessionBindingAsync"
+            }.Order(StringComparer.Ordinal),
+            methods);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string _directory;
@@ -185,10 +284,11 @@ public sealed class B1NonAuthoritativeCommandServiceTests
             }
 
             var routing = new B1RoutingRepository(database);
+            var claimsAndHandoffs = new B1ClaimHandoffRepository(database);
             return new Fixture(
                 directory,
                 database,
-                new B1NonAuthoritativeCommandService(routing),
+                new B1NonAuthoritativeCommandService(routing, claimsAndHandoffs),
                 new ProjectRef(projectId),
                 principal,
                 new LogicalActorRef(actor),
@@ -224,6 +324,44 @@ public sealed class B1NonAuthoritativeCommandServiceTests
             SessionBindingRef? expected) =>
             new(ProjectRef, PrincipalRef, attemptRef, expected);
 
+        public RecordClaimCommand RecordResult(string statement) =>
+            new(
+                ProjectRef,
+                PrincipalRef,
+                new ClaimRef(Guid.NewGuid()),
+                new ClaimantRef.LogicalActor(ActorRef),
+                SourceSessionBindingRef: null,
+                new ClaimPayload.Result(statement),
+                [new EvidenceRef("app:manual")],
+                At);
+
+        public CreateHandoffCommand CreateHandoff(AttemptRef attemptRef, ClaimRef resultClaimRef) =>
+            new(
+                ProjectRef,
+                PrincipalRef,
+                new Handoff(
+                    new HandoffRef(Guid.NewGuid()),
+                    attemptRef,
+                    resultClaimRef,
+                    [],
+                    [],
+                    [],
+                    [],
+                    [new EvidenceRef("app:handoff")],
+                    At));
+
+        public SelectContinuationHandoffCommand SelectHandoff(
+            AttemptRef attemptRef,
+            HandoffRef? expected,
+            HandoffRef? selected) =>
+            new(ProjectRef, PrincipalRef, attemptRef, expected, selected);
+
+        public async Task<Handoff> AddHandoffAsync(AttemptRef attemptRef, string statement)
+        {
+            var result = await Service.RecordClaimAsync(RecordResult(statement));
+            return await Service.CreateHandoffAsync(CreateHandoff(attemptRef, result.ClaimRef));
+        }
+
         public Task<string?> SelectedAttemptAsync() => ScalarAsync(
             "SELECT selected_attempt_id FROM b1_assignment_routing WHERE assignment_id=$assignment;",
             ("$assignment", AssignmentRef.Value.ToString()));
@@ -231,6 +369,14 @@ public sealed class B1NonAuthoritativeCommandServiceTests
         public Task<string?> SelectedBindingAsync(AttemptRef attemptRef) => ScalarAsync(
             "SELECT selected_session_binding_id FROM b1_attempt_routing WHERE attempt_id=$attempt;",
             ("$attempt", attemptRef.Value.ToString()));
+
+        public Task<string?> SelectedHandoffAsync(AttemptRef attemptRef) => ScalarAsync(
+            "SELECT selected_handoff_id FROM b1_attempt_routing WHERE attempt_id=$attempt;",
+            ("$attempt", attemptRef.Value.ToString()));
+
+        public Task<string?> ClaimOperatorAuthorityAsync() => ScalarAsync(
+            "SELECT bootstrap_user_principal FROM b1_project_governance WHERE project_id=$project;",
+            ("$project", ProjectRef.Value.ToString()));
 
         public async Task<long> CountAsync(string table)
         {

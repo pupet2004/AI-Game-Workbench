@@ -3,10 +3,14 @@ using Workbench.Storage.Continuity;
 
 namespace Workbench.App.Continuity;
 
-public sealed class B1NonAuthoritativeCommandService(B1RoutingRepository routingRepository)
+public sealed class B1NonAuthoritativeCommandService(
+    B1RoutingRepository routingRepository,
+    B1ClaimHandoffRepository claimHandoffRepository)
 {
     private readonly B1RoutingRepository _routingRepository =
         routingRepository ?? throw new ArgumentNullException(nameof(routingRepository));
+    private readonly B1ClaimHandoffRepository _claimHandoffRepository =
+        claimHandoffRepository ?? throw new ArgumentNullException(nameof(claimHandoffRepository));
 
     public Task<Attempt> CreateAttemptAsync(
         CreateAttemptCommand command,
@@ -44,4 +48,25 @@ public sealed class B1NonAuthoritativeCommandService(B1RoutingRepository routing
         SessionBindingRef? expectedStored,
         CancellationToken cancellationToken = default) =>
         _routingRepository.CreateSessionBindingAndSelectAsync(create, expectedStored, cancellationToken);
+
+    public Task<Claim> RecordClaimAsync(
+        RecordClaimCommand command,
+        CancellationToken cancellationToken = default) =>
+        _claimHandoffRepository.RecordClaimAsync(command, cancellationToken);
+
+    public Task<Handoff> CreateHandoffAsync(
+        CreateHandoffCommand command,
+        CancellationToken cancellationToken = default) =>
+        _claimHandoffRepository.CreateHandoffAsync(command, cancellationToken);
+
+    public Task SelectContinuationHandoffAsync(
+        SelectContinuationHandoffCommand command,
+        CancellationToken cancellationToken = default) =>
+        _claimHandoffRepository.SelectContinuationHandoffAsync(command, cancellationToken);
+
+    public Task<Handoff> CreateHandoffAndSelectAsync(
+        CreateHandoffCommand create,
+        HandoffRef? expectedStored,
+        CancellationToken cancellationToken = default) =>
+        _claimHandoffRepository.CreateHandoffAndSelectAsync(create, expectedStored, cancellationToken);
 }
