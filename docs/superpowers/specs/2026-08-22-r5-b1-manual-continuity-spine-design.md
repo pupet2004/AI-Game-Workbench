@@ -1,6 +1,6 @@
 # R5-B1 Manual Continuity Spine — Design Specification
 
-Status: **Architecture approved; written specification pending review**
+Status: **Architecture approved; written specification approved**
 Date: 2026-08-22
 Product: AI Game Workbench
 
