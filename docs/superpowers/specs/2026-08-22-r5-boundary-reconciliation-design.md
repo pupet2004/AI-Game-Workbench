@@ -56,19 +56,21 @@ The durable boundary within which responsibilities, assignments, authority, and 
 
 ### 3.2 LogicalActor and RoleKind
 
-A `LogicalActor` is a durable identity that may hold responsibility and may be rebound to different external sessions over time.
+A `LogicalActor` is a durable identity that may receive Assignments, exercise explicitly granted authority, and be rebound to different external sessions over time.
 
-`Leader`, `Worker`, and `Reviewer` are `RoleKind` values, not three permanent singleton conversations. A Project normally has one current Leader responsibility. An Assignment may have its own Worker actor, and a Reviewer actor may be created temporarily for a review responsibility.
+`Leader`, `Worker`, and `Reviewer` are `RoleKind` values, not three permanent singleton conversations. A Project normally has one current Leader Responsibility fulfilled through an active Assignment. An Assignment may have its own Worker actor, and a Reviewer actor may be created temporarily for a review responsibility.
 
 A LogicalActor is not a Codex thread, Claude session, transcript, model, or provider account.
 
 ### 3.3 Responsibility
 
-A durable Project obligation consisting of an expected outcome, its current owner, and any authority associated with that obligation. Responsibility outlives any particular Assignment or SessionBinding.
+A durable Project obligation consisting of an expected outcome and the authority boundary governing its fulfillment and acceptance. Responsibility does not store a current owner and outlives any particular Assignment or SessionBinding.
 
 ### 3.4 Assignment
 
-A concrete delegation of work toward a Responsibility to a LogicalActor. It defines the bounded goal, constraints, references, and expected handoff, but not the Agent's execution strategy.
+A concrete delegation of all or part of a Responsibility's fulfillment to a LogicalActor. It defines the assignee, bounded goal, constraints, references, and expected handoff, but not the Agent's execution strategy.
+
+The actor or actors currently responsible for fulfillment are derived from active Assignments. Even a long-lived Leader Responsibility is connected to its current LogicalActor through an explicit Assignment; there is no second Responsibility owner field with competing precedence.
 
 ### 3.5 Revision and Attempt
 
@@ -115,7 +117,9 @@ The current authoritative Project view derived from attributable Authority Decis
 
 ### 3.12 Summary and Transcript
 
-`Summary` is a derived, compact recovery and navigation view. It may help a future Leader find rationale or unresolved context, but it is non-authoritative and may lag behind Accepted Project State.
+`Summary` is a non-authoritative, compact continuity view produced or retained for recovery and navigation. It may be derived from or reference Claims, Handoffs, Authority Decisions, or other bounded Project context, but it is not the authoritative projection and is not required to be mechanically recomputable from Accepted Project State.
+
+The existing R5-A path remains valid: normal Leader cognition may emit a sparse append-only `SummaryDelta` that Workbench persists mechanically. This decision neither converts Summary into an Accepted Project State projection nor requires existing Summary entries to be deleted and recomputed.
 
 `Transcript` is provider-owned contextual scene. It may be useful for audit or semantic reconstruction, but it must never be authoritative Project state.
 
@@ -175,7 +179,7 @@ The information layers have these fixed meanings:
 ```text
 Transcript          contextual scene; non-authoritative
 Claim / Handoff     attributable statement or transfer; non-authoritative
-Summary             derived recovery/navigation view; non-authoritative
+Summary             produced or retained continuity aid; non-authoritative
 AuthorityDecision   attributable governance action
 AcceptedProjectState
                     authoritative projection of decisions
@@ -263,6 +267,8 @@ Replaceable integration with an external system: Codex, Claude, ACP, Manual, Cod
 ### DELEGATED
 
 Capabilities owned by the selected Agent or external runtime: worktrees, Git execution, tests, builds, sandboxing, runtime permissions, review execution, subagents, background queues, merge execution, and execution strategy.
+
+Runtime permission policy, enforcement, and semantics are `DELEGATED`. Forwarding a provider permission request through a Session Gateway is `ADAPTER`, while coordinating its presentation and response is `APPLICATION`; neither means Workbench owns the permission policy.
 
 The audit decision sequence is:
 
