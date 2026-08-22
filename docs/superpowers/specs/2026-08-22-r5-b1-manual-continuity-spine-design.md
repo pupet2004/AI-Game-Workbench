@@ -1468,7 +1468,7 @@ The written and later implementation designs must certify at least the following
 - Assignment assignee cannot be mutated.
 - Historical SessionBinding remains attached to its original Actor and Attempt.
 - A primary Handoff ResultClaim is attributable to the immutable Assignment assignee.
-- Cross-Project references fail except for explicitly external EvidenceRefs.
+- Cross-Project references between B1-owned domain entities fail; external `UserPrincipalRef`, `ExternalSessionRef`, and `EvidenceRef` follow their separately defined constraints.
 
 ### Authority
 
