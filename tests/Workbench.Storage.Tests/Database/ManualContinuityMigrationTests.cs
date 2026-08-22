@@ -43,6 +43,8 @@ public sealed class ManualContinuityMigrationTests
         Assert.Equal(20L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(B1Tables, await StringsAsync(connection,
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'b1_%' ORDER BY name;"));
+        Assert.Contains("activation_source_claim_id", await StringsAsync(connection,
+            "SELECT name FROM pragma_table_info('b1_revisions') ORDER BY cid;"));
     }
 
     [Fact]
@@ -238,6 +240,47 @@ public sealed class ManualContinuityMigrationTests
             connection, Id("replacement-two"), project, seed, seed.AssignmentId));
     }
 
+    [Fact]
+    public async Task B1_revision_activation_source_is_same_project_and_not_initial()
+    {
+        await using var fixture = await V19Fixture.CreateAsync(projectCount: 2);
+        await fixture.Database.InitializeAsync();
+        await using var connection = fixture.Database.CreateConnection();
+        await connection.OpenAsync();
+        var first = fixture.ProjectIds[0];
+        var second = fixture.ProjectIds[1];
+        var firstSeed = await SeedB1GovernanceAsync(connection, first, "activation-01");
+        var secondSeed = await SeedB1GovernanceAsync(connection, second, "activation-02");
+        var firstClaim = Id("activation-claim-01");
+        var secondClaim = Id("activation-claim-02");
+        await InsertResultClaimAsync(connection, firstClaim, first, "user:activation-01");
+        await InsertResultClaimAsync(connection, secondClaim, second, "user:activation-02");
+
+        await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(connection, """
+            UPDATE b1_revisions
+            SET activation_source_claim_id=$claim
+            WHERE id=$revision;
+            """, ("$claim", firstClaim), ("$revision", firstSeed.RevisionId)));
+
+        await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(connection, """
+            INSERT INTO b1_revisions(
+                id,project_id,assignment_id,prior_revision_id,work_contract,
+                delegated_authority_json,activation_source_claim_id,authorized_by_decision_id)
+            VALUES($id,$project,$assignment,$prior,'R2','[]',$claim,$decision);
+            """, ("$id", Id("cross-project-activation-revision")), ("$project", second),
+            ("$assignment", secondSeed.AssignmentId), ("$prior", secondSeed.RevisionId),
+            ("$claim", firstClaim), ("$decision", secondSeed.DecisionId)));
+
+        await ExecuteAsync(connection, """
+            INSERT INTO b1_revisions(
+                id,project_id,assignment_id,prior_revision_id,work_contract,
+                delegated_authority_json,activation_source_claim_id,authorized_by_decision_id)
+            VALUES($id,$project,$assignment,$prior,'R2','[]',$claim,$decision);
+            """, ("$id", Id("same-project-activation-revision")), ("$project", second),
+            ("$assignment", secondSeed.AssignmentId), ("$prior", secondSeed.RevisionId),
+            ("$claim", secondClaim), ("$decision", secondSeed.DecisionId));
+    }
+
     private static async Task<B1Seed> SeedB1GovernanceAsync(SqliteConnection connection, string projectId, string suffix)
     {
         var decision = Id($"decision-{suffix}");
@@ -287,6 +330,19 @@ public sealed class ManualContinuityMigrationTests
             VALUES($id,$project,$responsibility,$actor,$replaces,$decision);
             """, ("$id", id), ("$project", project), ("$responsibility", seed.ResponsibilityId),
             ("$actor", seed.ActorId), ("$replaces", replaces), ("$decision", seed.DecisionId));
+
+    private static Task InsertResultClaimAsync(
+        SqliteConnection connection, string id, string project, string user) =>
+        ExecuteAsync(connection, """
+            INSERT INTO b1_claims(
+                id,project_id,claimant_kind,claimant_user_principal,claimant_actor_id,source_binding_id,
+                kind,statement,proposed_scope_kind,proposed_scope_project_id,
+                proposed_scope_responsibility_id,proposed_scope_assignment_id,
+                proposed_supersedes_contribution_id,proposed_assignment_id,base_revision_id,
+                proposed_work_contract,proposed_delegated_authority_json,evidence_refs_json,created_at)
+            VALUES($id,$project,'UserPrincipal',$user,NULL,NULL,'Result','source',NULL,NULL,NULL,NULL,
+                NULL,NULL,NULL,NULL,NULL,'[]',$at);
+            """, ("$id", id), ("$project", project), ("$user", user), ("$at", V19Fixture.At));
 
     private static async Task SeedV11Async(WorkbenchDatabase database, int projectCount)
     {

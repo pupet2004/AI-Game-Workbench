@@ -109,6 +109,7 @@ internal static class Migration020ManualContinuitySpine
                 project_id TEXT NOT NULL REFERENCES b1_project_governance(project_id) ON DELETE CASCADE,
                 assignment_id TEXT NOT NULL,
                 prior_revision_id TEXT NULL,
+                activation_source_claim_id TEXT NULL,
                 work_contract TEXT NOT NULL CHECK(length(trim(work_contract)) > 0),
                 delegated_authority_json TEXT NOT NULL
                     CHECK(json_valid(delegated_authority_json) AND json_type(delegated_authority_json) = 'array'),
@@ -119,9 +120,12 @@ internal static class Migration020ManualContinuitySpine
                     REFERENCES b1_assignments(id, project_id),
                 FOREIGN KEY(prior_revision_id, project_id, assignment_id)
                     REFERENCES b1_revisions(id, project_id, assignment_id),
+                FOREIGN KEY(activation_source_claim_id, project_id)
+                    REFERENCES b1_claims(id, project_id),
                 FOREIGN KEY(authorized_by_decision_id, project_id)
                     REFERENCES b1_authority_decisions(id, project_id),
-                CHECK(prior_revision_id IS NULL OR prior_revision_id <> id)
+                CHECK(prior_revision_id IS NULL OR prior_revision_id <> id),
+                CHECK(prior_revision_id IS NOT NULL OR activation_source_claim_id IS NULL)
             );
 
             CREATE UNIQUE INDEX ux_b1_revisions_one_initial_per_assignment

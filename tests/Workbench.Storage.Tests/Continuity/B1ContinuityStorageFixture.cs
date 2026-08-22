@@ -55,119 +55,123 @@ internal sealed class B1ContinuityStorageFixture : IAsyncDisposable
             At);
         await new B1ProjectGovernanceRepository(Database).CreateGovernedProjectAsync(project, principal);
 
-        var decision = Guid.NewGuid();
-        var actor = Guid.NewGuid();
-        var responsibility = Guid.NewGuid();
-        var assignment = Guid.NewGuid();
-        var revision = Guid.NewGuid();
-        await using var connection = Database.CreateConnection();
-        await connection.OpenAsync();
-        await ExecuteAsync(connection, """
-            INSERT INTO b1_authority_decisions(
-                id,project_id,project_commit_sequence,command_kind,deciding_authority_kind,
-                deciding_user_principal,deciding_actor_id,created_at)
-            VALUES($decision,$project,1,'EstablishResponsibility','UserPrincipal',$principal,NULL,$at);
-            INSERT INTO b1_logical_actors(id,project_id,role_kind,authorized_by_decision_id,created_at)
-            VALUES($actor,$project,'Worker',$decision,$at);
-            INSERT INTO b1_responsibilities(
-                id,project_id,obligation,expected_outcome,maximum_authority_json,
-                authorized_by_decision_id,created_at)
-            VALUES($responsibility,$project,'Complete assigned work','Bounded result','[]',$decision,$at);
-            INSERT INTO b1_assignments(
-                id,project_id,responsibility_id,assignee_actor_id,replaces_assignment_id,
-                authorized_by_decision_id)
-            VALUES($assignment,$project,$responsibility,$actor,NULL,$decision);
-            INSERT INTO b1_revisions(
-                id,project_id,assignment_id,prior_revision_id,work_contract,
-                delegated_authority_json,authorized_by_decision_id)
-            VALUES($revision,$project,$assignment,NULL,'Initial contract','[]',$decision);
-            INSERT INTO b1_assignment_routing(assignment_id,project_id,selected_attempt_id)
-            VALUES($assignment,$project,NULL);
-            UPDATE b1_project_governance SET last_commit_sequence=1 WHERE project_id=$project;
-            """,
-            ("$decision", decision.ToString()), ("$project", projectId.ToString()),
-            ("$principal", principal.Value), ("$actor", actor.ToString()),
-            ("$responsibility", responsibility.ToString()), ("$assignment", assignment.ToString()),
-            ("$revision", revision.ToString()), ("$at", At.ToString("O")));
-
-        return new(
-            new ProjectRef(projectId),
-            principal,
-            new LogicalActorRef(actor),
-            new ResponsibilityRef(responsibility),
-            new AssignmentRef(assignment),
-            new RevisionRef(revision));
+        var projectRef = new ProjectRef(projectId);
+        var authority = new DecidingAuthorityRef.UserPrincipal(principal);
+        var evaluator = new B1AuthorityEvaluator();
+        var repository = new B1AuthorityRepository(Database);
+        var state = await repository.LoadProjectStateAsync(projectRef);
+        var validated = evaluator.Evaluate(state,
+            new EstablishResponsibilityCommand(
+                projectRef,
+                principal,
+                authority,
+                new ResponsibilityContract(
+                    "Complete assigned work",
+                    "Bounded result",
+                    AuthorityBoundary.Empty),
+                new AssignmentDelegationInstruction(
+                    new ResponsibilityTarget.EstablishedByThisDecision(),
+                    new AssignmentAssigneeTarget.EstablishedByThisDecision(),
+                    new AssignmentRevisionContract("Initial contract"),
+                    null),
+                RoleKind.Worker,
+                [],
+                []),
+            new AuthorityDecisionRef(Guid.NewGuid()),
+            At);
+        var committed = Assert.IsType<AuthorityCommitResult.Committed>(
+            await repository.TryCommitAsync(validated)).Decision;
+        var actor = committed.LogicalActorEstablishmentEffect!.LogicalActor;
+        var responsibility = committed.ResponsibilityEstablishmentEffect!.Responsibility;
+        var delegation = committed.AssignmentDelegationEffect!;
+        return new(projectRef, principal, actor.LogicalActorRef, responsibility.ResponsibilityRef,
+            delegation.Assignment.AssignmentRef, delegation.InitialRevision.RevisionRef);
     }
 
     public async Task<RevisionRef> AddSuccessorRevisionAsync(B1ContinuitySeed seed)
     {
-        var decision = await AddDecisionAsync(seed, "ActivateAssignmentRevision");
-        var revision = Guid.NewGuid();
-        await using var connection = Database.CreateConnection();
-        await connection.OpenAsync();
-        await ExecuteAsync(connection, """
-            INSERT INTO b1_revisions(
-                id,project_id,assignment_id,prior_revision_id,work_contract,
-                delegated_authority_json,authorized_by_decision_id)
-            VALUES($revision,$project,$assignment,$prior,'Successor contract','[]',$decision);
-            """, ("$revision", revision.ToString()), ("$project", seed.ProjectRef.Value.ToString()),
-            ("$assignment", seed.AssignmentRef.Value.ToString()),
-            ("$prior", seed.RevisionRef.Value.ToString()), ("$decision", decision.ToString()));
-        return new RevisionRef(revision);
+        var repository = new B1AuthorityRepository(Database);
+        var state = await repository.LoadProjectStateAsync(seed.ProjectRef);
+        var validated = new B1AuthorityEvaluator().Evaluate(state,
+            new ActivateAssignmentRevisionCommand(
+                seed.ProjectRef,
+                seed.BootstrapPrincipalRef,
+                new DecidingAuthorityRef.UserPrincipal(seed.BootstrapPrincipalRef),
+                new RevisionActivationInstruction(
+                    seed.AssignmentRef,
+                    seed.RevisionRef,
+                    new AssignmentRevisionContract("Successor contract"),
+                    null),
+                [],
+                []),
+            new AuthorityDecisionRef(Guid.NewGuid()),
+            At);
+        var committed = Assert.IsType<AuthorityCommitResult.Committed>(
+            await repository.TryCommitAsync(validated)).Decision;
+        return committed.RevisionActivationEffect!.Revision.RevisionRef;
     }
 
     public async Task AddDispositionAsync(B1ContinuitySeed seed, RevisionRef revisionRef)
     {
-        var decision = await AddDecisionAsync(seed, "DecideAssignment");
-        await using var connection = Database.CreateConnection();
-        await connection.OpenAsync();
-        await ExecuteAsync(connection, """
-            INSERT INTO b1_revision_dispositions(
-                revision_id,project_id,assignment_id,disposition,authority_decision_id)
-            VALUES($revision,$project,$assignment,'Accepted',$decision);
-            """, ("$revision", revisionRef.Value.ToString()),
-            ("$project", seed.ProjectRef.Value.ToString()),
-            ("$assignment", seed.AssignmentRef.Value.ToString()),
-            ("$decision", decision.ToString()));
+        var repository = new B1AuthorityRepository(Database);
+        var state = await repository.LoadProjectStateAsync(seed.ProjectRef);
+        var validated = new B1AuthorityEvaluator().Evaluate(state,
+            new DecideAssignmentCommand(
+                seed.ProjectRef,
+                seed.BootstrapPrincipalRef,
+                new DecidingAuthorityRef.UserPrincipal(seed.BootstrapPrincipalRef),
+                new AssignmentDispositionInstruction(
+                    seed.AssignmentRef,
+                    revisionRef,
+                    AssignmentDisposition.Accepted),
+                null,
+                null,
+                [],
+                []),
+            new AuthorityDecisionRef(Guid.NewGuid()),
+            At);
+        Assert.IsType<AuthorityCommitResult.Committed>(await repository.TryCommitAsync(validated));
     }
 
     public async Task MarkAssignmentReplacedAsync(B1ContinuitySeed seed)
     {
-        var decision = await AddDecisionAsync(seed, "DelegateAssignment");
-        var replacement = Guid.NewGuid();
-        var revision = Guid.NewGuid();
-        await using var connection = Database.CreateConnection();
-        await connection.OpenAsync();
-        await ExecuteAsync(connection, """
-            INSERT INTO b1_assignments(
-                id,project_id,responsibility_id,assignee_actor_id,replaces_assignment_id,
-                authorized_by_decision_id)
-            VALUES($replacement,$project,$responsibility,$actor,$replaced,$decision);
-            INSERT INTO b1_revisions(
-                id,project_id,assignment_id,prior_revision_id,work_contract,
-                delegated_authority_json,authorized_by_decision_id)
-            VALUES($revision,$project,$replacement,NULL,'Replacement contract','[]',$decision);
-            INSERT INTO b1_assignment_routing(assignment_id,project_id,selected_attempt_id)
-            VALUES($replacement,$project,NULL);
-            """, ("$replacement", replacement.ToString()), ("$project", seed.ProjectRef.Value.ToString()),
-            ("$responsibility", seed.ResponsibilityRef.Value.ToString()),
-            ("$actor", seed.AssigneeActorRef.Value.ToString()),
-            ("$replaced", seed.AssignmentRef.Value.ToString()), ("$decision", decision.ToString()),
-            ("$revision", revision.ToString()));
+        var repository = new B1AuthorityRepository(Database);
+        var state = await repository.LoadProjectStateAsync(seed.ProjectRef);
+        var validated = new B1AuthorityEvaluator().Evaluate(state,
+            new DelegateAssignmentCommand(
+                seed.ProjectRef,
+                seed.BootstrapPrincipalRef,
+                new DecidingAuthorityRef.UserPrincipal(seed.BootstrapPrincipalRef),
+                new AssignmentDelegationInstruction(
+                    new ResponsibilityTarget.Existing(seed.ResponsibilityRef),
+                    new AssignmentAssigneeTarget.Existing(seed.AssigneeActorRef),
+                    new AssignmentRevisionContract("Replacement contract"),
+                    seed.AssignmentRef),
+                null,
+                [],
+                []),
+            new AuthorityDecisionRef(Guid.NewGuid()),
+            At);
+        Assert.IsType<AuthorityCommitResult.Committed>(await repository.TryCommitAsync(validated));
     }
 
     public async Task<LogicalActorRef> AddActorAsync(B1ContinuitySeed seed)
     {
-        var decision = await AddDecisionAsync(seed, "EstablishLogicalActor");
-        var actor = Guid.NewGuid();
-        await using var connection = Database.CreateConnection();
-        await connection.OpenAsync();
-        await ExecuteAsync(connection, """
-            INSERT INTO b1_logical_actors(id,project_id,role_kind,authorized_by_decision_id,created_at)
-            VALUES($actor,$project,'Reviewer',$decision,$at);
-            """, ("$actor", actor.ToString()), ("$project", seed.ProjectRef.Value.ToString()),
-            ("$decision", decision.ToString()), ("$at", At.ToString("O")));
-        return new LogicalActorRef(actor);
+        var repository = new B1AuthorityRepository(Database);
+        var state = await repository.LoadProjectStateAsync(seed.ProjectRef);
+        var validated = new B1AuthorityEvaluator().Evaluate(state,
+            new EstablishLogicalActorCommand(
+                seed.ProjectRef,
+                seed.BootstrapPrincipalRef,
+                new DecidingAuthorityRef.UserPrincipal(seed.BootstrapPrincipalRef),
+                RoleKind.Reviewer,
+                [],
+                []),
+            new AuthorityDecisionRef(Guid.NewGuid()),
+            At);
+        var committed = Assert.IsType<AuthorityCommitResult.Committed>(
+            await repository.TryCommitAsync(validated)).Decision;
+        return committed.LogicalActorEstablishmentEffect!.LogicalActor.LogicalActorRef;
     }
 
     public async Task<long> CountAsync(string table, Guid id, string idColumn = "id")
@@ -193,38 +197,4 @@ internal sealed class B1ContinuityStorageFixture : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _temporary.DisposeAsync();
 
-    private async Task<Guid> AddDecisionAsync(B1ContinuitySeed seed, string kind)
-    {
-        await using var connection = Database.CreateConnection();
-        await connection.OpenAsync();
-        var sequenceCommand = connection.CreateCommand();
-        sequenceCommand.CommandText =
-            "SELECT last_commit_sequence + 1 FROM b1_project_governance WHERE project_id=$project;";
-        sequenceCommand.Parameters.AddWithValue("$project", seed.ProjectRef.Value.ToString());
-        var sequence = Convert.ToInt64(await sequenceCommand.ExecuteScalarAsync());
-        var decision = Guid.NewGuid();
-        await ExecuteAsync(connection, """
-            INSERT INTO b1_authority_decisions(
-                id,project_id,project_commit_sequence,command_kind,deciding_authority_kind,
-                deciding_user_principal,deciding_actor_id,created_at)
-            VALUES($decision,$project,$sequence,$kind,'UserPrincipal',$principal,NULL,$at);
-            UPDATE b1_project_governance
-            SET last_commit_sequence=$sequence
-            WHERE project_id=$project;
-            """, ("$decision", decision.ToString()), ("$project", seed.ProjectRef.Value.ToString()),
-            ("$sequence", sequence), ("$kind", kind),
-            ("$principal", seed.BootstrapPrincipalRef.Value), ("$at", At.ToString("O")));
-        return decision;
-    }
-
-    private static async Task ExecuteAsync(
-        SqliteConnection connection,
-        string sql,
-        params (string Name, object Value)[] parameters)
-    {
-        var command = connection.CreateCommand();
-        command.CommandText = sql;
-        foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
-        await command.ExecuteNonQueryAsync();
-    }
 }
