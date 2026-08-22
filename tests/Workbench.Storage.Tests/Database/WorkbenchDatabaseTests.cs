@@ -22,7 +22,7 @@ public sealed class WorkbenchDatabaseTests
     }
 
     [Fact]
-    public async Task Latest_migrations_set_user_version_to_19()
+    public async Task Latest_migrations_set_user_version_to_20()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,11 +34,11 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(19L, await command.ExecuteScalarAsync());
+        Assert.Equal(20L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
-    public async Task Migrating_v11_database_to_v19_preserves_continuity_data_and_is_idempotent()
+    public async Task Migrating_v11_database_to_v20_preserves_continuity_data_and_is_idempotent()
     {
         await using var temporary = new TemporaryDatabase();
         await CreateV11MigrationFixtureAsync(temporary.DatabasePath);
@@ -55,7 +55,7 @@ public sealed class WorkbenchDatabaseTests
         await database.InitializeAsync();
 
         var firstSnapshot = await ReadV11ContinuitySnapshotAsync(database);
-        Assert.Equal(19L, firstSnapshot.UserVersion);
+        Assert.Equal(20L, firstSnapshot.UserVersion);
         Assert.Equal("Migration Project", firstSnapshot.ProjectName);
         Assert.Equal("00000000-0000-0000-0000-000000000102", firstSnapshot.TaskId);
         Assert.Equal("00000000-0000-0000-0000-000000000103", firstSnapshot.CurrentRevisionId);

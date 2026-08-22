@@ -258,7 +258,7 @@ public sealed class AssignmentReviewStateTests
         await verified.OpenAsync();
         var version = verified.CreateCommand();
         version.CommandText = "PRAGMA user_version;";
-        Assert.Equal(19L, Convert.ToInt64(await version.ExecuteScalarAsync()));
+        Assert.Equal(20L, Convert.ToInt64(await version.ExecuteScalarAsync()));
     }
 
     private sealed class Fixture : IAsyncDisposable
