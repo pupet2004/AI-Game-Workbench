@@ -134,25 +134,28 @@ public sealed class ProjectLeaderSessionManager
             cancellationToken);
     }
 
-    internal async Task PersistCompletedAssistantAsync(
+    internal async Task<StoredLeaderMessage?> PersistCompletedAssistantAsync(
         LeaderConversationState conversation,
         string finalText,
+        LeaderResultMetadata? metadata = null,
         CancellationToken cancellationToken = default)
     {
         if (conversation.Epoch is null)
         {
-            return;
+            return null;
         }
 
         var now = _timeProvider.GetUtcNow();
-        if (_messages is not null && !string.IsNullOrWhiteSpace(finalText))
+        StoredLeaderMessage? persisted = null;
+        if (_messages is not null && (metadata is not null || !string.IsNullOrWhiteSpace(finalText)))
         {
-            await _messages.AppendAsync(
+            persisted = await _messages.AppendAsync(
                 conversation.Epoch.Id,
                 "assistant",
                 finalText,
                 now,
-                cancellationToken);
+                cancellationToken,
+                metadata);
         }
 
         conversation.Epoch = conversation.Epoch with { LastActiveAt = now };
@@ -160,7 +163,18 @@ public sealed class ProjectLeaderSessionManager
         {
             await _epochs.SaveAsync(conversation.Epoch, cancellationToken);
         }
+
+        return persisted;
     }
+
+    internal Task<bool> MarkSummaryPersistedAsync(
+        long messageId,
+        Guid resultId,
+        DateTimeOffset persistedAt,
+        CancellationToken cancellationToken = default) =>
+        _messages is null
+            ? Task.FromResult(false)
+            : _messages.MarkSummaryPersistedAsync(messageId, resultId, persistedAt, cancellationToken);
 
     internal async Task IngestWorkerHandoffAsync(
         WorkerHandoff handoff,
@@ -173,7 +187,7 @@ public sealed class ProjectLeaderSessionManager
         }
 
         var text = $"Worker · {handoff.WorkerLabel}\nKind: {handoff.Kind}\nAssignment: {handoff.TaskId}\nRevision: {handoff.TaskRevisionId}\nWorker Session: {handoff.WorkerSessionId.Value}\nStatus: {handoff.Status}\n\n{handoff.Message}";
-        await PersistCompletedAssistantAsync(conversation, text, cancellationToken);
+        await PersistCompletedAssistantAsync(conversation, text, cancellationToken: cancellationToken);
         conversation.Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.Assistant, text));
     }
 

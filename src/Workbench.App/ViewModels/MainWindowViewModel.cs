@@ -106,7 +106,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             workerRoutingStore: _services.WorkerRoutingStore,
             projectLibraryEvolutionRepository: _services.ProjectLibraryEvolutionRepository,
              projectMemoryApi: _services.ProjectMemoryApi,
-             responseBinder: _services.LeaderReviewUserResponseBinder);
+             responseBinder: _services.LeaderReviewUserResponseBinder,
+             projectSummaryRepository: _services.ProjectSummaryRepository);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);

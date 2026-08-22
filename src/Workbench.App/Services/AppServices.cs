@@ -31,6 +31,8 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLeaderRepository projectLeaderRepository,
         LeaderSessionEpochRepository leaderSessionEpochRepository,
         LeaderMessageRepository leaderMessageRepository,
+        ProjectSummaryRepository projectSummaryRepository,
+        LeaderSummaryRecoveryService leaderSummaryRecoveryService,
         WorkbenchSettingsRepository workbenchSettingsRepository,
         ProjectSettingsRepository projectSettingsRepository,
         ProjectMemoryService projectMemoryService,
@@ -64,6 +66,8 @@ public sealed class AppServices : IAsyncDisposable
         ProjectLeaderRepository = projectLeaderRepository;
         LeaderSessionEpochRepository = leaderSessionEpochRepository;
         LeaderMessageRepository = leaderMessageRepository;
+        ProjectSummaryRepository = projectSummaryRepository;
+        LeaderSummaryRecoveryService = leaderSummaryRecoveryService;
         WorkbenchSettingsRepository = workbenchSettingsRepository;
         ProjectSettingsRepository = projectSettingsRepository;
         ProjectMemoryService = projectMemoryService;
@@ -105,6 +109,10 @@ public sealed class AppServices : IAsyncDisposable
 
     public LeaderMessageRepository LeaderMessageRepository { get; }
 
+    public ProjectSummaryRepository ProjectSummaryRepository { get; }
+
+    public LeaderSummaryRecoveryService LeaderSummaryRecoveryService { get; }
+
     public WorkbenchSettingsRepository WorkbenchSettingsRepository { get; }
 
     public ProjectSettingsRepository ProjectSettingsRepository { get; }
@@ -136,6 +144,8 @@ public sealed class AppServices : IAsyncDisposable
 
     public string? RuntimeUnavailableDetail { get; private set; }
 
+    public LeaderSummaryRecoveryReport? LastLeaderSummaryRecoveryReport { get; private set; }
+
     public static AppServices CreateDefault(
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory = null) =>
         CreateForDatabasePath(
@@ -157,6 +167,11 @@ public sealed class AppServices : IAsyncDisposable
         var projectLeaders = new ProjectLeaderRepository(database);
         var leaderEpochs = new LeaderSessionEpochRepository(database);
         var leaderMessages = new LeaderMessageRepository(database);
+        var projectSummaries = new ProjectSummaryRepository(database);
+        var leaderSummaryRecovery = new LeaderSummaryRecoveryService(
+            leaderMessages,
+            projectSummaries,
+            effectiveTimeProvider);
         var memoryRepository = new ProjectMemoryRepository(database);
         var synthesisRepository = new ProjectMemorySynthesisRepository(database, effectiveTimeProvider);
         var dailySummaryRepository = new DailySummaryRepository(database);
@@ -194,6 +209,8 @@ public sealed class AppServices : IAsyncDisposable
             projectLeaders,
             leaderEpochs,
             leaderMessages,
+            projectSummaries,
+            leaderSummaryRecovery,
             new WorkbenchSettingsRepository(database),
             new ProjectSettingsRepository(database),
             new ProjectMemoryService(new ProjectActivityRepository(database), memoryRepository, effectiveTimeProvider),
@@ -228,6 +245,7 @@ public sealed class AppServices : IAsyncDisposable
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await Database.InitializeAsync(cancellationToken);
+        LastLeaderSummaryRecoveryReport = await LeaderSummaryRecoveryService.RecoverAsync(cancellationToken);
         await ProjectMemorySynthesisRepository.RecoverRunningAsync(cancellationToken);
     }
 

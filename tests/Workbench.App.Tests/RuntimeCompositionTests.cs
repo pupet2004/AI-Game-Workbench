@@ -7,11 +7,145 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Providers;
 using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
+using Workbench.Core.Layout;
+using Workbench.Core.Projects;
+using Workbench.Project.Git;
+using Workbench.Project.Opening;
+using Workbench.Storage.Leaders;
+using Workbench.Storage.Memory;
+using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests;
 
 public sealed class RuntimeCompositionTests
 {
+    [Fact]
+    public void AppServices_owns_one_project_summary_repository()
+    {
+        using var directory = new TemporaryDirectory("summary-composition");
+        var services = AppServices.CreateForDatabasePath(Path.Combine(directory.Path, "workbench.db"));
+
+        Assert.Same(services.ProjectSummaryRepository, services.ProjectSummaryRepository);
+        Assert.Same(
+            services.ProjectSummaryRepository,
+            services.LeaderSummaryRecoveryService.SummaryRepository);
+    }
+
+    [Fact]
+    public async Task AppServices_runs_summary_recovery_after_database_initialization()
+    {
+        using var directory = new TemporaryDirectory("summary-initialize");
+        var services = AppServices.CreateForDatabasePath(Path.Combine(directory.Path, "workbench.db"));
+        await services.Database.InitializeAsync();
+        var pending = await SeedPendingSummaryAsync(services, directory.Path);
+
+        await services.InitializeAsync();
+
+        var summary = Assert.Single(await services.ProjectSummaryRepository.QueryAsync(new SummaryQuery(pending.ProjectId, 20)));
+        Assert.Equal(pending.ResultId, summary.ResultId);
+        Assert.Empty(await services.LeaderMessageRepository.GetPendingSummaryResultsAsync());
+        await services.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Recovery_runs_before_normal_UI_boot_or_workspace_operation()
+    {
+        using var directory = new TemporaryDirectory("summary-before-ui");
+        var services = AppServices.CreateForDatabasePath(Path.Combine(directory.Path, "workbench.db"));
+        await services.Database.InitializeAsync();
+        var pending = await SeedPendingSummaryAsync(services, directory.Path);
+        var main = new MainWindowViewModel(services, new TestFolderPickerService(null));
+
+        await main.InitializeAsync();
+
+        Assert.IsType<HomeViewModel>(main.CurrentPage);
+        Assert.Single(await services.ProjectSummaryRepository.QueryAsync(new SummaryQuery(pending.ProjectId, 20)));
+        Assert.Empty(services.RuntimeRegistry.Runtimes);
+        await main.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Provider_unavailable_does_not_block_summary_recovery()
+    {
+        using var directory = new TemporaryDirectory("summary-offline");
+        var services = AppServices.CreateForDatabasePath(
+            Path.Combine(directory.Path, "workbench.db"),
+            runtimeRegistry: new AgentRuntimeRegistry());
+        await services.Database.InitializeAsync();
+        var pending = await SeedPendingSummaryAsync(services, directory.Path);
+
+        await services.InitializeAsync();
+
+        Assert.Empty(services.RuntimeRegistry.Runtimes);
+        Assert.Single(await services.ProjectSummaryRepository.QueryAsync(new SummaryQuery(pending.ProjectId, 20)));
+        await services.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Workspace_receives_the_same_summary_repository_instance()
+    {
+        using var directory = new TemporaryDirectory("summary-workspace");
+        var services = AppServices.CreateForDatabasePath(Path.Combine(directory.Path, "workbench.db"));
+        await services.InitializeAsync();
+        var now = services.TimeProvider.GetUtcNow();
+        var project = new CoreProject(Guid.NewGuid(), "Project", directory.Path, ProjectType.Generic, null, now, now);
+        await services.ProjectRepository.UpsertAsync(project);
+        var result = new ProjectOpenResult(
+            project,
+            ProjectLayout.CreateDefault(project.Id),
+            new GitSnapshot(true, false, null, null, null, false, false, null));
+
+        var workspace = new WorkspaceViewModel(
+            result,
+            services.ProjectLayoutRepository,
+            () => Task.CompletedTask,
+            projectSummaryRepository: services.ProjectSummaryRepository);
+
+        Assert.Same(services.ProjectSummaryRepository, workspace.LeaderPane.SummaryRepository);
+        await workspace.DisposeAsync();
+        await services.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task LeaderPane_receives_real_summary_repository()
+    {
+        using var directory = new TemporaryDirectory("summary-main-window");
+        using var projectDirectory = new TemporaryDirectory("summary-main-project");
+        var services = AppServices.CreateForDatabasePath(Path.Combine(directory.Path, "workbench.db"));
+        await services.Database.InitializeAsync();
+        await services.ProjectOpenService.OpenAsync(projectDirectory.Path);
+        var main = new MainWindowViewModel(services, new TestFolderPickerService(null));
+        await main.InitializeAsync();
+        var home = Assert.IsType<HomeViewModel>(main.CurrentPage);
+
+        await home.OpenRecentProjectAsync(Assert.Single(home.RecentProjects));
+
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        Assert.Same(services.ProjectSummaryRepository, workspace.LeaderPane.SummaryRepository);
+        await main.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task No_pending_summary_does_not_change_boot_context()
+    {
+        using var directory = new TemporaryDirectory("summary-noop-boot");
+        var services = AppServices.CreateForDatabasePath(Path.Combine(directory.Path, "workbench.db"));
+        await services.Database.InitializeAsync();
+        var now = services.TimeProvider.GetUtcNow();
+        var project = new CoreProject(Guid.NewGuid(), "Project", directory.Path, ProjectType.Generic, null, now, now);
+        await services.ProjectRepository.UpsertAsync(project);
+        var epoch = CreateEpoch(project, now);
+        await services.ProjectLeaderRepository.CreateCurrentEpochAsync(
+            new StoredProjectLeader(project.Id, null, now, now),
+            epoch);
+
+        await services.InitializeAsync();
+
+        Assert.Null((await services.LeaderSessionEpochRepository.GetAsync(epoch.Id))!.BootContextDeliveredAt);
+        Assert.Empty(await services.LeaderMessageRepository.GetPendingSummaryResultsAsync());
+        await services.DisposeAsync();
+    }
+
     [Fact]
     public async Task Opening_a_project_with_a_persisted_leader_session_connects_its_runtime_without_retry()
     {
@@ -247,4 +381,42 @@ public sealed class RuntimeCompositionTests
         Assert.DoesNotContain("token", source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("cookie", source, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static async Task<PendingLeaderSummaryResult> SeedPendingSummaryAsync(
+        AppServices services,
+        string rootPath)
+    {
+        var now = services.TimeProvider.GetUtcNow();
+        var project = new CoreProject(Guid.NewGuid(), "Project", rootPath, ProjectType.Generic, null, now, now);
+        await services.ProjectRepository.UpsertAsync(project);
+        var epoch = CreateEpoch(project, now);
+        await services.ProjectLeaderRepository.CreateCurrentEpochAsync(
+            new StoredProjectLeader(project.Id, null, now, now),
+            epoch);
+        var resultId = Guid.NewGuid();
+        var payload = "[{\"occurred_at\":\"2026-08-20T10:15:30+00:00\",\"kind\":\"Decision\",\"text\":\"Recovered.\",\"source_refs\":[]}]";
+        var message = await services.LeaderMessageRepository.AppendAsync(
+            epoch.Id,
+            "assistant",
+            "Visible.",
+            now,
+            metadata: new LeaderResultMetadata(resultId, payload));
+        return new PendingLeaderSummaryResult(message.Id, project.Id, epoch.Id, resultId, payload, now);
+    }
+
+    private static StoredLeaderSessionEpoch CreateEpoch(CoreProject project, DateTimeOffset now) =>
+        new(
+            Guid.NewGuid(),
+            project.Id,
+            "provider",
+            Guid.NewGuid(),
+            "model",
+            Guid.NewGuid(),
+            "external-session",
+            project.RootPath,
+            now,
+            now,
+            null,
+            null,
+            null);
 }

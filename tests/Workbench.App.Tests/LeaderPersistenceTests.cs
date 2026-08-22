@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Workbench.App.Tests.Support;
 using Workbench.App.ViewModels.Leader;
 using Workbench.App.ViewModels.Panes;
@@ -10,6 +11,7 @@ using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
+using Workbench.Storage.Tasks;
 using Workbench.App.Leader;
 using CoreProject = Workbench.Core.Projects.Project;
 
@@ -17,6 +19,254 @@ namespace Workbench.App.Tests;
 
 public sealed class LeaderPersistenceTests
 {
+    [Fact]
+    public async Task Completed_turn_persists_visible_reply_and_summary_metadata_before_append()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        await context.FailSummaryAppendsAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("Visible reply.", "Durable decision.")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(
+            await context.Messages.GetAllAsync(epoch!.Id),
+            message => message.Role == "assistant");
+        Assert.Equal("Visible reply.", assistant.Text);
+        Assert.NotNull(assistant.ResultId);
+        Assert.NotNull(assistant.SummaryDeltaPayloadJson);
+        Assert.Null(assistant.SummaryPersistedAt);
+        Assert.Contains(pane.Messages, message => message.Text == "Visible reply.");
+        Assert.Empty(await context.ReadSummariesAsync(context.ProjectA.Id));
+    }
+
+    [Fact]
+    public async Task Completed_turn_uses_one_result_id_for_all_summary_ordinals()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(TwoSummaryResponse()));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(
+            await context.Messages.GetAllAsync(epoch!.Id),
+            message => message.Role == "assistant");
+        var summaries = await context.ReadSummariesAsync(context.ProjectA.Id);
+        Assert.Equal([0, 1], summaries.OrderBy(item => item.DeltaOrdinal).Select(item => item.DeltaOrdinal));
+        Assert.All(summaries, item => Assert.Equal(assistant.ResultId, item.ResultId));
+    }
+
+    [Fact]
+    public async Task Summary_durable_payload_contains_only_summary_delta_array()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("VISIBLE SENTINEL", "SUMMARY SENTINEL")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(
+            await context.Messages.GetAllAsync(epoch!.Id),
+            message => message.Role == "assistant");
+        using var document = JsonDocument.Parse(Assert.IsType<string>(assistant.SummaryDeltaPayloadJson));
+        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
+        var delta = Assert.Single(document.RootElement.EnumerateArray());
+        Assert.Equal(
+            ["kind", "occurred_at", "source_refs", "text"],
+            delta.EnumerateObject().Select(property => property.Name).Order());
+        Assert.Equal("SUMMARY SENTINEL", delta.GetProperty("text").GetString());
+        Assert.DoesNotContain("VISIBLE SENTINEL", assistant.SummaryDeltaPayloadJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("response", assistant.SummaryDeltaPayloadJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("summary_deltas", assistant.SummaryDeltaPayloadJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("result_id", assistant.SummaryDeltaPayloadJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task No_summary_preserves_existing_assistant_persistence_without_pending_metadata()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(NoSummaryResponse("Visible only.")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "answer";
+
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(
+            await context.Messages.GetAllAsync(epoch!.Id),
+            message => message.Role == "assistant");
+        Assert.Equal("Visible only.", assistant.Text);
+        Assert.Null(assistant.ResultId);
+        Assert.Null(assistant.SummaryDeltaPayloadJson);
+        Assert.Null(assistant.SummaryPersistedAt);
+        Assert.Empty(await context.Messages.GetPendingSummaryResultsAsync());
+        Assert.Empty(await context.ReadSummariesAsync(context.ProjectA.Id));
+    }
+
+    [Fact]
+    public async Task Fresh_operation_gets_new_result_id()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("First.", "First decision.")));
+        runtime.QueueTurn(context.Completed(SummaryResponse("Second.", "Second decision.")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+
+        pane.DraftMessage = "first";
+        await pane.SendAsync();
+        pane.DraftMessage = "second";
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var resultIds = (await context.Messages.GetAllAsync(epoch!.Id))
+            .Where(message => message.Role == "assistant")
+            .Select(message => Assert.IsType<Guid>(message.ResultId))
+            .ToArray();
+        Assert.Equal(2, resultIds.Length);
+        Assert.NotEqual(resultIds[0], resultIds[1]);
+    }
+
+    [Fact]
+    public async Task Summary_append_failure_keeps_visible_reply_and_pending_metadata()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        await context.FailSummaryAppendsAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("Still visible.", "Retry later.")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        Assert.Contains(pane.Messages, message => message.Text == "Still visible.");
+        Assert.DoesNotContain(pane.Messages, message => message.Text.Contains("Summary", StringComparison.Ordinal));
+        Assert.Equal("Summary persistence is pending and will be retried.", pane.MemoryCommandStatus);
+        var pending = Assert.Single(await context.Messages.GetPendingSummaryResultsAsync());
+        Assert.NotEqual(Guid.Empty, pending.ResultId);
+    }
+
+    [Fact]
+    public async Task Successful_append_marks_summary_persisted()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("Visible.", "Stored.")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(
+            await context.Messages.GetAllAsync(epoch!.Id),
+            message => message.Role == "assistant");
+        Assert.NotNull(assistant.SummaryPersistedAt);
+        Assert.Empty(await context.Messages.GetPendingSummaryResultsAsync());
+        Assert.Null(pane.MemoryCommandStatus);
+    }
+
+    [Theory]
+    [InlineData(AgentSessionStatus.Failed)]
+    [InlineData(AgentSessionStatus.Interrupted)]
+    [InlineData(AgentSessionStatus.Stopped)]
+    public async Task Failed_or_interrupted_turn_does_not_persist_summary(AgentSessionStatus status)
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("Not durable.", "Do not store."), status));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        Assert.Empty(await context.Messages.GetPendingSummaryResultsAsync());
+        Assert.Empty(await context.ReadSummariesAsync(context.ProjectA.Id));
+    }
+
+    [Fact]
+    public async Task Empty_visible_response_with_summary_persists_durable_assistant_result()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse(string.Empty, "Invisible but durable.")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(
+            await context.Messages.GetAllAsync(epoch!.Id),
+            message => message.Role == "assistant");
+        Assert.Equal(string.Empty, assistant.Text);
+        Assert.NotNull(assistant.ResultId);
+        Assert.NotNull(assistant.SummaryPersistedAt);
+        Assert.Single(await context.ReadSummariesAsync(context.ProjectA.Id));
+    }
+
+    [Fact]
+    public async Task Empty_structured_response_never_persists_streamed_envelope()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var envelope = SummaryResponse(string.Empty, "Invisible but durable.");
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(
+            new AgentTextDelta(envelope, context.T0),
+            context.Completed(envelope));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(
+            await context.Messages.GetAllAsync(epoch!.Id),
+            message => message.Role == "assistant");
+        Assert.Equal(string.Empty, assistant.Text);
+        Assert.Equal(
+            string.Empty,
+            Assert.Single(pane.Messages, message => message.Role == LeaderMessageRole.Assistant).Text);
+        Assert.DoesNotContain("summary_deltas", assistant.Text, StringComparison.Ordinal);
+        Assert.NotNull(assistant.SummaryPersistedAt);
+    }
+
+    [Fact]
+    public async Task Missing_durable_message_identity_does_not_append_summary()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("Visible.", "Must not orphan.")));
+        var pane = context.CreatePane(runtime, manager: new ProjectLeaderSessionManager());
+        await pane.InitializeAsync();
+        pane.DraftMessage = "decide";
+
+        await pane.SendAsync();
+
+        Assert.Empty(await context.ReadSummariesAsync(context.ProjectA.Id));
+        Assert.Equal("Summary persistence is pending and will be retried.", pane.MemoryCommandStatus);
+    }
+
     [Fact]
     public async Task First_send_persists_leader_epoch_pointer_and_visible_messages_once()
     {
@@ -329,6 +579,18 @@ public sealed class LeaderPersistenceTests
         Assert.Equal(["question-b", "answer-b"], restoredB.Messages.Select(message => message.Text));
         Assert.NotEqual(restoredA.SessionEpochId, restoredB.SessionEpochId);
     }
+
+    private static string SummaryResponse(string response, string summaryText) => $$"""
+        {"response":"{{response}}","draft_proposal":null,"memory_commands":null,"summary_deltas":[{"occurred_at":"2026-08-20T10:15:30.0000000+00:00","kind":"Decision","text":"{{summaryText}}","source_refs":[{"source_kind":"LeaderMessage","source_locator":"message-42"}]}]}
+        """;
+
+    private static string TwoSummaryResponse() => """
+        {"response":"Visible.","draft_proposal":null,"memory_commands":null,"summary_deltas":[{"occurred_at":"2026-08-20T10:15:30.0000000+00:00","kind":"Decision","text":"First.","source_refs":[]},{"occurred_at":"2026-08-20T10:16:30.0000000+00:00","kind":"Constraint","text":"Second.","source_refs":[]}]}
+        """;
+
+    private static string NoSummaryResponse(string response) => $$"""
+        {"response":"{{response}}","draft_proposal":null,"memory_commands":null,"summary_deltas":null}
+        """;
 }
 
 internal sealed class PersistentLeaderContext : IAsyncDisposable
@@ -351,6 +613,8 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
         Leaders = new ProjectLeaderRepository(database);
         Epochs = new LeaderSessionEpochRepository(database);
         Messages = new LeaderMessageRepository(database);
+        Summaries = new ProjectSummaryRepository(database);
+        Tasks = new TaskRepository(database);
         Memories = new ProjectMemoryRepository(database);
         WorkbenchSettings = new WorkbenchSettingsRepository(database);
         ProjectSettings = new ProjectSettingsRepository(database);
@@ -366,6 +630,8 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
     public ProjectLeaderRepository Leaders { get; }
     public LeaderSessionEpochRepository Epochs { get; }
     public LeaderMessageRepository Messages { get; }
+    public ProjectSummaryRepository Summaries { get; }
+    public TaskRepository Tasks { get; }
     public ProjectMemoryRepository Memories { get; }
     public WorkbenchSettingsRepository WorkbenchSettings { get; }
     public ProjectSettingsRepository ProjectSettings { get; }
@@ -418,7 +684,9 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
             registry,
             manager ?? (newManager ? CreateManager() : CreateManager()),
             () => Task.CompletedTask,
-            bootContextBuilder: bootContextBuilder);
+            bootContextBuilder: bootContextBuilder,
+            taskRepository: Tasks,
+            projectSummaryRepository: Summaries);
     }
 
     public LeaderPaneViewModel CreatePaneWithoutRuntime() =>
@@ -428,10 +696,30 @@ internal sealed class PersistentLeaderContext : IAsyncDisposable
             CreateManager(),
             () => Task.CompletedTask);
 
-    public AgentTurnCompleted Completed(string text) =>
+    public AgentTurnCompleted Completed(
+        string text,
+        AgentSessionStatus status = AgentSessionStatus.Completed) =>
         new(
-            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, text, null),
+            new AgentResult(AgentSessionId.New(), status, text, null),
             Time.GetUtcNow());
+
+    public Task<IReadOnlyList<StoredSummaryEntry>> ReadSummariesAsync(Guid projectId) =>
+        Summaries.QueryAsync(new SummaryQuery(projectId, 200));
+
+    public async Task FailSummaryAppendsAsync()
+    {
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TRIGGER fail_summary_append
+            BEFORE INSERT ON project_summary_entries
+            BEGIN
+                SELECT RAISE(ABORT, 'forced summary append failure');
+            END;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
 
     public async Task FailCurrentEpochUpdatesAsync()
     {

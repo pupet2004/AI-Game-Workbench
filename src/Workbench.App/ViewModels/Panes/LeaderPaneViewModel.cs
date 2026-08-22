@@ -39,6 +39,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly Func<CancellationToken, Task>? _refreshLibraryPane;
     private readonly ILeaderReviewUserResponseBinder? _responseBinder;
     private readonly GitSnapshot? _git;
+    private readonly ProjectSummaryRepository? _projectSummaryRepository;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -62,7 +63,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         TimeProvider? timeProvider = null,
         Func<CancellationToken, Task>? refreshLibraryPane = null,
         ILeaderReviewUserResponseBinder? responseBinder = null,
-        GitSnapshot? git = null)
+        GitSnapshot? git = null,
+        ProjectSummaryRepository? projectSummaryRepository = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -83,6 +85,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _refreshLibraryPane = refreshLibraryPane;
         _responseBinder = responseBinder;
         _git = git;
+        _projectSummaryRepository = projectSummaryRepository;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -102,6 +105,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public ObservableCollection<LeaderModelOptionViewModel> AvailableModels => _conversation.AvailableModels;
 
     public ObservableCollection<LeaderMessageViewModel> Messages => _conversation.Messages;
+
+    internal ProjectSummaryRepository? SummaryRepository => _projectSummaryRepository;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasDraftConfirmation), nameof(CurrentWorkerProfile))]
@@ -421,6 +426,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     private async Task SendCoreAsync(string text, CancellationToken cancellationToken)
     {
+        var resultId = Guid.NewGuid();
         var selectedModel = SelectedModel
             ?? throw new InvalidOperationException("Select a model before sending a message.");
 
@@ -480,6 +486,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         LeaderMessageViewModel? assistant = null;
         var turnCompleted = false;
+        var structuredResponseParsed = false;
+        IReadOnlyList<SummaryDelta> summaryDeltas = [];
         try
         {
             if (_conversation.SessionNeedsResume &&
@@ -560,11 +568,13 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                         break;
                     case AgentTurnCompleted completed:
                         turnCompleted = true;
-                        var finalText = completed.Result.FinalText;
+                        var finalText = completed.Result.FinalText ?? string.Empty;
                         if ((_draftProposalBuilder is not null || _projectMemoryApi is not null) &&
                             LeaderStructuredResponse.TryParse(finalText, _project.Id, out var structured))
                         {
+                            structuredResponseParsed = true;
                             finalText = structured.Response;
+                            summaryDeltas = structured.SummaryDeltas;
                             if (structured.MemoryCommandError is not null)
                             {
                                 MemoryCommandStatus = structured.MemoryCommandError;
@@ -608,7 +618,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             assistant = AddAssistantMessage();
                         }
 
-                        if (assistant is not null && !string.IsNullOrWhiteSpace(finalText))
+                        if (assistant is not null &&
+                            (structuredResponseParsed || !string.IsNullOrWhiteSpace(finalText)))
                         {
                             assistant.Text = finalText;
                         }
@@ -626,13 +637,55 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                         }
                         else if (completed.Result.FinalStatus == AgentSessionStatus.Completed)
                         {
-                            var persistedAssistantText = string.IsNullOrWhiteSpace(finalText)
-                                ? assistant?.Text ?? string.Empty
-                                : finalText;
-                            await _sessionManager.PersistCompletedAssistantAsync(
+                            var persistedAssistantText = structuredResponseParsed
+                                ? finalText
+                                : string.IsNullOrWhiteSpace(finalText)
+                                    ? assistant?.Text ?? string.Empty
+                                    : finalText;
+                            var metadata = summaryDeltas.Count == 0
+                                ? null
+                                : new LeaderResultMetadata(resultId, LeaderSummaryPayload.Serialize(summaryDeltas));
+                            var persistedAssistant = await _sessionManager.PersistCompletedAssistantAsync(
                                 _conversation,
                                 persistedAssistantText,
+                                metadata,
                                 cancellationToken);
+                            if (metadata is not null)
+                            {
+                                if (persistedAssistant is null || _projectSummaryRepository is null)
+                                {
+                                    MemoryCommandStatus = "Summary persistence is pending and will be retried.";
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        await _projectSummaryRepository.AppendAsync(
+                                            _project.Id,
+                                            resultId,
+                                            summaryDeltas,
+                                            persistedAssistant.CreatedAt,
+                                            cancellationToken);
+                                        var marked = await _sessionManager.MarkSummaryPersistedAsync(
+                                            persistedAssistant.Id,
+                                            resultId,
+                                            _timeProvider.GetUtcNow(),
+                                            cancellationToken);
+                                        if (!marked)
+                                        {
+                                            MemoryCommandStatus = "Summary persistence is pending and will be retried.";
+                                        }
+                                    }
+                                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                                    {
+                                        throw;
+                                    }
+                                    catch
+                                    {
+                                        MemoryCommandStatus = "Summary persistence is pending and will be retried.";
+                                    }
+                                }
+                            }
                             _conversation.RotationMessage = null;
                         }
 

@@ -51,7 +51,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ProjectLibraryRepository? projectLibraryRepository = null,
         ProjectLibraryEvolutionRepository? projectLibraryEvolutionRepository = null,
          IProjectMemoryApi? projectMemoryApi = null,
-         ILeaderReviewUserResponseBinder? responseBinder = null)
+         ILeaderReviewUserResponseBinder? responseBinder = null,
+         ProjectSummaryRepository? projectSummaryRepository = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -96,7 +97,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             timeProvider: _timeProvider,
             refreshLibraryPane: LibraryPane.LoadLibraryAsync,
             responseBinder: responseBinder,
-            git: result.Git);
+            git: result.Git,
+            projectSummaryRepository: projectSummaryRepository);
     }
 
     public ProjectOpenResult Result { get; }
