@@ -9,6 +9,9 @@ obj/
 .idea/
 .vscode/
 
+# Local Git worktrees
+.worktrees/
+
 # Avalonia generated/local state
 .avalonia/
 
