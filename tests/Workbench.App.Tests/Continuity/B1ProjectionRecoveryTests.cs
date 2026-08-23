@@ -3,6 +3,8 @@ using Workbench.Core.Continuity;
 using Workbench.Core.Projects;
 using Workbench.Storage.Continuity;
 using Workbench.Storage.Database;
+using Workbench.Storage.Leaders;
+using Workbench.Storage.Memory;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests.Continuity;
@@ -16,7 +18,7 @@ public sealed class B1ProjectionRecoveryTests
         var seed = await fixture.SeedAsync();
         var contribution = await fixture.AuthorContributionAsync("Persist the release policy");
 
-        var projection = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
+        var projection = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
 
         Assert.Equal(fixture.ProjectRef, projection.ProjectRef);
         Assert.Contains(seed.Actor, projection.AcceptedProjectState.LogicalActors.Keys);
@@ -35,7 +37,7 @@ public sealed class B1ProjectionRecoveryTests
         var successor = await fixture.ActivateSuccessorAsync(seed);
         await fixture.DecideAsync(seed.Assignment, successor, AssignmentDisposition.Accepted);
 
-        var projection = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
+        var projection = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
 
         Assert.Equal(successor, projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[seed.Assignment]);
         var disposition = Assert.Single(projection.AcceptedProjectState.RevisionDispositions);
@@ -50,7 +52,7 @@ public sealed class B1ProjectionRecoveryTests
         var seed = await fixture.SeedAsync();
         await fixture.DecideAsync(seed.Assignment, seed.Revision, AssignmentDisposition.Accepted);
 
-        var projection = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
+        var projection = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
 
         Assert.Contains(seed.Assignment, projection.AcceptedProjectState.CurrentDelegationAssignments);
         Assert.DoesNotContain(seed.Assignment, projection.EffectiveFulfillmentAssignments);
@@ -63,7 +65,7 @@ public sealed class B1ProjectionRecoveryTests
         var first = await fixture.AuthorContributionAsync("Superseded position");
         var second = await fixture.AuthorContributionAsync("Current position", first);
 
-        var accepted = await fixture.RestartProjection().GetAcceptedProjectStateAsync(fixture.ProjectRef);
+        var accepted = await (await fixture.RestartProjectionAsync()).GetAcceptedProjectStateAsync(fixture.ProjectRef);
 
         var current = Assert.Single(accepted.CurrentContributions);
         Assert.Equal(second, current.ContributionRef);
@@ -77,8 +79,8 @@ public sealed class B1ProjectionRecoveryTests
         var seed = await fixture.SeedAsync();
         await fixture.AuthorContributionAsync("Durable only");
 
-        var first = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
-        var afterRestart = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
+        var first = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
+        var afterRestart = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
 
         Assert.Equal(first.ProjectRef, afterRestart.ProjectRef);
         Assert.Equal(
@@ -97,7 +99,7 @@ public sealed class B1ProjectionRecoveryTests
         var seed = await fixture.SeedAsync();
         var routing = await fixture.AddSelectedRoutingAsync(seed);
 
-        var projection = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
+        var projection = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
 
         Assert.Equal(routing.Attempt, projection.StoredAttemptSelections[seed.Assignment]);
         Assert.Equal(routing.Attempt, projection.EffectiveCurrentAttemptRefs[seed.Assignment]);
@@ -115,7 +117,7 @@ public sealed class B1ProjectionRecoveryTests
         var routing = await fixture.AddSelectedRoutingAsync(seed);
         await fixture.DecideAsync(seed.Assignment, seed.Revision, AssignmentDisposition.Accepted);
 
-        var projection = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
+        var projection = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
 
         Assert.Equal(routing.Attempt, projection.StoredAttemptSelections[seed.Assignment]);
         Assert.Null(projection.EffectiveCurrentAttemptRefs[seed.Assignment]);
@@ -130,13 +132,15 @@ public sealed class B1ProjectionRecoveryTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var seed = await fixture.SeedAsync();
-        await fixture.InsertIrrelevantLegacyRecordsAsync();
+        await fixture.SeedIrrelevantLegacyRecordsAsync();
 
-        var projection = await fixture.RestartProjection().GetProjectProjectionAsync(fixture.ProjectRef);
+        var projection = await (await fixture.RestartProjectionAsync()).GetProjectProjectionAsync(fixture.ProjectRef);
 
         Assert.Equal(fixture.ProjectRef, projection.ProjectRef);
         Assert.Equal(seed.Revision, projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[seed.Assignment]);
         Assert.Empty(projection.AcceptedProjectState.CurrentContributions);
+        Assert.DoesNotContain(projection.AcceptedProjectState.CurrentContributions,
+            value => value.Statement.Contains("LEGACY_", StringComparison.Ordinal));
     }
 
     private sealed record Seed(LogicalActorRef Actor, ResponsibilityRef Responsibility,
@@ -187,7 +191,12 @@ public sealed class B1ProjectionRecoveryTests
                     new B1RoutingRepository(database), new B1ClaimHandoffRepository(database)));
         }
 
-        public B1ProjectionService RestartProjection() => new(new B1AuthorityRepository(Database));
+        public async Task<B1ProjectionService> RestartProjectionAsync()
+        {
+            var restartedDatabase = new WorkbenchDatabase(Database.DatabasePath);
+            await restartedDatabase.InitializeAsync();
+            return new B1ProjectionService(new B1AuthorityRepository(restartedDatabase));
+        }
 
         public async Task<Seed> SeedAsync()
         {
@@ -261,29 +270,65 @@ public sealed class B1ProjectionRecoveryTests
             return new(attempt, handoff, binding);
         }
 
-        public async Task InsertIrrelevantLegacyRecordsAsync()
+        public async Task SeedIrrelevantLegacyRecordsAsync()
         {
-            await using var connection = Database.CreateConnection();
-            await connection.OpenAsync();
-            var summary = connection.CreateCommand();
-            summary.CommandText = """
-                INSERT INTO project_summary_entries(
-                    entry_id,project_id,occurred_at,created_at,kind,text,result_id,delta_ordinal)
-                VALUES($id,$project,$at,$at,'Decision','LEGACY_SUMMARY_MUST_NOT_APPEAR',$result,0);
-                """;
-            summary.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
-            summary.Parameters.AddWithValue("$project", ProjectRef.Value.ToString());
-            summary.Parameters.AddWithValue("$at", At.ToString("O"));
-            summary.Parameters.AddWithValue("$result", Guid.NewGuid().ToString());
-            await summary.ExecuteNonQueryAsync();
+            var projectId = ProjectRef.Value;
+            var summary = Assert.Single(await new ProjectSummaryRepository(Database).AppendAsync(
+                projectId,
+                Guid.NewGuid(),
+                [new SummaryDelta(
+                    At,
+                    SummaryDeltaKind.Decision,
+                    "LEGACY_SUMMARY_MUST_NOT_APPEAR",
+                    [new SummarySourceRef("Legacy", "summary:recovery")])],
+                At));
+            Assert.Equal("LEGACY_SUMMARY_MUST_NOT_APPEAR", summary.Text);
 
-            var runtime = connection.CreateCommand();
-            runtime.CommandText = "INSERT INTO project_activity_events(id,project_id,event_type,summary,source_type,source_ref,occurred_at,created_at) VALUES($id,$project,'Runtime','LEGACY_RUNTIME_MUST_NOT_APPEAR','Legacy',$source,$at,$at);";
-            runtime.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
-            runtime.Parameters.AddWithValue("$project", ProjectRef.Value.ToString());
-            runtime.Parameters.AddWithValue("$source", "legacy:runtime");
-            runtime.Parameters.AddWithValue("$at", At.ToString("O"));
-            await runtime.ExecuteNonQueryAsync();
+            var epochId = Guid.NewGuid();
+            await new ProjectLeaderRepository(Database).CreateCurrentEpochAsync(
+                new StoredProjectLeader(projectId, null, At, At),
+                new StoredLeaderSessionEpoch(
+                    epochId,
+                    projectId,
+                    "legacy-provider",
+                    Guid.NewGuid(),
+                    "legacy-model",
+                    Guid.NewGuid(),
+                    "legacy-session",
+                    Path.Combine(_directory, "legacy-session"),
+                    At,
+                    At,
+                    null,
+                    null,
+                    null));
+            var transcript = await new LeaderMessageRepository(Database).AppendAsync(
+                epochId, "user", "LEGACY_TRANSCRIPT_MUST_NOT_APPEAR", At);
+            Assert.Equal("LEGACY_TRANSCRIPT_MUST_NOT_APPEAR", transcript.Text);
+
+            var memory = new ProjectMemoryItem(
+                Guid.NewGuid(),
+                projectId,
+                "Formal",
+                "Legacy continuity",
+                "LEGACY_MEMORY_MUST_NOT_APPEAR",
+                "Active",
+                At,
+                At,
+                At);
+            var memories = new ProjectMemoryRepository(Database);
+            await memories.AddAsync(memory, [new ProjectMemorySource("Legacy", "memory:recovery")]);
+            Assert.Equal(memory, await memories.GetAsync(memory.Id));
+
+            var activity = new ProjectActivityEvent(
+                Guid.NewGuid(),
+                projectId,
+                "Runtime",
+                "LEGACY_RUNTIME_MUST_NOT_APPEAR",
+                "Legacy",
+                "legacy:runtime",
+                At,
+                At);
+            await new ProjectActivityRepository(Database).AddAsync(activity);
         }
 
         public async ValueTask DisposeAsync()
