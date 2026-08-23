@@ -55,6 +55,45 @@ public sealed class B1AuthorityCommandService(
             cancellationToken);
     }
 
+    public Task<AuthorityDecision> DecideAssignmentAsync(
+        DecideAssignmentCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        return ExecuteAsync(
+            command.ProjectRef,
+            command,
+            (state, current, decisionRef, createdAt) =>
+                _evaluator.Evaluate(state, current, decisionRef, createdAt),
+            cancellationToken);
+    }
+
+    public Task<AuthorityDecision> ActivateAssignmentRevisionAsync(
+        ActivateAssignmentRevisionCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        return ExecuteAsync(
+            command.ProjectRef,
+            command,
+            (state, current, decisionRef, createdAt) =>
+                _evaluator.Evaluate(state, current, decisionRef, createdAt),
+            cancellationToken);
+    }
+
+    public Task<AuthorityDecision> AuthorAcceptedStateAsync(
+        AuthorAcceptedStateCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        return ExecuteAsync(
+            command.ProjectRef,
+            command,
+            (state, current, decisionRef, createdAt) =>
+                _evaluator.Evaluate(state, current, decisionRef, createdAt),
+            cancellationToken);
+    }
+
     private async Task<AuthorityDecision> ExecuteAsync<TCommand>(
         ProjectRef projectRef,
         TCommand command,

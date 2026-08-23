@@ -406,6 +406,7 @@ public sealed class B1AuthorityEvaluator
         var current = context.Projection.AcceptedProjectState.CurrentContributions
             .ToDictionary(contribution => contribution.ContributionRef);
         var resolved = new List<AcceptedStateContribution>(instructions.Count);
+        var supersessionTargets = new HashSet<AcceptedStateContributionRef>();
         foreach (var instruction in instructions)
         {
             if (instruction is null || string.IsNullOrWhiteSpace(instruction.Statement) || instruction.Scope is null)
@@ -422,6 +423,10 @@ public sealed class B1AuthorityEvaluator
                 if (!current.TryGetValue(supersedes, out var target) || !ScopesEqual(scope, target.Scope))
                 {
                     Fail(B1FailureCode.StaleSupersession, "The supersession target is not current at the exact scope.");
+                }
+                if (!supersessionTargets.Add(supersedes))
+                {
+                    Fail(B1FailureCode.InvalidDecisionShape, "A Decision cannot supersede the same current contribution more than once.");
                 }
                 if ((scope is ContributionScopeRef.Responsibility responsibilityScope &&
                      responsibilityEffect?.Responsibility.ResponsibilityRef == responsibilityScope.ResponsibilityRef) ||

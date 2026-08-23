@@ -297,6 +297,22 @@ public sealed class B1AuthorityEvaluatorTests
     }
 
     [Fact]
+    public void Duplicate_supersession_target_is_invalid_decision_shape()
+    {
+        var f = Fixture.Create();
+        var prior = f.AcceptedContribution(
+            new ContributionScopeRef.Project(f.Project), f.NewDecisionRef(), "old");
+        var state = f.State(decisions: [f.DecisionWith(prior)]);
+        var first = f.Contribution(
+            new ContributionScopeTarget.Project(f.Project), prior.ContributionRef) with { Statement = "first" };
+        var second = f.Contribution(
+            new ContributionScopeTarget.Project(f.Project), prior.ContributionRef) with { Statement = "second" };
+
+        AssertFailure(B1FailureCode.InvalidDecisionShape, () => _evaluator.Evaluate(
+            state, f.Author(f.BootstrapAuthority, first, second), f.NewDecisionRef(), f.Now));
+    }
+
+    [Fact]
     public void Prospective_scope_resolves_to_same_decision_identity()
     {
         var f = Fixture.Create();

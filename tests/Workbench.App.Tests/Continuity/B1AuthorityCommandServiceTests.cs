@@ -351,8 +351,638 @@ public sealed class B1AuthorityCommandServiceTests
         Assert.Equal(4, state.LogicalActors.Count);
     }
 
+    [Fact]
+    public async Task DecideAssignment_accepts_current_unresolved_revision_once()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var seed = await f.SeedAssignmentAsync(Empty, Empty);
+
+        var decision = await f.Service.DecideAssignmentAsync(
+            f.Decide(seed, AssignmentDisposition.Accepted));
+        var second = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.DecideAssignmentAsync(f.Decide(seed, AssignmentDisposition.Accepted)));
+        var state = await f.LoadAsync();
+
+        Assert.Equal(AssignmentDisposition.Accepted, decision.AssignmentDispositionEffect!.Disposition);
+        Assert.Equal(B1FailureCode.AlreadyDispositioned, second.Code);
+        Assert.Single(state.RevisionDispositions);
+    }
+
+    [Fact]
+    public async Task Stale_or_already_dispositioned_revision_rolls_back_whole_decision()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var seed = await f.SeedAssignmentAsync(Empty, Empty);
+        var activation = await f.Service.ActivateAssignmentRevisionAsync(
+            f.Activate(f.Activation(seed, "R2")));
+        var current = seed with { Revision = activation.RevisionActivationEffect!.Revision.RevisionRef };
+        var contribution = f.Contribution("must not persist", new ContributionScopeTarget.Project(f.ProjectRef));
+        var before = await f.LoadAsync();
+        var stale = f.Decide(seed, AssignmentDisposition.Accepted, contributions: [contribution]);
+
+        var staleFailure = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.DecideAssignmentAsync(stale));
+        await f.Service.DecideAssignmentAsync(f.Decide(current, AssignmentDisposition.Accepted));
+        var afterAccepted = await f.LoadAsync();
+        var repeatedFailure = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.DecideAssignmentAsync(f.Decide(
+                current, AssignmentDisposition.Accepted, contributions: [contribution])));
+        var final = await f.LoadAsync();
+
+        Assert.Equal(B1FailureCode.StaleRevision, staleFailure.Code);
+        Assert.Equal(B1FailureCode.AlreadyDispositioned, repeatedFailure.Code);
+        Assert.Equal(before.Governance.LastProjectCommitSequence + 1, final.Governance.LastProjectCommitSequence);
+        AssertStateUnchanged(afterAccepted, final);
+        Assert.Empty(final.AcceptedProjectState().CurrentContributions);
+    }
+
+    [Fact]
+    public async Task RevisionRequired_can_atomically_activate_replacement_revision()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(
+            B1AuthorityCapability.DecideAssignmentDisposition,
+            B1AuthorityCapability.ActivateAssignmentRevision);
+        var seed = await f.SeedAssignmentAsync(boundary, boundary);
+        var activation = f.Activation(seed, "R2");
+
+        var decision = await f.Service.DecideAssignmentAsync(
+            f.Decide(seed, AssignmentDisposition.RevisionRequired, activation: activation));
+        var state = await f.LoadAsync();
+
+        Assert.Equal(AssignmentDisposition.RevisionRequired, decision.AssignmentDispositionEffect!.Disposition);
+        Assert.Equal(decision.DecisionRef, decision.RevisionActivationEffect!.Revision.AuthorizedByDecisionRef);
+        Assert.Equal(2, state.Revisions.Count);
+        Assert.Equal(decision.RevisionActivationEffect.Revision.RevisionRef,
+            state.AcceptedProjectState().CurrentEffectiveRevisionRefs[seed.Assignment]);
+    }
+
+    [Fact]
+    public async Task RevisionRequired_can_receive_later_activation_only()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(
+            B1AuthorityCapability.DecideAssignmentDisposition,
+            B1AuthorityCapability.ActivateAssignmentRevision);
+        var seed = await f.SeedAssignmentAsync(boundary, boundary);
+        var disposition = await f.Service.DecideAssignmentAsync(
+            f.Decide(seed, AssignmentDisposition.RevisionRequired));
+
+        var activation = await f.Service.ActivateAssignmentRevisionAsync(
+            f.Activate(f.Activation(seed, "R2")));
+
+        Assert.NotEqual(disposition.DecisionRef, activation.DecisionRef);
+        Assert.Null(activation.AssignmentDispositionEffect);
+        Assert.NotNull(activation.RevisionActivationEffect);
+    }
+
+    [Fact]
+    public async Task Accepted_or_rejected_cannot_activate_revision()
+    {
+        foreach (var disposition in new[] { AssignmentDisposition.Accepted, AssignmentDisposition.Rejected })
+        {
+            await using var f = await Fixture.CreateAsync();
+            var boundary = Boundary(
+                B1AuthorityCapability.DecideAssignmentDisposition,
+                B1AuthorityCapability.ActivateAssignmentRevision);
+            var seed = await f.SeedAssignmentAsync(boundary, boundary);
+            await f.Service.DecideAssignmentAsync(f.Decide(seed, disposition));
+            var before = await f.LoadAsync();
+
+            var exception = await Assert.ThrowsAsync<B1CommandException>(() =>
+                f.Service.ActivateAssignmentRevisionAsync(f.Activate(f.Activation(seed, "forbidden"))));
+
+            Assert.Equal(B1FailureCode.AlreadyDispositioned, exception.Code);
+            AssertStateUnchanged(before, await f.LoadAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Revision_activation_source_must_be_proposed_revision_for_same_assignment()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(B1AuthorityCapability.ActivateAssignmentRevision);
+        var first = await f.SeedAssignmentAsync(boundary, boundary);
+        var second = await f.SeedAssignmentAsync(boundary, boundary);
+        var wrongKind = await f.AddClaimAsync(new ClaimPayload.Result("not a revision proposal"));
+        var wrongAssignment = await f.AddClaimAsync(new ClaimPayload.ProposedAssignmentRevision(
+            second.Assignment, second.Revision, new AssignmentRevisionContract("other proposal")));
+
+        var wrongKindFailure = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.ActivateAssignmentRevisionAsync(f.Activate(
+                f.Activation(first, "R2", wrongKind.ClaimRef))));
+        var wrongAssignmentFailure = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.ActivateAssignmentRevisionAsync(f.Activate(
+                f.Activation(first, "R2", wrongAssignment.ClaimRef))));
+
+        Assert.Equal(B1FailureCode.InvalidReference, wrongKindFailure.Code);
+        Assert.Equal(B1FailureCode.InvalidReference, wrongAssignmentFailure.Code);
+        Assert.Equal(2, (await f.LoadAsync()).Revisions.Count);
+    }
+
+    [Fact]
+    public async Task Stale_revision_proposal_remains_considered_history_but_new_contract_targets_current_revision()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(B1AuthorityCapability.ActivateAssignmentRevision);
+        var seed = await f.SeedAssignmentAsync(boundary, boundary);
+        var staleProposal = await f.AddClaimAsync(new ClaimPayload.ProposedAssignmentRevision(
+            seed.Assignment, seed.Revision, new AssignmentRevisionContract("proposal against R1")));
+        var r2Decision = await f.Service.ActivateAssignmentRevisionAsync(
+            f.Activate(f.Activation(seed, "R2")));
+        var r2 = r2Decision.RevisionActivationEffect!.Revision.RevisionRef;
+        var current = seed with { Revision = r2 };
+        var command = f.Activate(f.Activation(current, "authority-authored R3", staleProposal.ClaimRef)) with
+        {
+            ConsideredRefs = [new ConsideredRef.Claim(staleProposal.ClaimRef)]
+        };
+
+        var decision = await f.Service.ActivateAssignmentRevisionAsync(command);
+
+        Assert.Equal(r2, decision.RevisionActivationEffect!.Revision.PriorRevisionRef);
+        Assert.Equal("authority-authored R3", decision.RevisionActivationEffect.Revision.Contract.WorkContract);
+        Assert.Equal(staleProposal.ClaimRef, decision.RevisionActivationEffect.SourceClaimRef);
+        Assert.Contains(new ConsideredRef.Claim(staleProposal.ClaimRef), decision.ConsideredRefs);
+        var persistedProposal = Assert.Single(
+            (await f.LoadAsync()).Claims, value => value.ClaimRef == staleProposal.ClaimRef);
+        Assert.Equal("proposal against R1",
+            Assert.IsType<ClaimPayload.ProposedAssignmentRevision>(persistedProposal.Payload)
+                .ProposedContract.WorkContract);
+    }
+
+    [Fact]
+    public async Task RevisionRequired_or_rejected_can_replace_same_assignment()
+    {
+        foreach (var disposition in new[] { AssignmentDisposition.RevisionRequired, AssignmentDisposition.Rejected })
+        {
+            await using var f = await Fixture.CreateAsync();
+            var boundary = Boundary(
+                B1AuthorityCapability.DecideAssignmentDisposition,
+                B1AuthorityCapability.DelegateAssignment);
+            var seed = await f.SeedAssignmentAsync(boundary, boundary);
+            var command = f.Decide(seed, disposition, replacement: f.Replacement(seed, seed.Actor));
+
+            var decision = await f.Service.DecideAssignmentAsync(command);
+
+            Assert.Equal(seed.Assignment, decision.AssignmentDelegationEffect!.ReplacesAssignmentRef);
+            Assert.Equal(disposition, decision.AssignmentDispositionEffect!.Disposition);
+        }
+    }
+
+    [Fact]
+    public async Task Replacement_can_atomically_establish_new_assignee_with_delegate_and_actor_capabilities()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(
+            B1AuthorityCapability.DecideAssignmentDisposition,
+            B1AuthorityCapability.DelegateAssignment,
+            B1AuthorityCapability.EstablishLogicalActor);
+        var seed = await f.SeedAssignmentAsync(boundary, boundary);
+        var replacement = f.Replacement(seed, establishedRole: RoleKind.Worker);
+
+        var decision = await f.Service.DecideAssignmentAsync(
+            f.Decide(
+                seed,
+                AssignmentDisposition.Rejected,
+                replacement: replacement,
+                decidingAuthority: new DecidingAuthorityRef.LogicalActor(seed.Actor)));
+        var state = await f.LoadAsync();
+
+        Assert.NotNull(decision.LogicalActorEstablishmentEffect);
+        Assert.Equal(decision.LogicalActorEstablishmentEffect!.LogicalActor.LogicalActorRef,
+            decision.AssignmentDelegationEffect!.Assignment.AssigneeActorRef);
+        Assert.Equal(decision.DecisionRef, decision.AssignmentDelegationEffect.InitialRevision.AuthorizedByDecisionRef);
+        Assert.Equal(2, state.LogicalActors.Count);
+        Assert.Equal(2, state.Assignments.Count);
+    }
+
+    [Fact]
+    public async Task Replacement_actor_establishment_without_project_capability_rolls_back_whole_decision()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(
+            B1AuthorityCapability.DecideAssignmentDisposition,
+            B1AuthorityCapability.DelegateAssignment);
+        var seed = await f.SeedAssignmentAsync(boundary, boundary);
+        var before = await f.LoadAsync();
+        var replacement = f.Replacement(seed, establishedRole: RoleKind.Worker);
+
+        var exception = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.DecideAssignmentAsync(
+                f.Decide(
+                    seed,
+                    AssignmentDisposition.Rejected,
+                    replacement: replacement,
+                    decidingAuthority: new DecidingAuthorityRef.LogicalActor(seed.Actor))));
+        var after = await f.LoadAsync();
+
+        Assert.Equal(B1FailureCode.NotAuthorized, exception.Code);
+        AssertStateUnchanged(before, after);
+        Assert.Single(after.LogicalActors);
+        Assert.Single(after.Assignments);
+        Assert.Single(after.Revisions);
+        Assert.Empty(after.RevisionDispositions);
+        Assert.Empty(after.AcceptedProjectState().CurrentContributions);
+    }
+
+    [Fact]
+    public async Task Accepted_plus_replacement_is_invalid()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var seed = await f.SeedAssignmentAsync(Empty, Empty);
+        var before = await f.LoadAsync();
+
+        var exception = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.DecideAssignmentAsync(f.Decide(
+                seed, AssignmentDisposition.Accepted, replacement: f.Replacement(seed, seed.Actor))));
+
+        Assert.Equal(B1FailureCode.InvalidDecisionShape, exception.Code);
+        AssertStateUnchanged(before, await f.LoadAsync());
+    }
+
+    [Fact]
+    public async Task Disposition_parallel_delegation_or_other_assignment_replacement_is_invalid()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var first = await f.SeedAssignmentAsync(Empty, Empty);
+        var second = await f.SeedAssignmentAsync(Empty, Empty);
+        var before = await f.LoadAsync();
+        var otherReplacement = f.Replacement(second, second.Actor);
+
+        var exception = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.DecideAssignmentAsync(f.Decide(
+                first, AssignmentDisposition.Rejected, replacement: otherReplacement)));
+
+        Assert.Equal(B1FailureCode.InvalidDecisionShape, exception.Code);
+        AssertStateUnchanged(before, await f.LoadAsync());
+        Assert.Null(typeof(DecideAssignmentCommand).GetProperty("Delegation"));
+        Assert.Equal(
+            typeof(AssignmentRef),
+            typeof(AssignmentReplacementInstruction).GetProperty("ReplacesAssignmentRef")!.PropertyType);
+    }
+
+    [Fact]
+    public async Task Historical_old_revision_claim_can_support_project_contribution_without_old_disposition()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(B1AuthorityCapability.ActivateAssignmentRevision);
+        var seed = await f.SeedAssignmentAsync(boundary, boundary);
+        var historical = await f.AddClaimAsync(new ClaimPayload.ProposedAssignmentRevision(
+            seed.Assignment, seed.Revision, new AssignmentRevisionContract("historical proposal")));
+        await f.Service.ActivateAssignmentRevisionAsync(f.Activate(f.Activation(seed, "R2")));
+        var command = f.Author(f.Contribution("Dependency must be replaced", new ContributionScopeTarget.Project(f.ProjectRef))) with
+        {
+            ConsideredRefs = [new ConsideredRef.Claim(historical.ClaimRef)]
+        };
+
+        var decision = await f.Service.AuthorAcceptedStateAsync(command);
+        var state = await f.LoadAsync();
+
+        Assert.Null(decision.AssignmentDispositionEffect);
+        Assert.Contains(new ConsideredRef.Claim(historical.ClaimRef), decision.ConsideredRefs);
+        Assert.Single(decision.AcceptedStateContributions);
+        Assert.DoesNotContain(state.RevisionDispositions, value => value.RevisionRef == seed.Revision);
+        var persistedClaim = Assert.Single(state.Claims, value => value.ClaimRef == historical.ClaimRef);
+        Assert.Equal(historical.Payload, persistedClaim.Payload);
+    }
+
+    [Fact]
+    public async Task Activation_creates_no_attempt_or_execution_state()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var boundary = Boundary(B1AuthorityCapability.ActivateAssignmentRevision);
+        var seed = await f.SeedAssignmentAsync(boundary, boundary);
+
+        var decision = await f.Service.ActivateAssignmentRevisionAsync(
+            f.Activate(f.Activation(seed, "R2")));
+        var state = await f.LoadAsync();
+
+        Assert.NotNull(decision.RevisionActivationEffect);
+        Assert.Null(decision.AssignmentDispositionEffect);
+        Assert.Empty(state.Attempts);
+        Assert.Empty(state.SessionBindings);
+        Assert.Empty(state.Handoffs);
+        Assert.All(state.AssignmentRoutingSelections, routing => Assert.Null(routing.SelectedAttemptRef));
+    }
+
+    [Fact]
+    public async Task AuthorAcceptedState_requires_one_or_more_contributions()
+    {
+        await using var f = await Fixture.CreateAsync();
+
+        var exception = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.AuthorAcceptedStateAsync(f.Author()));
+
+        Assert.Equal(B1FailureCode.InvalidDecisionShape, exception.Code);
+        Assert.Empty((await f.LoadAsync()).AuthorityDecisions);
+    }
+
+    [Fact]
+    public async Task Authority_can_adopt_modify_or_author_without_claim()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var scope = new ContributionScopeRef.Project(f.ProjectRef);
+        var proposal = await f.AddClaimAsync(new ClaimPayload.ProposedStateContribution("proposal X", scope, null));
+
+        var adopted = await f.Service.AuthorAcceptedStateAsync(f.Author(
+            f.Contribution("proposal X", new ContributionScopeTarget.Project(f.ProjectRef), source: proposal.ClaimRef)));
+        var modified = await f.Service.AuthorAcceptedStateAsync(f.Author(
+            f.Contribution("authority revision Y", new ContributionScopeTarget.Project(f.ProjectRef), source: proposal.ClaimRef)));
+        var authored = await f.Service.AuthorAcceptedStateAsync(f.Author(
+            f.Contribution("authority-only Z", new ContributionScopeTarget.Project(f.ProjectRef))));
+
+        Assert.Equal(proposal.ClaimRef, Assert.Single(adopted.AcceptedStateContributions).SourceClaimRef);
+        Assert.Equal("authority revision Y", Assert.Single(modified.AcceptedStateContributions).Statement);
+        Assert.Null(Assert.Single(authored.AcceptedStateContributions).SourceClaimRef);
+        Assert.Equal("proposal X", ((ClaimPayload.ProposedStateContribution)proposal.Payload).Statement);
+    }
+
+    [Fact]
+    public async Task Source_claim_must_be_same_project_proposed_state_claim()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var result = await f.AddClaimAsync(new ClaimPayload.Result("wrong kind"));
+        var external = await f.AddOtherProjectProposedContributionClaimAsync("other project");
+        var target = new ContributionScopeTarget.Project(f.ProjectRef);
+
+        var wrongKind = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("x", target, source: result.ClaimRef))));
+        var wrongProject = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("y", target, source: external.ClaimRef))));
+
+        Assert.Equal(B1FailureCode.InvalidReference, wrongKind.Code);
+        Assert.Equal(B1FailureCode.InvalidReference, wrongProject.Code);
+        Assert.Empty((await f.LoadAsync()).AcceptedProjectState().CurrentContributions);
+    }
+
+    [Fact]
+    public async Task Proposal_scope_or_proposed_supersession_never_applies_automatically()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var initial = await f.Service.AuthorAcceptedStateAsync(f.Author(
+            f.Contribution("A", new ContributionScopeTarget.Project(f.ProjectRef))));
+        var current = Assert.Single(initial.AcceptedStateContributions);
+        var proposal = await f.AddClaimAsync(new ClaimPayload.ProposedStateContribution(
+            "proposal B",
+            new ContributionScopeRef.Project(f.ProjectRef),
+            current.ContributionRef));
+        var responsibility = await f.AddResponsibilityAsync(f.Contract("Scoped authority", Empty));
+
+        var decision = await f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution(
+            "authority C",
+            new ContributionScopeTarget.Responsibility.Existing(responsibility),
+            source: proposal.ClaimRef)));
+        var projected = (await f.LoadAsync()).AcceptedProjectState().CurrentContributions;
+
+        Assert.Null(Assert.Single(decision.AcceptedStateContributions).SupersedesContributionRef);
+        Assert.Contains(current, projected);
+        Assert.Contains(projected, value => value.Statement == "authority C" &&
+            value.Scope == new ContributionScopeRef.Responsibility(responsibility));
+    }
+
+    [Fact]
+    public async Task Rejected_or_revision_required_decision_may_still_author_explicit_contributions()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var first = await f.SeedAssignmentAsync(Empty, Empty);
+        var second = await f.SeedAssignmentAsync(Empty, Empty);
+        var contribution = f.Contribution("compatibility remains required", new ContributionScopeTarget.Project(f.ProjectRef));
+
+        var rejected = await f.Service.DecideAssignmentAsync(
+            f.Decide(first, AssignmentDisposition.Rejected, contributions: [contribution]));
+        var revisionRequired = await f.Service.DecideAssignmentAsync(
+            f.Decide(second, AssignmentDisposition.RevisionRequired, contributions: [contribution]));
+
+        Assert.Single(rejected.AcceptedStateContributions);
+        Assert.Single(revisionRequired.AcceptedStateContributions);
+        Assert.Equal(2, (await f.LoadAsync()).AcceptedProjectState().CurrentContributions.Count);
+    }
+
+    [Fact]
+    public async Task Contributions_default_to_coexistence()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var scope = new ContributionScopeTarget.Project(f.ProjectRef);
+        await f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("A", scope)));
+        await f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("X", scope)));
+
+        var current = (await f.LoadAsync()).AcceptedProjectState().CurrentContributions;
+
+        Assert.Equal(2, current.Count);
+        Assert.Contains(current, value => value.Statement == "A");
+        Assert.Contains(current, value => value.Statement == "X");
+    }
+
+    [Fact]
+    public async Task Supersession_requires_current_exact_scope_target()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var scope = new ContributionScopeTarget.Project(f.ProjectRef);
+        var aDecision = await f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("A", scope)));
+        var a = Assert.Single(aDecision.AcceptedStateContributions);
+        var bDecision = await f.Service.AuthorAcceptedStateAsync(f.Author(
+            f.Contribution("B", scope, supersedes: a.ContributionRef)));
+        var b = Assert.Single(bDecision.AcceptedStateContributions);
+        var responsibility = await f.AddResponsibilityAsync(f.Contract("Exact scope", Empty));
+
+        var stale = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("C", scope, supersedes: a.ContributionRef))));
+        var wrongScope = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution(
+                "D", new ContributionScopeTarget.Responsibility.Existing(responsibility), supersedes: b.ContributionRef))));
+        var current = (await f.LoadAsync()).AcceptedProjectState().CurrentContributions;
+
+        Assert.Equal(B1FailureCode.StaleSupersession, stale.Code);
+        Assert.Equal(B1FailureCode.StaleSupersession, wrongScope.Code);
+        Assert.Equal(b, Assert.Single(current));
+    }
+
+    [Fact]
+    public async Task Contributions_in_same_decision_cannot_supersede_each_other()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var scope = new ContributionScopeTarget.Project(f.ProjectRef);
+        var currentDecision = await f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("A", scope)));
+        var current = Assert.Single(currentDecision.AcceptedStateContributions);
+        var before = await f.LoadAsync();
+        var command = f.Author(
+            f.Contribution("B", scope, supersedes: current.ContributionRef),
+            f.Contribution("C", scope, supersedes: current.ContributionRef));
+
+        var failure = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.AuthorAcceptedStateAsync(command));
+
+        Assert.Equal(B1FailureCode.InvalidDecisionShape, failure.Code);
+        AssertStateUnchanged(before, await f.LoadAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_supersession_has_one_complete_winner()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var scope = new ContributionScopeTarget.Project(f.ProjectRef);
+        var initial = await f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution("A", scope)));
+        var target = Assert.Single(initial.AcceptedStateContributions).ContributionRef;
+        using var barrier = new Barrier(2);
+        var firstService = f.CreateService(new FirstReadBarrierTimeProvider(Fixture.Now, barrier));
+        var secondService = f.CreateService(new FirstReadBarrierTimeProvider(Fixture.Now.AddSeconds(1), barrier));
+
+        var results = await Task.WhenAll(
+            Task.Run(() => CaptureAsync(firstService.AuthorAcceptedStateAsync(
+                f.Author(f.Contribution("B", scope, supersedes: target))))),
+            Task.Run(() => CaptureAsync(secondService.AuthorAcceptedStateAsync(
+                f.Author(f.Contribution("C", scope, supersedes: target))))));
+        var current = (await f.LoadAsync()).AcceptedProjectState().CurrentContributions;
+
+        Assert.NotNull(Assert.Single(results, result => result.Decision is not null).Decision);
+        var failure = Assert.Single(results, result => result.Exception is not null).Exception!;
+        Assert.Equal(B1FailureCode.StaleSupersession, failure.Code);
+        Assert.Single(current);
+        Assert.DoesNotContain(current, value => value.ContributionRef == target);
+    }
+
+    [Fact]
+    public async Task Prospective_scope_resolves_only_for_identity_created_by_same_command()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var invalid = await Assert.ThrowsAsync<B1CommandException>(() =>
+            f.Service.AuthorAcceptedStateAsync(f.Author(f.Contribution(
+                "no prospective identity", new ContributionScopeTarget.Assignment.DelegatedByThisDecision()))));
+        var seed = await f.SeedAssignmentAsync(Empty, Empty);
+        var replacement = f.Replacement(seed, seed.Actor);
+        var contribution = f.Contribution(
+            "new assignment state", new ContributionScopeTarget.Assignment.DelegatedByThisDecision());
+
+        var decision = await f.Service.DecideAssignmentAsync(
+            f.Decide(seed, AssignmentDisposition.Rejected, replacement: replacement, contributions: [contribution]));
+
+        Assert.Equal(B1FailureCode.InvalidDecisionShape, invalid.Code);
+        Assert.Equal(
+            new ContributionScopeRef.Assignment(decision.AssignmentDelegationEffect!.Assignment.AssignmentRef),
+            Assert.Single(decision.AcceptedStateContributions).Scope);
+    }
+
+    [Fact]
+    public async Task Contribution_failure_rolls_back_disposition_activation_and_replacement()
+    {
+        await using var activationFixture = await Fixture.CreateAsync();
+        var activationBoundary = Boundary(
+            B1AuthorityCapability.DecideAssignmentDisposition,
+            B1AuthorityCapability.ActivateAssignmentRevision);
+        var activationSeed = await activationFixture.SeedAssignmentAsync(activationBoundary, activationBoundary);
+        var activationBefore = await activationFixture.LoadAsync();
+        var invalidContribution = activationFixture.Contribution(
+            "invalid", new ContributionScopeTarget.Assignment.Existing(new AssignmentRef(Guid.NewGuid())));
+
+        await Assert.ThrowsAsync<B1CommandException>(() => activationFixture.Service.DecideAssignmentAsync(
+            activationFixture.Decide(
+                activationSeed,
+                AssignmentDisposition.RevisionRequired,
+                activation: activationFixture.Activation(activationSeed, "R2"),
+                contributions: [invalidContribution])));
+        AssertStateUnchanged(activationBefore, await activationFixture.LoadAsync());
+
+        await using var replacementFixture = await Fixture.CreateAsync();
+        var replacementBoundary = Boundary(
+            B1AuthorityCapability.DecideAssignmentDisposition,
+            B1AuthorityCapability.DelegateAssignment,
+            B1AuthorityCapability.EstablishLogicalActor);
+        var replacementSeed = await replacementFixture.SeedAssignmentAsync(replacementBoundary, replacementBoundary);
+        var replacementBefore = await replacementFixture.LoadAsync();
+        var badReplacementContribution = replacementFixture.Contribution(
+            "invalid", new ContributionScopeTarget.Responsibility.Existing(new ResponsibilityRef(Guid.NewGuid())));
+
+        await Assert.ThrowsAsync<B1CommandException>(() => replacementFixture.Service.DecideAssignmentAsync(
+            replacementFixture.Decide(
+                replacementSeed,
+                AssignmentDisposition.Rejected,
+                replacement: replacementFixture.Replacement(replacementSeed, establishedRole: RoleKind.Worker),
+                contributions: [badReplacementContribution])));
+        AssertStateUnchanged(replacementBefore, await replacementFixture.LoadAsync());
+    }
+
+    [Fact]
+    public void Public_authority_surface_contains_exactly_six_named_commands()
+    {
+        var methods = typeof(B1AuthorityCommandService)
+            .GetMethods()
+            .Where(method => method.DeclaringType == typeof(B1AuthorityCommandService))
+            .Select(method => method.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(new[]
+        {
+            "ActivateAssignmentRevisionAsync",
+            "AuthorAcceptedStateAsync",
+            "DecideAssignmentAsync",
+            "DelegateAssignmentAsync",
+            "EstablishLogicalActorAsync",
+            "EstablishResponsibilityAsync"
+        }, methods);
+    }
+
+    private static async Task<(AuthorityDecision? Decision, B1CommandException? Exception)> CaptureAsync(
+        Task<AuthorityDecision> operation)
+    {
+        try
+        {
+            return (await operation, null);
+        }
+        catch (B1CommandException exception)
+        {
+            return (null, exception);
+        }
+    }
+
+    private static void AssertStateUnchanged(B1ProjectState before, B1ProjectState after)
+    {
+        Assert.Equal(before.Governance, after.Governance);
+        Assert.Equal(
+            before.LogicalActors.Select(value => value.LogicalActorRef),
+            after.LogicalActors.Select(value => value.LogicalActorRef));
+        Assert.Equal(
+            before.Responsibilities.Select(value => value.ResponsibilityRef),
+            after.Responsibilities.Select(value => value.ResponsibilityRef));
+        Assert.Equal(
+            before.Assignments.Select(value => value.AssignmentRef),
+            after.Assignments.Select(value => value.AssignmentRef));
+        Assert.Equal(
+            before.Revisions.Select(value => value.RevisionRef),
+            after.Revisions.Select(value => value.RevisionRef));
+        Assert.Equal(before.RevisionDispositions, after.RevisionDispositions);
+        Assert.Equal(
+            before.Attempts.Select(value => value.AttemptRef),
+            after.Attempts.Select(value => value.AttemptRef));
+        Assert.Equal(
+            before.SessionBindings.Select(value => value.SessionBindingRef),
+            after.SessionBindings.Select(value => value.SessionBindingRef));
+        Assert.Equal(
+            before.Claims.Select(value => value.ClaimRef),
+            after.Claims.Select(value => value.ClaimRef));
+        Assert.Equal(
+            before.Handoffs.Select(value => value.HandoffRef),
+            after.Handoffs.Select(value => value.HandoffRef));
+        Assert.Equal(
+            before.AuthorityDecisions.Select(value => (value.ProjectCommitSequence, value.DecisionRef)),
+            after.AuthorityDecisions.Select(value => (value.ProjectCommitSequence, value.DecisionRef)));
+        Assert.Equal(
+            before.AuthorityDecisions.SelectMany(value => value.AcceptedStateContributions)
+                .Select(value => value.ContributionRef),
+            after.AuthorityDecisions.SelectMany(value => value.AcceptedStateContributions)
+                .Select(value => value.ContributionRef));
+        Assert.Equal(before.AssignmentRoutingSelections, after.AssignmentRoutingSelections);
+        Assert.Equal(before.AttemptRoutingSelections, after.AttemptRoutingSelections);
+    }
+
     private static AuthorityBoundary Boundary(params B1AuthorityCapability[] capabilities) =>
         AuthorityBoundary.Create(capabilities);
+
+    private sealed record SeededAssignment(
+        LogicalActorRef Actor,
+        ResponsibilityRef Responsibility,
+        AssignmentRef Assignment,
+        RevisionRef Revision);
 
     private sealed class Fixture : IAsyncDisposable
     {
@@ -361,6 +991,7 @@ public sealed class B1AuthorityCommandServiceTests
         private readonly string _directory;
         private readonly B1AuthorityRepository _repository;
         private readonly B1AuthorityEvaluator _evaluator = new();
+        private readonly B1ClaimHandoffRepository _claims;
 
         private Fixture(
             string directory,
@@ -368,6 +999,7 @@ public sealed class B1AuthorityCommandServiceTests
             ProjectRef projectRef,
             UserPrincipalRef principal,
             B1AuthorityRepository repository,
+            B1ClaimHandoffRepository claims,
             B1AuthorityCommandService service)
         {
             _directory = directory;
@@ -375,6 +1007,7 @@ public sealed class B1AuthorityCommandServiceTests
             ProjectRef = projectRef;
             Principal = principal;
             _repository = repository;
+            _claims = claims;
             Service = service;
         }
 
@@ -406,6 +1039,7 @@ public sealed class B1AuthorityCommandServiceTests
                     Now),
                 principal);
             var repository = new B1AuthorityRepository(database);
+            var claims = new B1ClaimHandoffRepository(database);
             var time = new MutableTimeProvider(Now);
             return new Fixture(
                 directory,
@@ -413,6 +1047,7 @@ public sealed class B1AuthorityCommandServiceTests
                 new ProjectRef(projectId),
                 principal,
                 repository,
+                claims,
                 new B1AuthorityCommandService(repository, new B1AuthorityEvaluator(), time));
         }
 
@@ -464,11 +1099,69 @@ public sealed class B1AuthorityCommandServiceTests
                 [],
                 []);
 
+        public DecideAssignmentCommand Decide(
+            SeededAssignment seed,
+            AssignmentDisposition disposition,
+            RevisionActivationInstruction? activation = null,
+            AssignmentReplacementInstruction? replacement = null,
+            IReadOnlyList<AcceptedContributionInstruction>? contributions = null,
+            DecidingAuthorityRef? decidingAuthority = null) =>
+            new(
+                ProjectRef,
+                Principal,
+                decidingAuthority ?? BootstrapAuthority,
+                new AssignmentDispositionInstruction(seed.Assignment, seed.Revision, disposition),
+                activation,
+                replacement,
+                [],
+                contributions ?? []);
+
+        public RevisionActivationInstruction Activation(
+            SeededAssignment seed,
+            string workContract,
+            ClaimRef? sourceClaimRef = null) =>
+            new(
+                seed.Assignment,
+                seed.Revision,
+                new AssignmentRevisionContract(workContract),
+                sourceClaimRef);
+
+        public ActivateAssignmentRevisionCommand Activate(
+            RevisionActivationInstruction activation,
+            IReadOnlyList<AcceptedContributionInstruction>? contributions = null,
+            DecidingAuthorityRef? decidingAuthority = null) =>
+            new(
+                ProjectRef,
+                Principal,
+                decidingAuthority ?? BootstrapAuthority,
+                activation,
+                [],
+                contributions ?? []);
+
+        public AssignmentReplacementInstruction Replacement(
+            SeededAssignment seed,
+            LogicalActorRef? existingActor = null,
+            RoleKind? establishedRole = null) =>
+            new(
+                seed.Assignment,
+                establishedRole is null
+                    ? new AssignmentAssigneeTarget.Existing(existingActor ?? seed.Actor)
+                    : new AssignmentAssigneeTarget.EstablishedByThisDecision(),
+                establishedRole,
+                new AssignmentRevisionContract("Replacement work"));
+
+        public AuthorAcceptedStateCommand Author(params AcceptedContributionInstruction[] contributions) =>
+            new(ProjectRef, Principal, BootstrapAuthority, [], contributions);
+
         public ResponsibilityContract Contract(string obligation, AuthorityBoundary maximum) =>
             new(obligation, $"{obligation} outcome", maximum);
 
-        public AcceptedContributionInstruction Contribution(string statement, ContributionScopeTarget scope) =>
-            new(statement, scope, null, null);
+        public AcceptedContributionInstruction Contribution(
+            string statement,
+            ContributionScopeTarget scope,
+            AcceptedStateContributionRef? supersedes = null,
+            ClaimRef? source = null) =>
+            new(statement, scope, supersedes, source);
 
         public async Task<LogicalActorRef> AddActorAsync()
         {
@@ -491,6 +1184,58 @@ public sealed class B1AuthorityCommandServiceTests
                 decision.LogicalActorEstablishmentEffect!.LogicalActor.LogicalActorRef,
                 decision.ResponsibilityEstablishmentEffect!.Responsibility.ResponsibilityRef,
                 decision.AssignmentDelegationEffect!.Assignment.AssignmentRef);
+        }
+
+        public async Task<SeededAssignment> SeedAssignmentAsync(
+            AuthorityBoundary maximum,
+            AuthorityBoundary delegated)
+        {
+            var decision = await Service.EstablishResponsibilityAsync(
+                EstablishResponsibilityWithInitialDelegation(
+                    Contract($"Seeded {Guid.NewGuid():N}", maximum), delegated));
+            return new(
+                decision.LogicalActorEstablishmentEffect!.LogicalActor.LogicalActorRef,
+                decision.ResponsibilityEstablishmentEffect!.Responsibility.ResponsibilityRef,
+                decision.AssignmentDelegationEffect!.Assignment.AssignmentRef,
+                decision.AssignmentDelegationEffect.InitialRevision.RevisionRef);
+        }
+
+        public Task<Claim> AddClaimAsync(ClaimPayload payload) =>
+            _claims.RecordClaimAsync(new RecordClaimCommand(
+                ProjectRef,
+                Principal,
+                new ClaimRef(Guid.NewGuid()),
+                new ClaimantRef.UserPrincipal(Principal),
+                null,
+                payload,
+                [],
+                Now));
+
+        public async Task<Claim> AddOtherProjectProposedContributionClaimAsync(string statement)
+        {
+            var projectId = Guid.NewGuid();
+            var projectRef = new ProjectRef(projectId);
+            var principal = new UserPrincipalRef($"user:other:{projectId:N}");
+            await new B1ProjectGovernanceRepository(Database).CreateGovernedProjectAsync(
+                new CoreProject(
+                    projectId,
+                    "Other B1 Project",
+                    $"C:/Projects/{projectId:N}",
+                    ProjectType.Godot,
+                    null,
+                    Now,
+                    Now),
+                principal);
+            return await _claims.RecordClaimAsync(new RecordClaimCommand(
+                projectRef,
+                principal,
+                new ClaimRef(Guid.NewGuid()),
+                new ClaimantRef.UserPrincipal(principal),
+                null,
+                new ClaimPayload.ProposedStateContribution(
+                    statement, new ContributionScopeRef.Project(projectRef), null),
+                [],
+                Now));
         }
 
         public async Task CommitDispositionAsync(
@@ -564,6 +1309,23 @@ public sealed class B1AuthorityCommandServiceTests
             }
 
             return utcNow.AddTicks(read);
+        }
+    }
+
+    private sealed class FirstReadBarrierTimeProvider(
+        DateTimeOffset utcNow,
+        Barrier barrier) : TimeProvider
+    {
+        private int _readCount;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                barrier.SignalAndWait(TimeSpan.FromSeconds(10));
+            }
+
+            return utcNow;
         }
     }
 }
