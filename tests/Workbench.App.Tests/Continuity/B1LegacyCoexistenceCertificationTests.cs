@@ -99,6 +99,7 @@ public sealed class B1LegacyCoexistenceCertificationTests
         var library = await fixture.Services.ProjectLibraryRepository.BrowseAsync(fixture.ProjectId);
         var summaries = await fixture.Services.ProjectSummaryRepository.QueryAsync(
             new Workbench.Storage.Memory.SummaryQuery(fixture.ProjectId, 10));
+        var synthesis = await fixture.Services.ProjectMemorySynthesisRepository.GetAsync(fixture.SynthesisEpochId);
 
         Assert.NotNull(memory);
         Assert.NotNull(daily);
@@ -106,6 +107,12 @@ public sealed class B1LegacyCoexistenceCertificationTests
         Assert.Equal("LEGACY_DAILY", daily.Content);
         Assert.Equal("LEGACY_LIBRARY", Assert.Single(library).Summary);
         Assert.Equal("LEGACY_SUMMARY", Assert.Single(summaries).Text);
+        Assert.NotNull(synthesis);
+        Assert.Equal(Workbench.Storage.Memory.ProjectMemorySynthesisJobStatus.Completed, synthesis.Status);
+        Assert.Equal(2, synthesis.AttemptCount);
+        Assert.Equal(LegacyAt, synthesis.LastAttemptedAt);
+        Assert.Equal(LegacyAt, synthesis.CompletedAt);
+        Assert.Null(synthesis.LastError);
         await fixture.AdoptAsync();
         Assert.Empty((await fixture.Services.B1Projections.GetAcceptedProjectStateAsync(fixture.ProjectRef)).CurrentContributions);
     }
@@ -181,7 +188,18 @@ public sealed class B1LegacyCoexistenceCertificationTests
         await using var fixture = await LegacyFixture.CreateAsync();
         var before = await fixture.ReadLegacySnapshotAsync();
         var seed = await fixture.EstablishCurrentB1RootAsync();
-        await fixture.RecordContributionClaimAsync(seed, "CURRENT_TIME_CONTRIBUTION");
+        var contributionClaim = await fixture.RecordContributionClaimAsync(seed, "CURRENT_TIME_CONTRIBUTION");
+        await fixture.Services.B1AuthorityCommands.AuthorAcceptedStateAsync(
+            new AuthorAcceptedStateCommand(
+                fixture.ProjectRef,
+                fixture.OperatorRef,
+                new DecidingAuthorityRef.UserPrincipal(fixture.OperatorRef),
+                [new ConsideredRef.Claim(contributionClaim.ClaimRef)],
+                [new AcceptedContributionInstruction(
+                    "CURRENT_TIME_CONTRIBUTION",
+                    new ContributionScopeTarget.Project(fixture.ProjectRef),
+                    null,
+                    contributionClaim.ClaimRef)]));
 
         Assert.Equal(before, await fixture.ReadLegacySnapshotAsync());
     }
@@ -212,6 +230,7 @@ public sealed class B1LegacyCoexistenceCertificationTests
         public Guid EpochId { get; } = Guid.Parse("00000000-0000-0000-0000-000000000104");
         public Guid TaskId { get; } = Guid.Parse("00000000-0000-0000-0000-000000000102");
         public Guid CompletionEventId { get; } = Guid.Parse("00000000-0000-0000-0000-000000000107");
+        public Guid SynthesisEpochId { get; } = Guid.Parse("00000000-0000-0000-0000-000000000109");
         public Guid MemoryId { get; } = Guid.Parse("00000000-0000-0000-0000-000000000111");
         public Guid ReviewDecisionId { get; } = Guid.Parse("00000000-0000-0000-0000-000000000112");
         public ProjectRef ProjectRef => new(ProjectId);
@@ -298,6 +317,9 @@ public sealed class B1LegacyCoexistenceCertificationTests
                 UNION ALL SELECT 'event',id,task_id,payload_json FROM task_events
                 UNION ALL SELECT 'review',review_decision_id,project_id,outcome FROM task_review_decisions
                 UNION ALL SELECT 'memory',id,project_id,content FROM project_memory_items
+                UNION ALL SELECT 'synthesis',epoch_id,project_id,status || ':' || attempt_count || ':' ||
+                    COALESCE(last_attempted_at,'<NULL>') || ':' || COALESCE(completed_at,'<NULL>') || ':' ||
+                    COALESCE(last_error,'<NULL>') FROM project_memory_synthesis_jobs
                 UNION ALL SELECT 'daily',local_date,project_id,content FROM project_daily_summaries
                 UNION ALL SELECT 'library',id,project_id,summary FROM project_library_entries
                 UNION ALL SELECT 'summary',entry_id,project_id,text FROM project_summary_entries
@@ -365,6 +387,8 @@ public sealed class B1LegacyCoexistenceCertificationTests
                 VALUES('00000000-0000-0000-0000-000000000104','00000000-0000-0000-0000-000000000101','legacy-provider','00000000-0000-0000-0000-000000000105','legacy-model','00000000-0000-0000-0000-000000000106','legacy-external-session','C:/Legacy',$at,$at,NULL,NULL,NULL,$at);
                 UPDATE project_leaders SET current_epoch_id='00000000-0000-0000-0000-000000000104'
                 WHERE project_id='00000000-0000-0000-0000-000000000101';
+                INSERT INTO leader_session_epochs(id,project_id,provider_id,provider_account_id,model_id,agent_session_id,external_session_id,working_directory,started_at,last_active_at,ended_at,rollover_reason,handoff_summary,boot_context_delivered_at)
+                VALUES('00000000-0000-0000-0000-000000000109','00000000-0000-0000-0000-000000000101','legacy-provider','00000000-0000-0000-0000-000000000115','legacy-model','00000000-0000-0000-0000-000000000116','legacy-synthesis-session','C:/Legacy',$at,$at,$at,'Manual','LEGACY_SYNTHESIS_HANDOFF',$at);
                 INSERT INTO leader_messages(epoch_id,sequence,role,text,created_at)
                 VALUES('00000000-0000-0000-0000-000000000104',1,'user','LEGACY_LEADER_MESSAGE',$at);
                 INSERT INTO tasks(id,project_id,title,status,current_revision_id,created_at,updated_at,cancelled_at)
@@ -377,6 +401,8 @@ public sealed class B1LegacyCoexistenceCertificationTests
                 VALUES('00000000-0000-0000-0000-000000000111','00000000-0000-0000-0000-000000000101','Formal','legacy','LEGACY_MEMORY','Active',$at,$at,NULL);
                 INSERT INTO project_memory_sources(memory_id,source_type,source_ref)
                 VALUES('00000000-0000-0000-0000-000000000111','Task','00000000-0000-0000-0000-000000000102');
+                INSERT INTO project_memory_synthesis_jobs(epoch_id,project_id,status,attempt_count,last_attempted_at,completed_at,last_error,created_at,updated_at)
+                VALUES('00000000-0000-0000-0000-000000000109','00000000-0000-0000-0000-000000000101','Completed',2,$at,$at,NULL,$at,$at);
                 INSERT INTO project_daily_summaries(project_id,local_date,content,revision,created_at,updated_at)
                 VALUES('00000000-0000-0000-0000-000000000101','2026-08-22','LEGACY_DAILY',1,$at,$at);
                 INSERT INTO project_daily_summary_sources(project_id,local_date,source_type,source_ref)
