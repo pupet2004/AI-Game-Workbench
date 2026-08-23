@@ -343,6 +343,8 @@ Any later proposal must answer these questions before feature selection or imple
 
 Passing this gate only admits a proposal for further design. It does not choose R6 or authorize implementation.
 
+The non-normative research note [From Continuity to Accountability](./from-continuity-to-accountability.md) records a possible longer-term provenance and accountability horizon. It is research context only and does not expand this architecture, the R5-B1 baseline, or the implementation roadmap.
+
 ## 10. Reconciliation Judgment
 
 R5-B1 successfully moved the durable center of Workbench into a recoverable Project World. The current repository, however, remains a deliberate coexistence system: the sealed B1 spine operates beside active Agent-centric and Legacy product paths. This is not a contradiction, provided their records and behaviors are not mistaken for B1 identity, authority, or accepted state.
