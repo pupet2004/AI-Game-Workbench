@@ -18,6 +18,7 @@ public sealed class B1ManualContinuityCertificationTests
         using var directory = new TemporaryDirectory("b1-manual-continuity");
         var databasePath = Path.Combine(directory.Path, "workbench.db");
         var registry = new AgentRuntimeRegistry();
+        Assert.Empty(registry.Runtimes);
         var projectRef = new ProjectRef(Guid.NewGuid());
         var operatorRef = new UserPrincipalRef("U1");
         var decidingAuthority = new DecidingAuthorityRef.UserPrincipal(operatorRef);
@@ -105,6 +106,8 @@ public sealed class B1ManualContinuityCertificationTests
                     [new EvidenceRef("manual:C3")],
                     At));
 
+            var acceptedBeforeHandoff =
+                (await services.B1Projections.GetProjectProjectionAsync(projectRef)).AcceptedProjectState;
             var handoff = await services.B1NonAuthoritativeCommands.CreateHandoffAsync(
                 new CreateHandoffCommand(
                     projectRef,
@@ -123,6 +126,7 @@ public sealed class B1ManualContinuityCertificationTests
                 new SelectContinuationHandoffCommand(projectRef, operatorRef, attemptRef, null, handoff.HandoffRef));
 
             var beforeDecision = await services.B1Projections.GetProjectProjectionAsync(projectRef);
+            AssertAcceptedProjectStateEqual(acceptedBeforeHandoff, beforeDecision.AcceptedProjectState);
             Assert.Empty(beforeDecision.AcceptedProjectState.CurrentContributions);
             Assert.Empty(registry.Runtimes);
             Assert.Equal(0L, await CountRowsAsync(services, "b1_session_bindings"));
@@ -149,6 +153,13 @@ public sealed class B1ManualContinuityCertificationTests
             var accepted = Assert.Single(acceptanceDecision.AcceptedStateContributions);
             Assert.Equal(acceptanceDecision.DecisionRef, accepted.AuthorityDecisionRef);
             Assert.Equal(contributionClaim.ClaimRef, accepted.SourceClaimRef);
+            var afterDecision = await services.B1Projections.GetProjectProjectionAsync(projectRef);
+            Assert.Equal(attemptRef, afterDecision.StoredAttemptSelections[assignmentRef]);
+            Assert.Equal(handoffRef, afterDecision.StoredHandoffSelections[attemptRef]);
+            Assert.Null(afterDecision.EffectiveCurrentAttemptRefs[assignmentRef]);
+            Assert.Null(afterDecision.EffectiveCurrentHandoffRefs[attemptRef]);
+            Assert.Null(afterDecision.StoredBindingSelections[attemptRef]);
+            Assert.Null(afterDecision.EffectiveCurrentBindingRefs[attemptRef]);
             Assert.Equal(0L, await CountRowsAsync(services, "b1_session_bindings"));
             Assert.Empty(registry.Runtimes);
         }
@@ -206,6 +217,23 @@ public sealed class B1ManualContinuityCertificationTests
                 Assert.Equal(0L, await CountRowsAsync(restarted, table));
             }
         }
+
+        Assert.Empty(registry.Runtimes);
+    }
+
+    private static void AssertAcceptedProjectStateEqual(
+        AcceptedProjectState expected,
+        AcceptedProjectState actual)
+    {
+        Assert.Equal(expected.ProjectRef, actual.ProjectRef);
+        Assert.Equal(expected.LogicalActors.OrderBy(item => item.Key.Value), actual.LogicalActors.OrderBy(item => item.Key.Value));
+        Assert.Equal(expected.Responsibilities.OrderBy(item => item.Key.Value), actual.Responsibilities.OrderBy(item => item.Key.Value));
+        Assert.Equal(expected.Assignments.OrderBy(item => item.Key.Value), actual.Assignments.OrderBy(item => item.Key.Value));
+        Assert.Equal(expected.Revisions.OrderBy(item => item.Key.Value), actual.Revisions.OrderBy(item => item.Key.Value));
+        Assert.Equal(expected.RevisionDispositions.OrderBy(item => item.Key.Value), actual.RevisionDispositions.OrderBy(item => item.Key.Value));
+        Assert.Equal(expected.CurrentEffectiveRevisionRefs.OrderBy(item => item.Key.Value), actual.CurrentEffectiveRevisionRefs.OrderBy(item => item.Key.Value));
+        Assert.Equal(expected.CurrentDelegationAssignments.OrderBy(item => item.Value), actual.CurrentDelegationAssignments.OrderBy(item => item.Value));
+        Assert.Equal(expected.CurrentContributions, actual.CurrentContributions);
     }
 
     private static async Task<long> CountRowsAsync(AppServices services, string table)
