@@ -15,7 +15,7 @@ public sealed class ReviewGateReferenceDecouplingMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(19L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(20L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         var columns = await ColumnsAsync(connection);
         Assert.Contains(columns, column => column.Name == "question_message_id" && !column.NotNull);
         Assert.Contains(columns, column => column.Name == "user_message_id" && !column.NotNull);

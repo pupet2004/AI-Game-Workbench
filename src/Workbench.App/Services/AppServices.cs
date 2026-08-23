@@ -13,6 +13,9 @@ using Workbench.App.Memory;
 using Workbench.App.Worker;
 using Workbench.Storage.Workers;
 using Workbench.Storage.Reviews;
+using Workbench.App.Continuity;
+using Workbench.Core.Continuity;
+using Workbench.Storage.Continuity;
 
 namespace Workbench.App.Services;
 
@@ -55,6 +58,10 @@ public sealed class AppServices : IAsyncDisposable
         ILeaderReviewAutoProceedExecutor leaderReviewAutoProceed,
         ILeaderReviewAskUserGate leaderReviewAskUserGate,
         ILeaderReviewUserResponseBinder leaderReviewUserResponseBinder,
+        B1ProjectGovernanceRepository b1ProjectGovernance,
+        B1NonAuthoritativeCommandService b1NonAuthoritativeCommands,
+        B1AuthorityCommandService b1AuthorityCommands,
+        B1ProjectionService b1Projections,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -90,6 +97,10 @@ public sealed class AppServices : IAsyncDisposable
         LeaderReviewAutoProceed = leaderReviewAutoProceed;
         LeaderReviewAskUserGate = leaderReviewAskUserGate;
         LeaderReviewUserResponseBinder = leaderReviewUserResponseBinder;
+        B1ProjectGovernance = b1ProjectGovernance;
+        B1NonAuthoritativeCommands = b1NonAuthoritativeCommands;
+        B1AuthorityCommands = b1AuthorityCommands;
+        B1Projections = b1Projections;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -137,6 +148,10 @@ public sealed class AppServices : IAsyncDisposable
     public ILeaderReviewAutoProceedExecutor LeaderReviewAutoProceed { get; }
     public ILeaderReviewAskUserGate LeaderReviewAskUserGate { get; }
     public ILeaderReviewUserResponseBinder LeaderReviewUserResponseBinder { get; }
+    public B1ProjectGovernanceRepository B1ProjectGovernance { get; }
+    public B1NonAuthoritativeCommandService B1NonAuthoritativeCommands { get; }
+    public B1AuthorityCommandService B1AuthorityCommands { get; }
+    public B1ProjectionService B1Projections { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -201,6 +216,16 @@ public sealed class AppServices : IAsyncDisposable
 
         var workerExecutionRepository = new WorkerExecutionRepository(database);
         var workerRoutingStore = new TaskEventWorkerRoutingStore(taskEvents, workerExecutionRepository);
+        var b1AuthorityRepository = new B1AuthorityRepository(database);
+        var b1ProjectGovernance = new B1ProjectGovernanceRepository(database);
+        var b1NonAuthoritativeCommands = new B1NonAuthoritativeCommandService(
+            new B1RoutingRepository(database),
+            new B1ClaimHandoffRepository(database));
+        var b1AuthorityCommands = new B1AuthorityCommandService(
+            b1AuthorityRepository,
+            new B1AuthorityEvaluator(),
+            effectiveTimeProvider);
+        var b1Projections = new B1ProjectionService(b1AuthorityRepository);
         return new AppServices(
             database,
             projectRepository,
@@ -237,6 +262,10 @@ public sealed class AppServices : IAsyncDisposable
             leaderAutoProceed,
             leaderAskUserGate,
             leaderUserResponseBinder,
+            b1ProjectGovernance,
+            b1NonAuthoritativeCommands,
+            b1AuthorityCommands,
+            b1Projections,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);
