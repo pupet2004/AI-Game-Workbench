@@ -2,9 +2,15 @@ namespace Workbench.App.Tests.Support;
 
 internal sealed class TemporaryDirectory : IDisposable
 {
+    private readonly string _ownedDirectory;
+
     public TemporaryDirectory(string name = "project")
     {
-        Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AI.Game.Workbench.App.Tests", Guid.NewGuid().ToString("N"), name);
+        _ownedDirectory = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "AI.Game.Workbench.App.Tests",
+            Guid.NewGuid().ToString("N"));
+        Path = System.IO.Path.Combine(_ownedDirectory, name);
         Directory.CreateDirectory(Path);
     }
 
@@ -16,13 +22,13 @@ internal sealed class TemporaryDirectory : IDisposable
         {
             try
             {
-                if (Directory.Exists(Path))
+                if (Directory.Exists(_ownedDirectory))
                 {
-                    foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
+                    foreach (var file in Directory.EnumerateFiles(_ownedDirectory, "*", SearchOption.AllDirectories))
                     {
                         File.SetAttributes(file, FileAttributes.Normal);
                     }
-                    Directory.Delete(Path, recursive: true);
+                    Directory.Delete(_ownedDirectory, recursive: true);
                 }
                 return;
             }
