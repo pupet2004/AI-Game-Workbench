@@ -52,7 +52,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ProjectLibraryEvolutionRepository? projectLibraryEvolutionRepository = null,
          IProjectMemoryApi? projectMemoryApi = null,
          ILeaderReviewUserResponseBinder? responseBinder = null,
-         ProjectSummaryRepository? projectSummaryRepository = null)
+         ProjectSummaryRepository? projectSummaryRepository = null,
+         LibraryAcceptedStateReader? acceptedStateReader = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -75,7 +76,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             epochRepository,
             library: projectLibraryRepository,
             evolutionLibrary: projectLibraryEvolutionRepository,
-            projectMemoryApi: projectMemoryApi);
+            projectMemoryApi: projectMemoryApi,
+            acceptedStateReader: acceptedStateReader);
         LeaderPane = new LeaderPaneViewModel(
             result.Project,
             runtimeRegistry ?? new AgentRuntimeRegistry(),

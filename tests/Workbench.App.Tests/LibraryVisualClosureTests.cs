@@ -8,7 +8,7 @@ namespace Workbench.App.Tests;
 public sealed class LibraryVisualClosureTests
 {
     [Fact]
-    public void Library_starts_in_category_instead_of_legacy_overview()
+    public void Library_without_b1_state_keeps_legacy_category_view()
     {
         var project = new Workbench.Core.Projects.Project(Guid.NewGuid(), "Project", "C:/Project", Workbench.Core.Projects.ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var pane = new LibraryPaneViewModel(new ProjectOpenResult(project, ProjectLayout.CreateDefault(project.Id), new GitSnapshot(false, false, null, null, null, false, false, null)));
@@ -21,7 +21,7 @@ public sealed class LibraryVisualClosureTests
     {
         var markup = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
 
-        Assert.DoesNotContain("Content=\"Overview\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Overview\"", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Project Memory", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Memory learning", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Pending Candidates", markup, StringComparison.Ordinal);

@@ -14,6 +14,7 @@ namespace Workbench.App.ViewModels.Panes;
 
 public enum LibrarySection
 {
+    Overview,
     Category,
     Time,
     Project
@@ -24,12 +25,30 @@ public enum LibraryTimelineDirection
     OldToNew
 }
 
+public enum LibraryTimelineContextKind
+{
+    LibraryRecord,
+    B1AcceptedProjection,
+    LegacyContext
+}
+
 public sealed record LibraryTimelineNodeView(
     Guid Id,
     Guid ObjectId,
     DateOnly LocalDate,
     string Content,
-    IReadOnlyList<LibraryMaterialReference> Materials);
+    IReadOnlyList<LibraryMaterialReference> Materials,
+    LibraryTimelineContextKind ContextKind)
+{
+    public bool IsLegacyContext => ContextKind == LibraryTimelineContextKind.LegacyContext;
+
+    public string ContextLabel => ContextKind switch
+    {
+        LibraryTimelineContextKind.B1AcceptedProjection => "B1 ACCEPTED PROJECTION",
+        LibraryTimelineContextKind.LegacyContext => "LEGACY CONTEXT",
+        _ => "LIBRARY RECORD"
+    };
+}
 
 public sealed record LibraryTimeGroupView(
     DateOnly LocalDate,
@@ -54,6 +73,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly ProjectLibraryRepository? _library;
     private readonly ProjectLibraryEvolutionRepository? _evolutionLibrary;
     private readonly IProjectMemoryApi? _projectMemoryApi;
+    private readonly LibraryAcceptedStateReader? _acceptedStateReader;
 
     public LibraryPaneViewModel(
         ProjectOpenResult result,
@@ -65,7 +85,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
         LeaderSessionEpochRepository? epochRepository = null,
         ProjectLibraryRepository? library = null,
         ProjectLibraryEvolutionRepository? evolutionLibrary = null,
-        IProjectMemoryApi? projectMemoryApi = null)
+        IProjectMemoryApi? projectMemoryApi = null,
+        LibraryAcceptedStateReader? acceptedStateReader = null)
     {
         Result = result;
         _focus = focus;
@@ -77,6 +98,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         _library = library;
         _evolutionLibrary = evolutionLibrary;
         _projectMemoryApi = projectMemoryApi;
+        _acceptedStateReader = acceptedStateReader;
     }
 
     public LibraryPaneViewModel(ProjectOpenResult result)
@@ -87,8 +109,12 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public ProjectOpenResult Result { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsCategory), nameof(IsTime), nameof(HasCategoryView), nameof(HasTimeView), nameof(IsProject))]
+    [NotifyPropertyChangedFor(nameof(IsOverview), nameof(HasOverviewView), nameof(IsCategory), nameof(IsTime), nameof(HasCategoryView), nameof(HasTimeView), nameof(IsProject))]
     public partial LibrarySection SelectedSection { get; set; } = LibrarySection.Category;
+
+    public bool IsOverview => SelectedSection == LibrarySection.Overview;
+
+    public bool HasOverviewView => IsOverview;
 
     public bool IsCategory => SelectedSection == LibrarySection.Category;
 
@@ -99,6 +125,14 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public bool HasTimeView => IsTime;
 
     public bool IsProject => SelectedSection == LibrarySection.Project;
+
+    public bool HasB1ProjectWorld => AcceptedStateReadModel is not null;
+
+    public string AcceptedStateStatus => AcceptedStateReadModel is null
+        ? "This Project has no available B1 Accepted State projection."
+        : AcceptedStateReadModel.CurrentContributions.Count == 0
+            ? "No accepted Project statements have been established yet."
+            : $"{AcceptedStateReadModel.CurrentContributions.Count} accepted statement(s).";
 
     public string ProjectName => Result.Project.Name;
 
@@ -160,6 +194,13 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public ObservableCollection<ProjectLibraryProposal> PendingLibraryProposals { get; } = [];
     public bool HasPendingLibraryProposals => PendingLibraryProposals.Count > 0;
 
+    public ObservableCollection<LibraryAcceptedContributionProjection> CurrentAcceptedContributions { get; } = [];
+    public ObservableCollection<LibraryProjectDecisionProjection> ProjectLevelDecisions { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasB1ProjectWorld), nameof(AcceptedStateStatus))]
+    public partial LibraryAcceptedStateReadModel? AcceptedStateReadModel { get; set; }
+
     [ObservableProperty]
     public partial ProjectLibraryProposal? SelectedLibraryProposal { get; set; }
 
@@ -212,6 +253,13 @@ public partial class LibraryPaneViewModel : ViewModelBase
     {
         SelectedSection = LibrarySection.Category;
         await LoadLibraryAsync(cancellationToken);
+    }
+
+    public async Task ShowOverviewAsync(CancellationToken cancellationToken = default)
+    {
+        if (AcceptedStateReadModel is null && _acceptedStateReader is not null)
+            await LoadAcceptedStateAsync(cancellationToken);
+        SelectedSection = AcceptedStateReadModel is null ? LibrarySection.Category : LibrarySection.Overview;
     }
 
     public async Task ShowTimeAsync(CancellationToken cancellationToken = default)
@@ -352,6 +400,9 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private Task ShowCategory() => ShowCategoryAsync();
 
     [RelayCommand]
+    private Task ShowOverview() => ShowOverviewAsync();
+
+    [RelayCommand]
     private Task ShowTime() => ShowTimeAsync();
 
     [RelayCommand]
@@ -362,6 +413,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     private async Task LoadEvolutionLibraryAsync(CancellationToken cancellationToken)
     {
+        await LoadAcceptedStateAsync(cancellationToken);
         var nodes = await _evolutionLibrary!.BrowseNodesByDateAsync(Result.Project.Id, cancellationToken: cancellationToken);
         var objects = (await _evolutionLibrary.ListObjectsAsync(Result.Project.Id, cancellationToken))
             .ToDictionary(value => value.Id);
@@ -396,6 +448,31 @@ public partial class LibraryPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasPendingLibraryProposals));
     }
 
+    private async Task LoadAcceptedStateAsync(CancellationToken cancellationToken)
+    {
+        if (_acceptedStateReader is null) return;
+        try
+        {
+            AcceptedStateReadModel = await _acceptedStateReader.ReadAsync(
+                new Workbench.Core.Continuity.ProjectRef(Result.Project.Id),
+                cancellationToken);
+            CurrentAcceptedContributions.Clear();
+            foreach (var contribution in AcceptedStateReadModel.CurrentContributions)
+                CurrentAcceptedContributions.Add(contribution);
+            ProjectLevelDecisions.Clear();
+            foreach (var decision in AcceptedStateReadModel.ProjectLevelDecisions)
+                ProjectLevelDecisions.Add(decision);
+            SelectedSection = LibrarySection.Overview;
+        }
+        catch (InvalidDataException)
+        {
+            AcceptedStateReadModel = null;
+            CurrentAcceptedContributions.Clear();
+            ProjectLevelDecisions.Clear();
+            SelectedSection = LibrarySection.Category;
+        }
+    }
+
     private async Task ConfirmLibraryProposalAsync(
         Func<CancellationToken, Task> confirm,
         CancellationToken cancellationToken)
@@ -425,7 +502,35 @@ public partial class LibraryPaneViewModel : ViewModelBase
         }
     }
 
-    private async Task<LibraryTimelineNodeView> CreateTimelineNodeViewAsync(ProjectLibraryTimelineNode node, CancellationToken cancellationToken) =>
-        new(node.Id, node.ObjectId, node.LocalDate, node.Content,
-            await _evolutionLibrary!.GetMaterialReferencesAsync(Result.Project.Id, node.Id, cancellationToken));
+    private async Task<LibraryTimelineNodeView> CreateTimelineNodeViewAsync(ProjectLibraryTimelineNode node, CancellationToken cancellationToken)
+    {
+        var materials = await _evolutionLibrary!.GetMaterialReferencesAsync(Result.Project.Id, node.Id, cancellationToken);
+        return new(
+            node.Id,
+            node.ObjectId,
+            node.LocalDate,
+            node.Content,
+            materials,
+            ClassifyTimelineContext(materials));
+    }
+
+    private static LibraryTimelineContextKind ClassifyTimelineContext(
+        IReadOnlyList<LibraryMaterialReference> materials)
+    {
+        var hasAuthorityProjection = materials.Any(value =>
+            string.Equals(value.MaterialKind, LibraryProjectionMaterialKinds.AuthorityDecision, StringComparison.Ordinal));
+        var hasAcceptedContribution = materials.Any(value =>
+            string.Equals(value.MaterialKind, LibraryProjectionMaterialKinds.AcceptedContribution, StringComparison.Ordinal));
+        if (hasAuthorityProjection && hasAcceptedContribution)
+            return LibraryTimelineContextKind.B1AcceptedProjection;
+
+        if (materials.Any(IsLegacyMaterial))
+            return LibraryTimelineContextKind.LegacyContext;
+
+        return LibraryTimelineContextKind.LibraryRecord;
+    }
+
+    private static bool IsLegacyMaterial(LibraryMaterialReference material) =>
+        string.Equals(material.MaterialKind, LibraryProjectionMaterialKinds.LegacyContext, StringComparison.Ordinal) ||
+        (material.Label?.StartsWith("Legacy ", StringComparison.OrdinalIgnoreCase) ?? false);
 }

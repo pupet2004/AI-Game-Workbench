@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ProjectWorld"
+             x:Class="Workbench.App.Views.GuidedDecisionView"
+             x:DataType="vm:GuidedDecisionViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="48" Spacing="16" MaxWidth="860">
+            <TextBlock Text="REVIEW WORK RESULT" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding ProjectName}" FontSize="20" />
+            <TextBlock Text="{Binding HandoffText}" />
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="Submitted as:" />
+                <TextBlock Text="{Binding SubmittedAsText}" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="Deciding as:" Opacity="0.75" />
+                <TextBlock Text="{Binding UserPrincipal}" Opacity="0.75" />
+            </StackPanel>
+            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="PRIMARY RESULT" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding PrimaryResultText}" TextWrapping="Wrap" />
+                    <TextBlock Text="PROPOSED PROJECT CHANGE" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding ProposedContributionText}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+            <TextBlock Text="Decision" FontWeight="SemiBold" />
+            <ComboBox ItemsSource="{Binding AvailableDispositions}" SelectedItem="{Binding SelectedDisposition}" />
+            <TextBlock Text="Proposed contribution handling" FontWeight="SemiBold" />
+            <ComboBox ItemsSource="{Binding AvailableContributionModes}" SelectedItem="{Binding SelectedContributionMode}" />
+            <TextBox Text="{Binding EditedContributionStatement}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="Used only for EditAndEstablish" />
+            <TextBlock Text="New Assignment Revision · optional for RevisionRequired" FontWeight="SemiBold" />
+            <TextBox Text="{Binding NewRevisionContract}" AcceptsReturn="True" TextWrapping="Wrap" />
+            <Button Content="Preview what will change" Command="{Binding PreviewDecisionCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+            <Border Padding="12" Background="#12000000" IsVisible="{Binding IsPreviewVisible}">
+                <StackPanel Spacing="8"><TextBlock Text="DECISION PREVIEW" FontWeight="SemiBold" /><TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" /><Button Content="Confirm Decision" Command="{Binding ConfirmDecisionCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" /></StackPanel>
+            </Border>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#475467" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
+            <Button Content="Back to Manual Work" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

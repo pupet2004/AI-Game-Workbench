@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ProjectWorld"
+             x:Class="Workbench.App.Views.ManualWorkView"
+             x:DataType="vm:ManualWorkViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="48" Spacing="16" MaxWidth="820">
+            <TextBlock Text="MANUAL WORK" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding ProjectName}" FontSize="20" />
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="Signed in as:" Opacity="0.75" />
+                <TextBlock Text="{Binding UserPrincipal}" Opacity="0.75" />
+            </StackPanel>
+            <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="WORK CONTEXT" FontSize="18" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Acting as:" />
+                        <TextBlock Text="{Binding ActorText}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ResponsibilityText}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding AssignmentText}" />
+                    <TextBlock Text="{Binding RevisionText}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding AttemptText}" TextWrapping="Wrap" />
+                    <Button Content="{Binding WorkModeText}" Command="{Binding BeginOrContinueCommand}"
+                            IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+                    <Button Content="Record Handoff" Command="{Binding ShowHandoffComposerCommand}"
+                            IsEnabled="{Binding HasAttempt}" HorizontalAlignment="Left" />
+                    <Button Content="Review Work Result" Command="{Binding ReviewWorkResultCommand}"
+                            IsEnabled="{Binding HasHandoff}" HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding HandoffText}" Opacity="0.75" />
+                </StackPanel>
+            </Border>
+            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6"
+                    IsVisible="{Binding IsHandoffComposerVisible}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="RECORD HANDOFF" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="This records a work result for review. It does not publish a project change." TextWrapping="Wrap" Opacity="0.75" />
+                    <TextBlock Text="Primary Result" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding PrimaryResult}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="What did this work attempt produce?" />
+                    <TextBlock Text="Validations · one per line" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding ValidationsText}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Text="Unresolved Issues · one per line" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding UnresolvedIssuesText}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Text="Proposed Project Changes · one per line" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding ProposedChangesText}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Text="Proposed Assignment Revision · optional" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding ProposedAssignmentRevision}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Text="Evidence References · one per line" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding EvidenceReferencesText}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <Button Content="Record Handoff" Command="{Binding RecordHandoffCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+            <TextBlock Text="{Binding HandoffStatusMessage}" TextWrapping="Wrap" Foreground="#475467" />
+            <TextBlock Text="Beginning work records a continuation point only. It does not start an external tool, publish project facts, or change the current project state."
+                       TextWrapping="Wrap" Opacity="0.75" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
+            <Button Content="Back to Project World" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

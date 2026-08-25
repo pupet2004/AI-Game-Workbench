@@ -1,9 +1,30 @@
 namespace Workbench.App.Tests;
 
 using Workbench.App.Views;
+using Workbench.App.ProjectWorld;
+using Workbench.App.ViewModels;
+using Workbench.App.Tests.Support;
 
 public sealed class MainWindowViewTests
 {
+    [Fact]
+    public async Task Creating_a_new_local_project_enters_project_setup()
+    {
+        using var folder = new TemporaryDirectory("new-project-route");
+        await using var context = await AppTestContext.CreateAsync(folder.Path);
+        var main = context.CreateMain();
+
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).CreateProjectAsync();
+
+        var setup = Assert.IsType<ProjectWorldSetupViewModel>(main.CurrentPage);
+        await setup.EstablishGovernanceCommand.ExecuteAsync(null);
+        await setup.PreviewInitializationCommand.ExecuteAsync(null);
+        await setup.ConfirmInitializationCommand.ExecuteAsync(null);
+
+        Assert.IsType<ProjectWorldExplorerViewModel>(main.CurrentPage);
+    }
+
     [Fact]
     public void Main_window_starts_centered_in_normal_state()
     {

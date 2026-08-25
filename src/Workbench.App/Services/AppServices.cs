@@ -16,6 +16,7 @@ using Workbench.Storage.Reviews;
 using Workbench.App.Continuity;
 using Workbench.Core.Continuity;
 using Workbench.Storage.Continuity;
+using Workbench.App.ProjectWorld;
 
 namespace Workbench.App.Services;
 
@@ -59,9 +60,21 @@ public sealed class AppServices : IAsyncDisposable
         ILeaderReviewAskUserGate leaderReviewAskUserGate,
         ILeaderReviewUserResponseBinder leaderReviewUserResponseBinder,
         B1ProjectGovernanceRepository b1ProjectGovernance,
+        B1AuthorityRepository b1AuthorityRepository,
+        B1EvidenceRepository b1Evidence,
         B1NonAuthoritativeCommandService b1NonAuthoritativeCommands,
         B1AuthorityCommandService b1AuthorityCommands,
         B1ProjectionService b1Projections,
+        LibraryProjectionContractService libraryProjectionContracts,
+        LibraryAcceptedStateReader libraryAcceptedStateReader,
+        ProjectWorldEntryStatusService projectWorldEntryStatus,
+        ProjectWorldInitializationService projectWorldInitialization,
+        GuidedHandoffCommandService guidedHandoffCommands,
+        GuidedHandoffComposerService guidedHandoffComposer,
+        B1AgentParticipationAdapter b1AgentParticipation,
+        GuidedDecisionService guidedDecision,
+        ManualLibraryProjectionService manualLibraryProjection,
+        IUserPrincipalProvider userPrincipalProvider,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
@@ -98,9 +111,21 @@ public sealed class AppServices : IAsyncDisposable
         LeaderReviewAskUserGate = leaderReviewAskUserGate;
         LeaderReviewUserResponseBinder = leaderReviewUserResponseBinder;
         B1ProjectGovernance = b1ProjectGovernance;
+        B1AuthorityRepository = b1AuthorityRepository;
+        B1Evidence = b1Evidence;
         B1NonAuthoritativeCommands = b1NonAuthoritativeCommands;
         B1AuthorityCommands = b1AuthorityCommands;
         B1Projections = b1Projections;
+        LibraryProjectionContracts = libraryProjectionContracts;
+        LibraryAcceptedStateReader = libraryAcceptedStateReader;
+        ProjectWorldEntryStatus = projectWorldEntryStatus;
+        ProjectWorldInitialization = projectWorldInitialization;
+        GuidedHandoffCommands = guidedHandoffCommands;
+        GuidedHandoffComposer = guidedHandoffComposer;
+        B1AgentParticipation = b1AgentParticipation;
+        GuidedDecision = guidedDecision;
+        ManualLibraryProjection = manualLibraryProjection;
+        UserPrincipalProvider = userPrincipalProvider;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactory = runtimeFactory;
@@ -149,9 +174,21 @@ public sealed class AppServices : IAsyncDisposable
     public ILeaderReviewAskUserGate LeaderReviewAskUserGate { get; }
     public ILeaderReviewUserResponseBinder LeaderReviewUserResponseBinder { get; }
     public B1ProjectGovernanceRepository B1ProjectGovernance { get; }
+    public B1AuthorityRepository B1AuthorityRepository { get; }
+    public B1EvidenceRepository B1Evidence { get; }
     public B1NonAuthoritativeCommandService B1NonAuthoritativeCommands { get; }
     public B1AuthorityCommandService B1AuthorityCommands { get; }
     public B1ProjectionService B1Projections { get; }
+    public LibraryProjectionContractService LibraryProjectionContracts { get; }
+    public LibraryAcceptedStateReader LibraryAcceptedStateReader { get; }
+    public ProjectWorldEntryStatusService ProjectWorldEntryStatus { get; }
+    public ProjectWorldInitializationService ProjectWorldInitialization { get; }
+    public GuidedHandoffCommandService GuidedHandoffCommands { get; }
+    public GuidedHandoffComposerService GuidedHandoffComposer { get; }
+    public B1AgentParticipationAdapter B1AgentParticipation { get; }
+    public GuidedDecisionService GuidedDecision { get; }
+    public ManualLibraryProjectionService ManualLibraryProjection { get; }
+    public IUserPrincipalProvider UserPrincipalProvider { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
@@ -217,15 +254,54 @@ public sealed class AppServices : IAsyncDisposable
         var workerExecutionRepository = new WorkerExecutionRepository(database);
         var workerRoutingStore = new TaskEventWorkerRoutingStore(taskEvents, workerExecutionRepository);
         var b1AuthorityRepository = new B1AuthorityRepository(database);
+        var b1Evidence = new B1EvidenceRepository(database);
         var b1ProjectGovernance = new B1ProjectGovernanceRepository(database);
+        var b1ClaimHandoffRepository = new B1ClaimHandoffRepository(database);
         var b1NonAuthoritativeCommands = new B1NonAuthoritativeCommandService(
             new B1RoutingRepository(database),
-            new B1ClaimHandoffRepository(database));
+            b1ClaimHandoffRepository);
+        var guidedHandoffCommands = new GuidedHandoffCommandService(b1ClaimHandoffRepository);
+        var b1AuthorityEvaluator = new B1AuthorityEvaluator();
         var b1AuthorityCommands = new B1AuthorityCommandService(
             b1AuthorityRepository,
-            new B1AuthorityEvaluator(),
+            b1AuthorityEvaluator,
             effectiveTimeProvider);
         var b1Projections = new B1ProjectionService(b1AuthorityRepository);
+        var libraryProjectionContracts = new LibraryProjectionContractService(
+            b1AuthorityRepository,
+            libraryEvolutionRepository,
+            libraryProposalService);
+        var libraryAcceptedStateReader = new LibraryAcceptedStateReader(
+            b1AuthorityRepository,
+            libraryEvolutionRepository);
+        var projectWorldEntryStatus = new ProjectWorldEntryStatusService(
+            b1ProjectGovernance,
+            b1Projections);
+        var userPrincipalProvider = new LocalUserPrincipalProvider();
+        var projectWorldInitialization = new ProjectWorldInitializationService(
+            b1AuthorityRepository,
+            b1AuthorityCommands,
+            b1ProjectGovernance);
+        var guidedHandoffComposer = new GuidedHandoffComposerService(
+            b1AuthorityRepository,
+            guidedHandoffCommands,
+            effectiveTimeProvider);
+        var b1AgentParticipation = new B1AgentParticipationAdapter(
+            b1AuthorityRepository,
+            b1NonAuthoritativeCommands,
+            guidedHandoffComposer,
+            effectiveTimeProvider);
+        var guidedDecision = new GuidedDecisionService(
+            b1AuthorityRepository,
+            b1AuthorityEvaluator,
+            b1AuthorityCommands,
+            effectiveTimeProvider);
+        var manualLibraryProjection = new ManualLibraryProjectionService(
+            b1AuthorityRepository,
+            libraryProjectionContracts,
+            projectMemoryApi,
+            libraryProposalService,
+            effectiveTimeProvider);
         return new AppServices(
             database,
             projectRepository,
@@ -263,9 +339,21 @@ public sealed class AppServices : IAsyncDisposable
             leaderAskUserGate,
             leaderUserResponseBinder,
             b1ProjectGovernance,
+            b1AuthorityRepository,
+            b1Evidence,
             b1NonAuthoritativeCommands,
             b1AuthorityCommands,
             b1Projections,
+            libraryProjectionContracts,
+            libraryAcceptedStateReader,
+            projectWorldEntryStatus,
+            projectWorldInitialization,
+            guidedHandoffCommands,
+            guidedHandoffComposer,
+            b1AgentParticipation,
+            guidedDecision,
+            manualLibraryProjection,
+            userPrincipalProvider,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
             runtimeFactory);

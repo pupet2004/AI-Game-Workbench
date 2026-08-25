@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels"
+             x:Class="Workbench.App.Views.ProjectWorldSetupView"
+             x:DataType="vm:ProjectWorldSetupViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="48" Spacing="16" MaxWidth="820">
+            <TextBlock Text="Set up this project" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding ProjectName}" FontSize="20" />
+            <TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" Opacity="0.7" />
+            <TextBlock Text="{Binding Status.DisplayLabel}" FontWeight="SemiBold" />
+            <TextBlock Text="Older project context remains unchanged. Continuing creates a separate current project record; nothing is imported as current truth."
+                       IsVisible="{Binding Status.HasLegacyContext}"
+                       TextWrapping="Wrap" />
+
+            <Border Padding="16" BorderBrush="Gray" BorderThickness="1" CornerRadius="6"
+                    IsVisible="{Binding !IsGovernanceEstablished}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Step 1 · Confirm project ownership" FontSize="18" />
+                    <TextBlock Text="This records who is setting up the project. No earlier work, roles, or history is inferred." TextWrapping="Wrap" />
+                    <Button Content="Confirm project setup" Command="{Binding EstablishGovernanceCommand}"
+                            IsEnabled="{Binding CanEstablishGovernance}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+
+            <Border Padding="16" BorderBrush="Gray" BorderThickness="1" CornerRadius="6"
+                    IsVisible="{Binding IsGovernanceEstablished}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Step 2 · Describe the first responsibility" FontSize="18" />
+                    <TextBlock Text="Signed in as" />
+                    <TextBox Text="{Binding UserPrincipal}" IsReadOnly="True" />
+                    <TextBlock Text="Acting role (descriptive only)" />
+                    <ComboBox ItemsSource="{Binding AvailableRoleKinds}" SelectedItem="{Binding SelectedRoleKind}" />
+                    <TextBlock Text="Responsibility" />
+                    <TextBox Text="{Binding ResponsibilityObligation}" PlaceholderText="What responsibility exists?" />
+                    <TextBlock Text="Expected outcome" />
+                    <TextBox Text="{Binding ResponsibilityExpectedOutcome}" PlaceholderText="What should this responsibility produce?" />
+                    <TextBlock Text="First assignment" />
+                    <TextBox Text="{Binding InitialAssignment}" PlaceholderText="What is the first bounded piece of work?" />
+                    <Button Content="Preview what will be recorded" Command="{Binding PreviewInitializationCommand}"
+                            IsEnabled="{Binding CanPreview}" HorizontalAlignment="Left" />
+                    <Border Padding="12" Background="#12000000" IsVisible="{Binding IsPreviewVisible}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Before you continue" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" />
+                            <Button Content="Confirm and open project" Command="{Binding ConfirmInitializationCommand}"
+                                    IsEnabled="{Binding CanConfirm}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
+            <Button Content="Back to Project Home" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

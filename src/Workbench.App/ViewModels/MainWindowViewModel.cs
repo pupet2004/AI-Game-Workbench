@@ -5,6 +5,8 @@ using Workbench.App.Leader;
 using Workbench.App.ViewModels.Leader;
 using Workbench.Project.Opening;
 using Workbench.Storage.Database;
+using Workbench.App.ProjectWorld;
+using Workbench.Core.Continuity;
 
 namespace Workbench.App.ViewModels;
 
@@ -67,7 +69,24 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _services.ProjectOpenService,
             _folderPickerService,
             ShowWorkspace,
-            showSettings: ShowSettingsAsync);
+            showSettings: ShowSettingsAsync,
+            entryStatusService: _services.ProjectWorldEntryStatus,
+            createProject: ShowNewProjectSetupAsync);
+
+    private async Task ShowNewProjectSetupAsync(ProjectOpenResult result)
+    {
+        var setup = new ProjectWorldSetupViewModel(
+            _services,
+            result,
+            new ProjectWorldEntryStatus(
+                new ProjectRef(result.Project.Id),
+                ProjectWorldEntryKind.UnmanagedProjectUnavailable,
+                false,
+                "New project setup required"),
+            BackToHomeAsync,
+            ShowWorkspace);
+        CurrentPage = setup;
+    }
 
     public async Task ShowSettingsAsync()
     {
@@ -81,6 +100,35 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task ShowWorkspace(ProjectOpenResult result)
     {
+        var entryStatus = await _services.ProjectWorldEntryStatus.GetStatusAsync(result.Project);
+        if (entryStatus.Kind == ProjectWorldEntryKind.ProjectWorldReady)
+        {
+            var explorer = new ProjectWorldExplorerViewModel(
+                _services,
+                result,
+                BackToHomeAsync,
+                assignmentRef => ShowManualWorkAsync(result, assignmentRef));
+            CurrentPage = explorer;
+            await explorer.InitializeAsync();
+            return;
+        }
+
+        // Preserve the existing Legacy/unmanaged workspace until the explicit
+        // Project Home adoption/create confirmation flow is introduced. B1
+        // initialization is entered only for an adopted Legacy project or an
+        // already-governed empty Project World.
+        if (entryStatus.Kind == ProjectWorldEntryKind.LegacySetupRequired)
+        {
+            var setup = new ProjectWorldSetupViewModel(
+                _services,
+                result,
+                entryStatus,
+                BackToHomeAsync,
+                ShowWorkspace);
+            CurrentPage = setup;
+            return;
+        }
+
         var workspace = new WorkspaceViewModel(
             result,
             _services.ProjectLayoutRepository,
@@ -107,7 +155,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             projectLibraryEvolutionRepository: _services.ProjectLibraryEvolutionRepository,
              projectMemoryApi: _services.ProjectMemoryApi,
              responseBinder: _services.LeaderReviewUserResponseBinder,
-             projectSummaryRepository: _services.ProjectSummaryRepository);
+             projectSummaryRepository: _services.ProjectSummaryRepository,
+             acceptedStateReader: _services.LibraryAcceptedStateReader);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);
@@ -115,6 +164,40 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await _services.LeaderReviewAskUserGate.RecoverAsync(result.Project.Id);
         await workspace.WorkPane.LoadAsync(result.Project.Id);
         await workspace.LibraryPane.InitializeAsync();
+    }
+
+    private async Task ShowManualWorkAsync(ProjectOpenResult result, AssignmentRef assignmentRef)
+    {
+        var manualWork = new ManualWorkViewModel(
+            _services,
+            result,
+            assignmentRef,
+            () => ShowWorkspace(result),
+            handoffRef => ShowGuidedDecisionAsync(result, handoffRef));
+        CurrentPage = manualWork;
+        await manualWork.InitializeAsync();
+    }
+
+    private async Task ShowGuidedDecisionAsync(ProjectOpenResult result, HandoffRef handoffRef)
+    {
+        var decision = new GuidedDecisionViewModel(
+            _services,
+            result,
+            handoffRef,
+            async () =>
+            {
+                var assignmentRef = await ResolveAssignmentForHandoffAsync(result, handoffRef);
+                await ShowManualWorkAsync(result, assignmentRef);
+            });
+        CurrentPage = decision;
+        await decision.InitializeAsync();
+    }
+
+    private async Task<AssignmentRef> ResolveAssignmentForHandoffAsync(ProjectOpenResult result, HandoffRef handoffRef)
+    {
+        var state = await _services.B1AuthorityRepository.LoadProjectStateAsync(new ProjectRef(result.Project.Id));
+        var handoff = state.Handoffs.Single(value => value.HandoffRef == handoffRef);
+        return state.Attempts.Single(value => value.AttemptRef == handoff.AttemptRef).AssignmentRef;
     }
 
     public async ValueTask DisposeAsync()

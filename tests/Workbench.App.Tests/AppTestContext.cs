@@ -66,7 +66,7 @@ internal sealed class AppTestContext : IAsyncDisposable
         {
             LastOpened = result;
             return Task.CompletedTask;
-        }, opener);
+        }, opener, entryStatusService: Services.ProjectWorldEntryStatus);
 
     public MainWindowViewModel CreateMain() => new(Services, _folderPicker, LeaderSessions);
 

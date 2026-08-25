@@ -134,7 +134,7 @@ public sealed class HomeViewModelTests
         await home.OpenPathAsync(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
 
         Assert.Null(context.LastOpened);
-        Assert.Equal("Could not open this project. The folder is no longer available.", home.ErrorMessage);
+        Assert.Equal("Could not open this project. The folder is no longer available; nothing was changed.", home.ErrorMessage);
     }
 
     [Fact]

@@ -1,6 +1,9 @@
 using Workbench.App.ViewModels.Panes;
 using Workbench.App.Tests.Support;
 using Workbench.Storage.Memory;
+using Workbench.Storage.Continuity;
+using Workbench.Core.Continuity;
+using Workbench.App.Memory;
 
 namespace Workbench.App.Tests;
 
@@ -83,6 +86,84 @@ public sealed class LibraryCategoryTimeViewTests
     }
 
     [Fact]
+    public async Task Legacy_and_b1_projection_nodes_keep_distinct_context_labels()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("library-context-labels");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var library = context.Services.ProjectLibraryEvolutionRepository;
+        var libraryObject = await library.CreateObjectAsync(
+            opened.Project.Id,
+            "Design",
+            "Combat",
+            context.Time.GetUtcNow());
+
+        await library.AddNodeAsync(
+            opened.Project.Id,
+            libraryObject.Id,
+            new DateOnly(2026, 8, 13),
+            "Imported legacy entry.",
+            [new("AgentSession", Guid.NewGuid().ToString(), "Legacy source session")],
+            context.Time.GetUtcNow());
+        await library.AddNodeAsync(
+            opened.Project.Id,
+            libraryObject.Id,
+            new DateOnly(2026, 8, 14),
+            "Explicit B1 projection.",
+            [
+                new(LibraryProjectionMaterialKinds.AuthorityDecision, Guid.NewGuid().ToString(), "Decision"),
+                new(LibraryProjectionMaterialKinds.AcceptedContribution, Guid.NewGuid().ToString(), "Accepted contribution")
+            ],
+            context.Time.GetUtcNow().AddMinutes(1));
+
+        var pane = new LibraryPaneViewModel(
+            opened,
+            () => Task.CompletedTask,
+            evolutionLibrary: library);
+        await pane.InitializeAsync();
+        await pane.ShowCategoryAsync();
+        await pane.SelectLibraryObjectAsync(libraryObject.Id);
+
+        Assert.Equal(
+            [LibraryTimelineContextKind.B1AcceptedProjection, LibraryTimelineContextKind.LegacyContext],
+            pane.ObjectTimeline.Select(value => value.ContextKind));
+        Assert.Equal("B1 ACCEPTED PROJECTION", pane.ObjectTimeline[0].ContextLabel);
+        Assert.Equal("LEGACY CONTEXT", pane.ObjectTimeline[1].ContextLabel);
+    }
+
+    [Fact]
+    public async Task Browsing_legacy_library_does_not_create_b1_effects()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("legacy-library-browse");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        await context.Services.ProjectLibraryRepository.SubmitAsync(new LibrarySubmission(
+            Guid.NewGuid(),
+            opened.Project.Id,
+            Guid.NewGuid(),
+            null,
+            "Legacy",
+            "Continuity",
+            "Imported legacy summary.",
+            "legacy://library",
+            context.Time.GetUtcNow()));
+
+        var pane = new LibraryPaneViewModel(
+            opened,
+            () => Task.CompletedTask,
+            evolutionLibrary: context.Services.ProjectLibraryEvolutionRepository);
+        await pane.InitializeAsync();
+        await pane.ShowCategoryAsync();
+
+        Assert.Contains(pane.LibraryObjects, value => value.Topic == "Continuity");
+        await pane.SelectLibraryObjectAsync(pane.LibraryObjects.Single(value => value.Topic == "Continuity").Id);
+        Assert.All(pane.ObjectTimeline, value => Assert.Equal(LibraryTimelineContextKind.LegacyContext, value.ContextKind));
+
+        Assert.Equal(0L, await CountAsync(context, "b1_project_governance"));
+        Assert.Equal(0L, await CountAsync(context, "b1_authority_decisions"));
+    }
+
+    [Fact]
     public void Library_markup_exposes_both_axes_and_material_metadata()
     {
         var root = FindRepositoryRoot();
@@ -103,5 +184,14 @@ public sealed class LibraryCategoryTimeViewTests
             directory = directory.Parent;
         }
         return directory?.FullName ?? throw new DirectoryNotFoundException();
+    }
+
+    private static async Task<long> CountAsync(AppTestContext context, string table)
+    {
+        await using var connection = context.Services.Database.CreateConnection();
+        await connection.OpenAsync();
+        var command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {table};";
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 }

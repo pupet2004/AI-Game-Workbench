@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Workbench.App.Services;
 using Workbench.Project.Opening;
 using Workbench.Storage.Projects;
+using Workbench.App.ProjectWorld;
 
 namespace Workbench.App.ViewModels;
 
@@ -15,6 +16,8 @@ public partial class HomeViewModel : ViewModelBase
     private readonly Func<ProjectOpenResult, Task> _onProjectOpened;
     private readonly Func<string, CancellationToken, Task<ProjectOpenResult>> _openProject;
     private readonly Func<Task>? _showSettings;
+    private readonly Func<ProjectOpenResult, Task>? _createProject;
+    private readonly ProjectWorldEntryStatusService? _entryStatusService;
 
     public HomeViewModel(
         ProjectRepository projectRepository,
@@ -22,7 +25,9 @@ public partial class HomeViewModel : ViewModelBase
         IFolderPickerService folderPickerService,
         Func<ProjectOpenResult, Task> onProjectOpened,
         Func<string, CancellationToken, Task<ProjectOpenResult>>? openProject = null,
-        Func<Task>? showSettings = null)
+        Func<Task>? showSettings = null,
+        ProjectWorldEntryStatusService? entryStatusService = null,
+        Func<ProjectOpenResult, Task>? createProject = null)
     {
         _projectRepository = projectRepository;
         _projectOpenService = projectOpenService;
@@ -30,6 +35,8 @@ public partial class HomeViewModel : ViewModelBase
         _onProjectOpened = onProjectOpened;
         _openProject = openProject ?? _projectOpenService.OpenAsync;
         _showSettings = showSettings;
+        _entryStatusService = entryStatusService;
+        _createProject = createProject;
     }
 
     public ObservableCollection<RecentProjectItemViewModel> RecentProjects { get; } = [];
@@ -51,7 +58,13 @@ public partial class HomeViewModel : ViewModelBase
         RecentProjects.Clear();
         foreach (var project in projects)
         {
-            RecentProjects.Add(new RecentProjectItemViewModel(project));
+            var item = new RecentProjectItemViewModel(project);
+            if (_entryStatusService is not null)
+            {
+                item.EntryStatus = await _entryStatusService.GetStatusAsync(project, cancellationToken);
+            }
+
+            RecentProjects.Add(item);
         }
 
         OnPropertyChanged(nameof(HasNoRecentProjects));
@@ -80,6 +93,21 @@ public partial class HomeViewModel : ViewModelBase
     [RelayCommand]
     private Task ShowSettings() => _showSettings?.Invoke() ?? Task.CompletedTask;
 
+    public async Task CreateProjectAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsBusy || _createProject is null)
+            return;
+
+        var folderPath = await _folderPickerService.PickFolderAsync(cancellationToken);
+        if (folderPath is not null)
+        {
+            await OpenAndCreateAsync(folderPath, cancellationToken);
+        }
+    }
+
+    [RelayCommand]
+    private Task CreateProject() => CreateProjectAsync();
+
     [RelayCommand]
     private Task OpenRecentProject(RecentProjectItemViewModel item) => OpenRecentProjectAsync(item);
 
@@ -100,11 +128,11 @@ public partial class HomeViewModel : ViewModelBase
         }
         catch (DirectoryNotFoundException)
         {
-            ErrorMessage = "Could not open this project. The folder is no longer available.";
+            ErrorMessage = "Could not open this project. The folder is no longer available; nothing was changed.";
         }
         catch (Exception)
         {
-            ErrorMessage = "Could not open this project.";
+            ErrorMessage = "Could not open this project; nothing was changed.";
         }
         finally
         {
@@ -113,4 +141,28 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     public void SetStartupError(string message) => ErrorMessage = message;
+
+    private async Task OpenAndCreateAsync(string folderPath, CancellationToken cancellationToken)
+    {
+        IsBusy = true;
+        ErrorMessage = null;
+        try
+        {
+            var result = await _openProject(folderPath, cancellationToken);
+            await LoadAsync(cancellationToken);
+            await _createProject!(result);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            ErrorMessage = "Could not create this project. The folder is no longer available; nothing was changed.";
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Could not create this project; nothing was changed.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 }
