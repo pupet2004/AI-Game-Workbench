@@ -1,6 +1,6 @@
 # Library Projection Boundary Design
 
-Status: **Implemented and sealed — 2026-08-25**  
+Status: **Implemented and sealed — 2026-08-25**
 Date: **2026-08-25**
 
 Governing records:

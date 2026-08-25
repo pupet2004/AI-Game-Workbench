@@ -1,6 +1,6 @@
 # Paper Gap Closure Plan
 
-Status: **Phase 3 completed; scoped gap closure implemented**  
+Status: **Phase 3 completed; scoped gap closure implemented**
 Date: **2026-08-25**
 
 ## Scope
