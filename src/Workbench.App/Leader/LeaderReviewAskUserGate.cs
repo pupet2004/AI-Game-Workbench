@@ -30,6 +30,7 @@ public sealed class LeaderReviewAskUserGate(
 {
     public async Task<LeaderReviewAskUserGateResult> TryOpenAsync(Guid projectId, Guid taskId, Guid taskRevisionId, Guid finalReportEventId, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(authoritySettings);
         var task = await tasks.GetAsync(projectId, taskId, cancellationToken);
         if (task is null || (task.Status != TaskLifecycleStatus.Reviewing && task.Status != TaskLifecycleStatus.NeedsUserDecision)) return new(LeaderReviewAskUserGateResultKind.NoWork);
         var decision = await typedReviewState.GetDecisionByFinalReportAsync(projectId, taskId, finalReportEventId, cancellationToken);
