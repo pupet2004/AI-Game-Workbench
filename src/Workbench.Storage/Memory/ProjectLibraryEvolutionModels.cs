@@ -69,7 +69,7 @@ public enum LibraryProposalStatus
 public sealed record ProjectLibraryProposal(
     Guid Id,
     Guid ProjectId,
-    Guid SourceSessionId,
+    Guid? SourceSessionId,
     LibraryProposalStatus Status,
     ProjectLibraryProposalDraft Draft,
     DateTimeOffset CreatedAt,
@@ -78,7 +78,7 @@ public sealed record ProjectLibraryProposal(
 public sealed record ProjectLibraryProposalDraft(
     Guid ProposalId,
     Guid ProjectId,
-    Guid SourceSessionId,
+    Guid? SourceSessionId,
     LibraryProposalAction Action,
     Guid? TargetObjectId,
     Guid? TargetNodeId,
@@ -90,7 +90,12 @@ public sealed record ProjectLibraryProposalDraft(
     string NodeContent,
     string? CurrentOverview,
     IReadOnlyList<LibraryMaterialReferenceDraft> Materials,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Guid? AuthorityDecisionId = null,
+    Guid? AcceptedContributionId = null,
+    Guid? SourceClaimId = null,
+    Guid? SourceHandoffId = null,
+    string? SummaryRef = null);
 
 public sealed record LibraryProposalEdit(
     string NodeContent,

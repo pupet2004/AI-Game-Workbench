@@ -78,6 +78,58 @@ public sealed class B1ClaimHandoffRepository(WorkbenchDatabase database)
             cancellationToken);
     }
 
+    public Task<Handoff> RecordGuidedHandoffAndSelectAsync(
+        RecordGuidedHandoffCommand command,
+        HandoffRef? expectedStored,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(command.Handoff);
+        ArgumentNullException.ThrowIfNull(command.Claims);
+        return InTransactionAsync(
+            async (connection, transaction) =>
+            {
+                foreach (var claim in command.Claims)
+                {
+                    ArgumentNullException.ThrowIfNull(claim);
+                    await RecordClaimCoreAsync(
+                        connection,
+                        transaction,
+                        new RecordClaimCommand(
+                            command.ProjectRef,
+                            command.AuthenticatedOperatorRef,
+                            claim.ClaimRef,
+                            claim.ClaimantRef,
+                            claim.SourceSessionBindingRef,
+                            claim.Payload,
+                            claim.EvidenceRefs,
+                            claim.CreatedAt),
+                        cancellationToken);
+                }
+
+                var handoff = await CreateHandoffCoreAsync(
+                    connection,
+                    transaction,
+                    new CreateHandoffCommand(
+                        command.ProjectRef,
+                        command.AuthenticatedOperatorRef,
+                        command.Handoff),
+                    cancellationToken);
+                await SelectHandoffCoreAsync(
+                    connection,
+                    transaction,
+                    new SelectContinuationHandoffCommand(
+                        command.ProjectRef,
+                        command.AuthenticatedOperatorRef,
+                        command.Handoff.AttemptRef,
+                        expectedStored,
+                        command.Handoff.HandoffRef),
+                    cancellationToken);
+                return handoff;
+            },
+            cancellationToken);
+    }
+
     private async Task<T> InTransactionAsync<T>(
         Func<SqliteConnection, SqliteTransaction, Task<T>> operation,
         CancellationToken cancellationToken)

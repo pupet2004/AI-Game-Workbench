@@ -43,7 +43,7 @@ public sealed class ProjectLibraryProposalService
                 """;
             command.Parameters.AddWithValue("$id", draft.ProposalId.ToString());
             command.Parameters.AddWithValue("$projectId", draft.ProjectId.ToString());
-            command.Parameters.AddWithValue("$sourceSessionId", draft.SourceSessionId.ToString());
+            command.Parameters.AddWithValue("$sourceSessionId", draft.SourceSessionId?.ToString() ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("$payload", payload);
             command.Parameters.AddWithValue("$createdAt", Format(draft.CreatedAt));
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -234,7 +234,7 @@ public sealed class ProjectLibraryProposalService
         {
             var id = Guid.Parse(reader.GetString(0));
             var projectId = Guid.Parse(reader.GetString(1));
-            var sourceSessionId = Guid.Parse(reader.GetString(2));
+            var sourceSessionId = reader.IsDBNull(2) ? (Guid?)null : Guid.Parse(reader.GetString(2));
             var status = Enum.Parse<LibraryProposalStatus>(reader.GetString(3), false);
             var draft = JsonSerializer.Deserialize<ProjectLibraryProposalDraft>(reader.GetString(4), JsonOptions)
                 ?? throw new InvalidOperationException("The stored Library Proposal payload is empty.");

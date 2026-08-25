@@ -163,6 +163,71 @@ public sealed class B1ProjectGovernanceRepositoryTests
         Assert.Equal(project, await fixture.Projects.GetByIdAsync(project.Id));
     }
 
+    [Fact]
+    public async Task Existing_empty_project_can_establish_governance_without_creating_b1_history()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var project = NewProject();
+        await fixture.Projects.UpsertAsync(project);
+        var principal = new UserPrincipalRef("user:existing-project");
+
+        var governance = await fixture.Repository.CreateGovernedProjectForExistingProjectAsync(
+            new ProjectRef(project.Id), principal);
+
+        Assert.Equal(B1GovernanceOrigin.Created, governance.Origin);
+        Assert.Equal(governance, await fixture.Repository.GetAsync(new ProjectRef(project.Id)));
+        Assert.Equal(0L, await fixture.CountAsync("b1_authority_decisions", project.Id));
+        Assert.Equal(0L, await fixture.CountAsync("b1_logical_actors", project.Id));
+        Assert.Equal(0L, await fixture.CountAsync("b1_responsibilities", project.Id));
+        Assert.Equal(0L, await fixture.CountAsync("b1_assignments", project.Id));
+    }
+
+    [Fact]
+    public async Task Existing_legacy_or_history_project_cannot_be_reclassified_as_new()
+    {
+        await using var fixture = await Fixture.CreateLegacyAsync();
+
+        var exception = await Assert.ThrowsAsync<B1CommandException>(() =>
+            fixture.Repository.CreateGovernedProjectForExistingProjectAsync(
+                new ProjectRef(fixture.Project.Id), new UserPrincipalRef("user:wrong-route")));
+
+        Assert.Equal(B1FailureCode.LegacyProjectNotEligible, exception.Code);
+        Assert.Null(await fixture.Repository.GetAsync(new ProjectRef(fixture.Project.Id)));
+    }
+
+    [Fact]
+    public async Task Entry_facts_distinguish_governed_legacy_and_unmanaged_projects()
+    {
+        await using var governed = await Fixture.CreateAsync();
+        var governedProject = NewProject();
+        await governed.Repository.CreateGovernedProjectAsync(governedProject, new UserPrincipalRef("user:governed"));
+        var governedFacts = await governed.Repository.GetEntryFactsAsync(new ProjectRef(governedProject.Id));
+        Assert.Equal(new B1GovernanceEntryFacts(true, true, false, false), governedFacts);
+
+        await using var unmanaged = await Fixture.CreateAsync();
+        var unmanagedProject = NewProject();
+        await unmanaged.Projects.UpsertAsync(unmanagedProject);
+        var unmanagedFacts = await unmanaged.Repository.GetEntryFactsAsync(new ProjectRef(unmanagedProject.Id));
+        Assert.Equal(new B1GovernanceEntryFacts(true, false, false, false), unmanagedFacts);
+
+        await using var legacy = await Fixture.CreateLegacyAsync();
+        var legacyFacts = await legacy.Repository.GetEntryFactsAsync(new ProjectRef(legacy.Project.Id));
+        Assert.Equal(new B1GovernanceEntryFacts(true, false, true, false), legacyFacts);
+    }
+
+    [Fact]
+    public async Task Entry_facts_report_orphan_b1_history_without_governance()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var project = fixture.Project;
+        await fixture.Projects.UpsertAsync(project);
+        await fixture.SeedOrphanHistoryAsync("Decision");
+
+        var facts = await fixture.Repository.GetEntryFactsAsync(new ProjectRef(project.Id));
+
+        Assert.Equal(new B1GovernanceEntryFacts(true, false, false, true), facts);
+    }
+
     private static Project NewProject() =>
         new(
             Guid.NewGuid(),

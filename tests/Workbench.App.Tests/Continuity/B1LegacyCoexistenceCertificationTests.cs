@@ -21,7 +21,7 @@ public sealed class B1LegacyCoexistenceCertificationTests
     {
         await using var fixture = await LegacyFixture.CreateAsync();
 
-        Assert.Equal(20L, await fixture.ScalarAsync<long>("PRAGMA user_version;"));
+        Assert.Equal(22L, await fixture.ScalarAsync<long>("PRAGMA user_version;"));
         Assert.Equal("ok", await fixture.ScalarAsync<string>("PRAGMA quick_check;"));
         Assert.Equal(0L, await fixture.ScalarAsync<long>("SELECT COUNT(*) FROM pragma_foreign_key_check;"));
         Assert.Equal(1L, await fixture.ProjectCountAsync("b1_legacy_project_origins"));

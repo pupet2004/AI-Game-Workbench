@@ -6,6 +6,12 @@ using Workbench.Storage.Database;
 
 namespace Workbench.Storage.Continuity;
 
+public sealed record B1GovernanceEntryFacts(
+    bool ProjectExists,
+    bool GovernanceExists,
+    bool LegacyOriginExists,
+    bool B1HistoryExists);
+
 public sealed class B1ProjectGovernanceRepository(WorkbenchDatabase database)
 {
     private readonly WorkbenchDatabase _database =
@@ -192,6 +198,135 @@ public sealed class B1ProjectGovernanceRepository(WorkbenchDatabase database)
                     CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind),
             reader.GetInt64(3));
+    }
+
+    public async Task<ProjectGovernance> CreateGovernedProjectForExistingProjectAsync(
+        ProjectRef projectRef,
+        UserPrincipalRef bootstrapPrincipal,
+        CancellationToken cancellationToken = default)
+    {
+        Require(projectRef, nameof(projectRef));
+        Require(bootstrapPrincipal, nameof(bootstrapPrincipal));
+        var governance = new ProjectGovernance(
+            projectRef,
+            bootstrapPrincipal,
+            B1GovernanceOrigin.Created,
+            adoptedAt: null,
+            lastProjectCommitSequence: 0);
+
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var check = connection.CreateCommand();
+            check.Transaction = transaction;
+            check.CommandText = """
+                SELECT
+                    EXISTS(SELECT 1 FROM projects WHERE id=$project),
+                    EXISTS(SELECT 1 FROM b1_project_governance WHERE project_id=$project),
+                    EXISTS(SELECT 1 FROM b1_legacy_project_origins WHERE project_id=$project),
+                    EXISTS(SELECT 1 FROM b1_logical_actors WHERE project_id=$project)
+                        OR EXISTS(SELECT 1 FROM b1_responsibilities WHERE project_id=$project)
+                        OR EXISTS(SELECT 1 FROM b1_assignments WHERE project_id=$project)
+                        OR EXISTS(SELECT 1 FROM b1_authority_decisions WHERE project_id=$project);
+                """;
+            check.Parameters.AddWithValue("$project", projectRef.Value.ToString());
+            await using (var reader = await check.ExecuteReaderAsync(cancellationToken))
+            {
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    throw new InvalidOperationException("Project governance eligibility could not be read.");
+                }
+
+                if (reader.GetInt64(0) == 0)
+                {
+                    throw Failure(B1FailureCode.InvalidReference, "The Project must exist before governance can be established.");
+                }
+
+                if (reader.GetInt64(1) != 0)
+                {
+                    throw Failure(B1FailureCode.GovernanceAlreadyExists, "The Project already has a B1 governance root.");
+                }
+
+                if (reader.GetInt64(2) != 0 || reader.GetInt64(3) != 0)
+                {
+                    throw Failure(
+                        B1FailureCode.LegacyProjectNotEligible,
+                        "The Project is not an empty new-project candidate for governed creation.");
+                }
+            }
+
+            await InsertGovernanceAsync(connection, transaction, governance, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return governance;
+        }
+        catch (B1CommandException)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw Failure(
+                B1FailureCode.GovernanceAlreadyExists,
+                "The Project acquired a B1 governance root concurrently.");
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<B1GovernanceEntryFacts> GetEntryFactsAsync(
+        ProjectRef projectRef,
+        CancellationToken cancellationToken = default)
+    {
+        Require(projectRef, nameof(projectRef));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                EXISTS(SELECT 1 FROM projects WHERE id=$project),
+                EXISTS(SELECT 1 FROM b1_project_governance WHERE project_id=$project),
+                EXISTS(SELECT 1 FROM b1_legacy_project_origins WHERE project_id=$project),
+                EXISTS(SELECT 1 FROM b1_logical_actors WHERE project_id=$project)
+                    OR EXISTS(SELECT 1 FROM b1_responsibilities WHERE project_id=$project)
+                    OR EXISTS(SELECT 1 FROM b1_assignments WHERE project_id=$project)
+                    OR EXISTS(SELECT 1 FROM b1_authority_decisions WHERE project_id=$project);
+            """;
+        command.Parameters.AddWithValue("$project", projectRef.Value.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new InvalidOperationException("B1 Project entry facts could not be read.");
+
+        return new(
+            reader.GetInt64(0) != 0,
+            reader.GetInt64(1) != 0,
+            reader.GetInt64(2) != 0,
+            reader.GetInt64(3) != 0);
+    }
+
+    public async Task<bool> HasLegacyWorkspaceDataAsync(
+        ProjectRef projectRef,
+        CancellationToken cancellationToken = default)
+    {
+        Require(projectRef, nameof(projectRef));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS(SELECT 1 FROM leader_session_epochs WHERE project_id=$project)
+                OR EXISTS(SELECT 1 FROM tasks WHERE project_id=$project)
+                OR EXISTS(SELECT 1 FROM project_memory_items WHERE project_id=$project)
+                OR EXISTS(SELECT 1 FROM project_library_entries WHERE project_id=$project)
+                OR EXISTS(SELECT 1 FROM project_summary_entries WHERE project_id=$project);
+            """;
+        command.Parameters.AddWithValue("$project", projectRef.Value.ToString());
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) != 0;
     }
 
     private static async Task InsertGovernanceAsync(

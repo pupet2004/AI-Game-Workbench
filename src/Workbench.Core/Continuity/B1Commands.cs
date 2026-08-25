@@ -101,6 +101,12 @@ public sealed record RecordClaimCommand(
 public sealed record CreateHandoffCommand(
     ProjectRef ProjectRef, UserPrincipalRef AuthenticatedOperatorRef, Handoff Handoff);
 
+public sealed record RecordGuidedHandoffCommand(
+    ProjectRef ProjectRef,
+    UserPrincipalRef AuthenticatedOperatorRef,
+    Handoff Handoff,
+    IReadOnlyList<Claim> Claims);
+
 public sealed record SelectContinuationHandoffCommand(
     ProjectRef ProjectRef, UserPrincipalRef AuthenticatedOperatorRef, AttemptRef AttemptRef,
     HandoffRef? ExpectedStoredHandoffRef, HandoffRef? SelectedHandoffRef);

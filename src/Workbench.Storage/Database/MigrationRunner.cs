@@ -114,6 +114,17 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration020ManualContinuitySpine.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration021LibraryProjectionProvenance.Version)
+        {
+            await ApplyWithForeignKeysTemporarilyDisabledAsync(
+                connection,
+                Migration021LibraryProjectionProvenance.ApplyAsync,
+                cancellationToken);
+        }
+        if (currentVersion < Migration022EvidenceRecords.Version)
+        {
+            await ApplyAsync(connection, Migration022EvidenceRecords.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

@@ -16,7 +16,7 @@ public sealed class TypedLeaderReviewMigrationTests
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
 
-        Assert.Equal(20L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(22L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(2L, await ScalarAsync<long>(connection, """
             SELECT COUNT(*)
             FROM sqlite_master
@@ -63,7 +63,7 @@ public sealed class TypedLeaderReviewMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(20L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(22L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }
 

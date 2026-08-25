@@ -663,7 +663,8 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         ArgumentNullException.ThrowIfNull(draft);
         ValidateGuid(draft.ProposalId, nameof(draft.ProposalId));
         ValidateGuid(draft.ProjectId, nameof(draft.ProjectId));
-        ValidateGuid(draft.SourceSessionId, nameof(draft.SourceSessionId));
+        if (draft.SourceSessionId is { } sourceSessionId)
+            ValidateGuid(sourceSessionId, nameof(draft.SourceSessionId));
         if (!Enum.IsDefined(draft.Action)) throw new ArgumentOutOfRangeException(nameof(draft.Action));
         if (draft.TargetObjectId == Guid.Empty || draft.TargetNodeId == Guid.Empty) throw new ArgumentException("Target identity is invalid.", nameof(draft));
         var category = ProjectLibraryIdentity.NormalizeDisplay(ValidateRequiredText(draft.Category, MaxCategoryLength, nameof(draft.Category)));
