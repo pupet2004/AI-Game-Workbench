@@ -69,4 +69,5 @@ public sealed class B1NonAuthoritativeCommandService(
         HandoffRef? expectedStored,
         CancellationToken cancellationToken = default) =>
         _claimHandoffRepository.CreateHandoffAndSelectAsync(create, expectedStored, cancellationToken);
+
 }
