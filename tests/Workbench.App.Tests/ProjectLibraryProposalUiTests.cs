@@ -106,9 +106,9 @@ public sealed class ProjectLibraryProposalUiTests
         var markup = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
 
         Assert.Contains("Library proposal", markup, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Accept", markup, StringComparison.Ordinal);
-        Assert.Contains("Edit + Accept", markup, StringComparison.Ordinal);
-        Assert.Contains("Reject", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Accept]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.EditAccept]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Reject]", markup, StringComparison.Ordinal);
         Assert.Contains("ProposalEditContent", markup, StringComparison.Ordinal);
         Assert.Contains("Materials", markup, StringComparison.Ordinal);
     }

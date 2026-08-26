@@ -66,12 +66,12 @@ public sealed class LeaderPaneViewTests
     {
         var markup = ReadLeaderView();
 
-        Assert.Contains("Content=\"New Brain\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"{Binding [Leader.NewBrain]}\"", markup, StringComparison.Ordinal);
         Assert.Contains("StartNewBrainCommand", markup, StringComparison.Ordinal);
         Assert.Contains("HasPendingRotationDecision", markup, StringComparison.Ordinal);
-        Assert.Contains("Content=\"Continue Previous\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"{Binding [Leader.ContinuePrevious]}\"", markup, StringComparison.Ordinal);
         Assert.Contains("ContinuePreviousCommand", markup, StringComparison.Ordinal);
-        Assert.Contains("Content=\"Start Fresh\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"{Binding [Leader.StartFresh]}\"", markup, StringComparison.Ordinal);
         Assert.Contains("StartFreshCommand", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Window.ShowDialog", markup, StringComparison.Ordinal);
     }

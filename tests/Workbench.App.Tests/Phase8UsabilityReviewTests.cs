@@ -12,10 +12,10 @@ public sealed class Phase8UsabilityReviewTests
     {
         var markup = ReadView("HomeView.axaml");
 
-        Assert.Contains("Project Home", markup, StringComparison.Ordinal);
-        Assert.Contains("Open a local project", markup, StringComparison.Ordinal);
-        Assert.Contains("Create Project", markup, StringComparison.Ordinal);
-        Assert.Contains("No projects yet. Open a local project folder to begin.", markup, StringComparison.Ordinal);
+        Assert.Contains("[Home.Title]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Home.Open]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Home.Create]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Home.Empty]", markup, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -23,10 +23,10 @@ public sealed class Phase8UsabilityReviewTests
     {
         var markup = ReadView("ManualWorkView.axaml");
 
-        Assert.Contains("Signed in as:", markup, StringComparison.Ordinal);
-        Assert.Contains("Acting as:", markup, StringComparison.Ordinal);
-        Assert.Contains("Record Handoff", markup, StringComparison.Ordinal);
-        Assert.Contains("Review Work Result", markup, StringComparison.Ordinal);
+        Assert.Contains("[Manual.SignedIn]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Manual.ActingAs]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Manual.RecordHandoff]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Manual.Review]", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("B1", markup, StringComparison.Ordinal);
     }
 
@@ -35,10 +35,10 @@ public sealed class Phase8UsabilityReviewTests
     {
         var markup = ReadView("GuidedDecisionView.axaml");
 
-        Assert.Contains("Submitted as:", markup, StringComparison.Ordinal);
-        Assert.Contains("Deciding as:", markup, StringComparison.Ordinal);
-        Assert.Contains("Preview what will change", markup, StringComparison.Ordinal);
-        Assert.Contains("Confirm Decision", markup, StringComparison.Ordinal);
+        Assert.Contains("[Decision.SubmittedAs]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Decision.DecidingAs]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Decision.Preview]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Decision.Confirm]", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("authority effects", markup, StringComparison.OrdinalIgnoreCase);
     }
 

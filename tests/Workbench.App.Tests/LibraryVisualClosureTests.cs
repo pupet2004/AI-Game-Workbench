@@ -21,14 +21,14 @@ public sealed class LibraryVisualClosureTests
     {
         var markup = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
 
-        Assert.Contains("Content=\"Overview\"", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Overview]", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Project Memory", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Memory learning", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Pending Candidates", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("ItemWidth=\"68\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Content=\"Category\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Content=\"Time\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Content=\"Project\"", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Category]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Time]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Project]", markup, StringComparison.Ordinal);
         Assert.Contains("Text=\"↑ old → new\"", markup, StringComparison.Ordinal);
     }
 

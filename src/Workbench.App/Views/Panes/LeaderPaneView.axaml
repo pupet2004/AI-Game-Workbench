@@ -8,12 +8,12 @@
     <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
         <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                <TextBlock Text="LEADER" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding [Leader.Title]}" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <Button Grid.Column="1"
-                        Content="New Brain"
+                        Content="{Binding [Leader.NewBrain]}"
                         Command="{Binding StartNewBrainCommand}"
                         IsEnabled="{Binding CanStartNewBrain}" />
-                <Button Grid.Column="2" Content="Focus" Command="{Binding FocusCommand}" />
+                <Button Grid.Column="2" Content="{Binding [Leader.Focus]}" Command="{Binding FocusCommand}" />
             </Grid>
 
             <StackPanel Grid.Row="1" Spacing="6">
@@ -31,7 +31,7 @@
                           SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
                           IsEnabled="{Binding IsModelSelectionEnabled}"
                           HorizontalAlignment="Stretch"
-                          PlaceholderText="Select a Leader model">
+                          PlaceholderText="{Binding [Leader.SelectModel]}">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="leader:LeaderModelOptionViewModel">
                             <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
@@ -43,7 +43,7 @@
                                Foreground="#B42318"
                                TextWrapping="Wrap" />
                     <Button Grid.Column="1"
-                            Content="Retry"
+                            Content="{Binding [Leader.Retry]}"
                             Command="{Binding RetryRuntimeCommand}"
                             IsVisible="{Binding CanRetryRuntime}" />
                 </Grid>
@@ -59,13 +59,13 @@
                               HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="8">
                         <StackPanel IsVisible="{Binding HasHistory}" Spacing="8">
-                            <Button Content="Load earlier sessions"
+                            <Button Content="{Binding [Leader.LoadEarlier]}"
                                     Command="{Binding History.LoadEarlierCommand}"
                                     IsVisible="{Binding History.HasMore}" />
                             <Border IsVisible="{Binding History.HasError}" Padding="8" Background="#FFF8E7" CornerRadius="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="{Binding History.ErrorMessage}" Foreground="#B42318" />
-                                    <Button Content="Retry" Command="{Binding History.RetryCommand}" />
+                                    <Button Content="{Binding [Leader.Retry]}" Command="{Binding History.RetryCommand}" />
                                 </StackPanel>
                             </Border>
                             <ItemsControl ItemsSource="{Binding History.ArchivedEpochs}">
@@ -97,7 +97,7 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
-                        <TextBlock Text="Current session" FontSize="12" FontWeight="SemiBold" Foreground="#667085" />
+                        <TextBlock Text="{Binding [Leader.CurrentSession]}" FontSize="12" FontWeight="SemiBold" Foreground="#667085" />
                     <ItemsControl ItemsSource="{Binding Messages}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="leader:LeaderMessageViewModel">
@@ -138,7 +138,7 @@
                                    TextWrapping="Wrap"
                                    TextAlignment="Center"
                                    MaxWidth="280" />
-                        <Button Content="Retry"
+                        <Button Content="{Binding [Leader.Retry]}"
                                 Command="{Binding RetryRuntimeCommand}"
                                 HorizontalAlignment="Center" />
                     </StackPanel>
@@ -153,7 +153,7 @@
                         Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
                         CornerRadius="6">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Draft confirmation"
+                        <TextBlock Text="{Binding [Leader.DraftConfirmation]}"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
                         <TextBlock Text="{Binding DraftConfirmation.Title}"
@@ -182,7 +182,7 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button Content="Confirm / Start Worker"
+                        <Button Content="{Binding [Leader.ConfirmWorker]}"
                                 Background="{DynamicResource SystemControlBackgroundAccentBrush}"
                                 Foreground="{DynamicResource SystemControlForegroundAltHighBrush}"
                                 Command="{Binding ConfirmDraftCommand}" />
@@ -195,17 +195,17 @@
                         Background="#EEF4FF"
                         CornerRadius="6">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="A fresh Leader session is available."
+                                   <TextBlock Text="A fresh Leader session is available."
                                    FontWeight="SemiBold"
                                    Foreground="#344054"
                                    TextWrapping="Wrap" />
                         <WrapPanel>
                             <Button Margin="0,0,8,0"
-                                    Content="Continue Previous"
+                                    Content="{Binding [Leader.ContinuePrevious]}"
                                     Background="#FFFFFF"
                                     Foreground="#101828"
                                     Command="{Binding ContinuePreviousCommand}" />
-                            <Button Content="Start Fresh"
+                            <Button Content="{Binding [Leader.StartFresh]}"
                                     Background="#FFFFFF"
                                     Foreground="#101828"
                                     Command="{Binding StartFreshCommand}" />
@@ -220,7 +220,7 @@
                         Background="#FFF8E7"
                         CornerRadius="6">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="Approval required"
+                        <TextBlock Text="{Binding [Leader.Approval]}"
                                    FontWeight="SemiBold"
                                    Foreground="#101828" />
                         <TextBlock Text="{Binding PendingApproval.Summary}"
@@ -249,18 +249,18 @@
 
             <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                 <TextBox Text="{Binding DraftMessage, Mode=TwoWay}"
-                         PlaceholderText="Message the Project Leader"
+                         PlaceholderText="{Binding [Leader.MessagePlaceholder]}"
                          AcceptsReturn="True"
                          TextWrapping="Wrap"
                          MinHeight="42"
                          MaxHeight="110" />
                 <Button Grid.Column="1"
-                        Content="Send"
+                        Content="{Binding [Leader.Send]}"
                         Command="{Binding SendCommand}"
                         IsEnabled="{Binding CanSend}"
                         VerticalAlignment="Bottom" />
                 <Button Grid.Column="2"
-                        Content="Stop"
+                        Content="{Binding [Leader.Stop]}"
                         Command="{Binding StopCommand}"
                         IsVisible="{Binding CanStop}"
                         VerticalAlignment="Bottom" />
