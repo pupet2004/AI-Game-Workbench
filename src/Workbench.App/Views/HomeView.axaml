@@ -5,15 +5,15 @@
              x:DataType="vm:HomeViewModel">
     <ScrollViewer>
         <StackPanel Margin="32" Spacing="16">
-            <TextBlock Text="Project Home" FontSize="28" FontWeight="SemiBold" />
-            <TextBlock Text="Open a local project to see its current state, continue manual work, and review recorded decisions."
+            <TextBlock Text="{Binding [Home.Title]}" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding [Home.Description]}"
                        TextWrapping="Wrap" Opacity="0.75" MaxWidth="760" />
             <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="Recent projects" FontSize="20" />
-                <Button Grid.Column="1" Content="Settings" Command="{Binding ShowSettingsCommand}" />
+                <TextBlock Text="{Binding [Home.RecentProjects]}" FontSize="20" />
+                <Button Grid.Column="1" Content="{Binding [Home.Settings]}" Command="{Binding ShowSettingsCommand}" />
             </Grid>
             <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
-            <TextBlock Text="No projects yet. Open a local project folder to begin."
+            <TextBlock Text="{Binding [Home.Empty]}"
                        IsVisible="{Binding HasNoRecentProjects}" TextWrapping="Wrap" Opacity="0.75" />
             <ItemsControl ItemsSource="{Binding RecentProjects}">
                 <ItemsControl.ItemTemplate>
@@ -29,21 +29,21 @@
                                 <TextBlock Text="{Binding GitLabel}" />
                                 <TextBlock Text="{Binding EntryStatusLabel}" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding RootPath}" TextWrapping="Wrap" />
-                                <TextBlock Text="Unavailable" IsVisible="{Binding !IsAvailable}" Foreground="IndianRed" />
+                                <TextBlock Text="{Binding $parent[UserControl].DataContext[Home.Unavailable]}" IsVisible="{Binding !IsAvailable}" Foreground="IndianRed" />
                             </StackPanel>
                         </Button>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="Open local project folder"
+                <Button Content="{Binding [Home.Open]}"
                         Command="{Binding OpenProjectFolderCommand}"
                         IsEnabled="{Binding CanOpenProjects}" />
-                <Button Content="Create Project"
+                <Button Content="{Binding [Home.Create]}"
                         Command="{Binding CreateProjectCommand}"
                         IsEnabled="{Binding CanOpenProjects}" />
             </StackPanel>
-            <TextBlock Text="Opening project..." IsVisible="{Binding IsBusy}" />
+            <TextBlock Text="{Binding [Home.Opening]}" IsVisible="{Binding IsBusy}" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

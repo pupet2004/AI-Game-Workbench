@@ -15,11 +15,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly AppServices _services;
     private readonly IFolderPickerService _folderPickerService;
     private readonly ProjectLeaderSessionManager _leaderSessions;
+    private readonly LocalizationService _localization;
 
     public MainWindowViewModel(
         AppServices services,
         IFolderPickerService folderPickerService,
-        ProjectLeaderSessionManager? leaderSessions = null)
+        ProjectLeaderSessionManager? leaderSessions = null,
+        LocalizationService? localization = null)
     {
         _services = services;
         _folderPickerService = folderPickerService;
@@ -28,6 +30,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             services.LeaderSessionEpochRepository,
             services.LeaderMessageRepository,
             services.TimeProvider);
+        _localization = localization ?? new LocalizationService(services.WorkbenchSettingsRepository);
         CurrentPage = CreateHome();
     }
 
@@ -40,6 +43,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         try
         {
             await _services.InitializeAsync(cancellationToken);
+            await _localization.InitializeAsync(cancellationToken);
             await home.LoadAsync(cancellationToken);
         }
         catch (DatabaseInitializationException)
@@ -71,7 +75,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             ShowWorkspace,
             showSettings: ShowSettingsAsync,
             entryStatusService: _services.ProjectWorldEntryStatus,
-            createProject: ShowNewProjectSetupAsync);
+            createProject: ShowNewProjectSetupAsync,
+            localization: _localization);
 
     private async Task ShowNewProjectSetupAsync(ProjectOpenResult result)
     {
@@ -90,7 +95,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     public async Task ShowSettingsAsync()
     {
-        var settings = new SettingsViewModel(_services.WorkbenchSettingsRepository, BackToHomeAsync);
+        var settings = new SettingsViewModel(_services.WorkbenchSettingsRepository, BackToHomeAsync, _localization);
         CurrentPage = settings;
         await settings.InitializeAsync();
     }

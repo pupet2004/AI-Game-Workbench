@@ -8,6 +8,7 @@ public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
     private const string RotationPolicyKey = "leader_session_rotation_policy";
     private const string LeaderAuthorityKey = "leader_authority_mode";
     private const string AgentRuntimePrefix = "agent_runtime.";
+    private const string LanguageKey = "workbench_language";
     private readonly WorkbenchDatabase _database = database ?? throw new ArgumentNullException(nameof(database));
 
     public async Task<LeaderSessionRotationPolicy> GetLeaderSessionRotationPolicyAsync(
@@ -79,6 +80,18 @@ public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
         await SaveValueAsync(GetAgentRuntimeKey(settings.AgentId, "executable_path"), settings.NormalizedExecutablePath ?? string.Empty, cancellationToken);
     }
 
+    public async Task<WorkbenchLanguage> GetWorkbenchLanguageAsync(CancellationToken cancellationToken = default)
+    {
+        var value = await GetValueAsync(LanguageKey, cancellationToken);
+        return value is null ? WorkbenchLanguage.English : ParseWorkbenchLanguage(value);
+    }
+
+    public Task SaveWorkbenchLanguageAsync(WorkbenchLanguage language, CancellationToken cancellationToken = default)
+    {
+        ValidateWorkbenchLanguage(language);
+        return SaveValueAsync(LanguageKey, language.ToString(), cancellationToken);
+    }
+
     private async Task<string?> GetValueAsync(string key, CancellationToken cancellationToken)
     {
         await using var connection = _database.CreateConnection();
@@ -138,5 +151,23 @@ public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
     internal static void ValidateLeaderAuthorityMode(LeaderAuthorityMode mode)
     {
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+    }
+
+    internal static WorkbenchLanguage ParseWorkbenchLanguage(string value)
+    {
+        if (!Enum.TryParse<WorkbenchLanguage>(value, false, out var language) || !Enum.IsDefined(language))
+        {
+            throw new InvalidDataException($"Unknown Workbench language: {value}.");
+        }
+
+        return language;
+    }
+
+    internal static void ValidateWorkbenchLanguage(WorkbenchLanguage language)
+    {
+        if (!Enum.IsDefined(language))
+        {
+            throw new ArgumentOutOfRangeException(nameof(language));
+        }
     }
 }

@@ -18,6 +18,7 @@ public partial class HomeViewModel : ViewModelBase
     private readonly Func<Task>? _showSettings;
     private readonly Func<ProjectOpenResult, Task>? _createProject;
     private readonly ProjectWorldEntryStatusService? _entryStatusService;
+    private readonly LocalizationService _localization;
 
     public HomeViewModel(
         ProjectRepository projectRepository,
@@ -27,7 +28,8 @@ public partial class HomeViewModel : ViewModelBase
         Func<string, CancellationToken, Task<ProjectOpenResult>>? openProject = null,
         Func<Task>? showSettings = null,
         ProjectWorldEntryStatusService? entryStatusService = null,
-        Func<ProjectOpenResult, Task>? createProject = null)
+        Func<ProjectOpenResult, Task>? createProject = null,
+        LocalizationService? localization = null)
     {
         _projectRepository = projectRepository;
         _projectOpenService = projectOpenService;
@@ -37,9 +39,19 @@ public partial class HomeViewModel : ViewModelBase
         _showSettings = showSettings;
         _entryStatusService = entryStatusService;
         _createProject = createProject;
+        _localization = localization ?? new LocalizationService();
+        _localization.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is "Item[]" or nameof(LocalizationService.Language))
+            {
+                OnPropertyChanged("Item[]");
+            }
+        };
     }
 
     public ObservableCollection<RecentProjectItemViewModel> RecentProjects { get; } = [];
+
+    public string this[string key] => _localization[key];
 
     public bool HasNoRecentProjects => RecentProjects.Count == 0;
 

@@ -6,33 +6,47 @@
     <ScrollViewer>
         <StackPanel Margin="32" Spacing="16" MaxWidth="620">
             <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
-                <Button Grid.Column="1" Content="Projects" Command="{Binding BackCommand}" />
+                <TextBlock Text="{Binding [Settings.Title]}" FontSize="28" FontWeight="SemiBold" />
+                <Button Grid.Column="1" Content="{Binding [Settings.Projects]}" Command="{Binding BackCommand}" />
             </Grid>
-            <TextBlock Text="Leader Session Rotation" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="Choose when a fresh Leader session should be considered after a new workday." TextWrapping="Wrap" />
+            <TextBlock Text="{Binding [Settings.Language]}" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding [Settings.LanguageDescription]}" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <ComboBox ItemsSource="{Binding LanguageOptions}"
+                          SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DisplayName}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="1" Content="{Binding [Settings.ApplyLanguage]}" Command="{Binding ApplyLanguageCommand}" />
+            </Grid>
+            <Separator Margin="0,8" />
+            <TextBlock Text="{Binding [Settings.Rotation]}" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding [Settings.RotationDescription]}" TextWrapping="Wrap" />
             <StackPanel Spacing="8">
-                <Button Content="Automatic" Command="{Binding UseAutomaticRotationCommand}" />
-                <TextBlock Text="Automatically start a fresh Leader session after a new workday" TextWrapping="Wrap" />
-                <Button Content="Ask first" Command="{Binding AskBeforeRotationCommand}" />
-                <TextBlock Text="Ask before starting a fresh session" TextWrapping="Wrap" />
-                <Button Content="Manual only" Command="{Binding UseManualRotationCommand}" />
-                <TextBlock Text="Only start a fresh session when you choose to" TextWrapping="Wrap" />
+                <Button Content="{Binding [Settings.Automatic]}" Command="{Binding UseAutomaticRotationCommand}" />
+                <TextBlock Text="{Binding [Settings.AutomaticDescription]}" TextWrapping="Wrap" />
+                <Button Content="{Binding [Settings.AskFirst]}" Command="{Binding AskBeforeRotationCommand}" />
+                <TextBlock Text="{Binding [Settings.AskFirstDescription]}" TextWrapping="Wrap" />
+                <Button Content="{Binding [Settings.ManualOnly]}" Command="{Binding UseManualRotationCommand}" />
+                <TextBlock Text="{Binding [Settings.ManualOnlyDescription]}" TextWrapping="Wrap" />
             </StackPanel>
             <TextBlock Text="{Binding LeaderSessionRotationPolicy}" FontWeight="SemiBold" />
             <Separator Margin="0,8" />
-            <TextBlock Text="Agent Runtimes" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="Manual work does not start an Agent. Enable only the Agents you want Workbench to use." TextWrapping="Wrap" />
+            <TextBlock Text="{Binding [Settings.Agents]}" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding [Settings.AgentsDescription]}" TextWrapping="Wrap" />
             <StackPanel Spacing="10">
-                <CheckBox Content="Enable Codex" IsChecked="{Binding IsCodexEnabled, Mode=TwoWay}" />
+                <CheckBox Content="{Binding [Settings.EnableCodex]}" IsChecked="{Binding IsCodexEnabled, Mode=TwoWay}" />
                 <TextBox Text="{Binding CodexExecutablePath, Mode=TwoWay}"
-                         PlaceholderText="Codex executable path (optional)" />
-                <CheckBox Content="Enable OpenCode" IsChecked="{Binding IsOpenCodeEnabled, Mode=TwoWay}" />
+                         PlaceholderText="{Binding [Settings.CodexPath]}" />
+                <CheckBox Content="{Binding [Settings.EnableOpenCode]}" IsChecked="{Binding IsOpenCodeEnabled, Mode=TwoWay}" />
                 <TextBox Text="{Binding OpenCodeExecutablePath, Mode=TwoWay}"
-                         PlaceholderText="OpenCode executable path (optional)" />
-                <TextBlock Text="API keys, provider routing, models, and provider permissions remain in the selected Agent's native account/configuration. Workbench keeps project state independent of those credentials."
+                         PlaceholderText="{Binding [Settings.OpenCodePath]}" />
+                <TextBlock Text="{Binding [Settings.AgentDescription]}"
                            TextWrapping="Wrap" Opacity="0.75" />
-                <Button Content="Save Agent Settings" Command="{Binding SaveAgentSettingsCommand}" />
+                <Button Content="{Binding [Settings.SaveAgents]}" Command="{Binding SaveAgentSettingsCommand}" />
                 <TextBlock Text="{Binding AgentSettingsStatus}" TextWrapping="Wrap" />
             </StackPanel>
         </StackPanel>

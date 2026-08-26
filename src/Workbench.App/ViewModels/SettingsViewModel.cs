@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Workbench.App.Services;
 using Workbench.Core.Leaders;
 using Workbench.Storage.Settings;
 
@@ -8,14 +9,34 @@ namespace Workbench.App.ViewModels;
 public sealed partial class SettingsViewModel : ViewModelBase
 {
     private readonly WorkbenchSettingsRepository _settings;
+    private readonly LocalizationService _localization;
 
-    public SettingsViewModel(WorkbenchSettingsRepository settings, Func<Task> backToProjects)
+    public SettingsViewModel(
+        WorkbenchSettingsRepository settings,
+        Func<Task> backToProjects,
+        LocalizationService? localization = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         BackToProjects = backToProjects ?? throw new ArgumentNullException(nameof(backToProjects));
+        _localization = localization ?? new LocalizationService(_settings);
+        _localization.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is "Item[]" or nameof(LocalizationService.Language))
+            {
+                OnPropertyChanged("Item[]");
+            }
+        };
     }
 
     public Func<Task> BackToProjects { get; }
+
+    public string this[string key] => _localization[key];
+
+    public IReadOnlyList<LanguageOption> LanguageOptions { get; } =
+    [
+        new(WorkbenchLanguage.English, "English"),
+        new(WorkbenchLanguage.SimplifiedChinese, "简体中文")
+    ];
 
     [ObservableProperty]
     public partial LeaderSessionRotationPolicy LeaderSessionRotationPolicy { get; set; } = LeaderSessionRotationPolicy.Auto;
@@ -35,8 +56,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? AgentSettingsStatus { get; set; }
 
+    [ObservableProperty]
+    public partial LanguageOption? SelectedLanguage { get; set; }
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        await _localization.InitializeAsync(cancellationToken);
         LeaderSessionRotationPolicy = await _settings.GetLeaderSessionRotationPolicyAsync(cancellationToken);
         var codex = await _settings.GetAgentRuntimeSettingsAsync("codex", cancellationToken: cancellationToken);
         var openCode = await _settings.GetAgentRuntimeSettingsAsync("opencode", cancellationToken: cancellationToken);
@@ -44,6 +69,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         CodexExecutablePath = codex.ExecutablePath ?? string.Empty;
         IsOpenCodeEnabled = openCode.IsEnabled;
         OpenCodeExecutablePath = openCode.ExecutablePath ?? string.Empty;
+        SelectedLanguage = LanguageOptions.Single(option => option.Language == _localization.Language);
     }
 
     public async Task SetLeaderSessionRotationPolicyAsync(
@@ -68,9 +94,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         await _settings.SaveAgentRuntimeSettingsAsync(new("codex", IsCodexEnabled, CodexExecutablePath));
         await _settings.SaveAgentRuntimeSettingsAsync(new("opencode", IsOpenCodeEnabled, OpenCodeExecutablePath));
-        AgentSettingsStatus = "Saved. Enabled Agents connect only when a project needs them.";
+        AgentSettingsStatus = _localization["Settings.AgentSaved"];
+    }
+
+    [RelayCommand]
+    private async Task ApplyLanguage()
+    {
+        var selection = SelectedLanguage ?? LanguageOptions[0];
+        await _localization.SetLanguageAsync(selection.Language);
     }
 
     [RelayCommand]
     private Task Back() => BackToProjects();
+
+    public sealed record LanguageOption(WorkbenchLanguage Language, string DisplayName);
 }

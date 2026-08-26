@@ -1,5 +1,7 @@
 using Workbench.App.ViewModels;
+using Workbench.App.Services;
 using Workbench.Core.Leaders;
+using Workbench.Storage.Settings;
 
 namespace Workbench.App.Tests;
 
@@ -55,6 +57,28 @@ public sealed class SettingsViewModelTests
         Assert.Equal("C:\\Tools\\codex.exe", codex.ExecutablePath);
         Assert.True(openCode.IsEnabled);
         Assert.Equal("C:\\Tools\\opencode.cmd", openCode.ExecutablePath);
+        await recreated.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Language_selection_applies_immediately_and_survives_service_recreation()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var localization = new LocalizationService(context.Services.WorkbenchSettingsRepository);
+        await localization.InitializeAsync();
+        var settings = new SettingsViewModel(
+            context.Services.WorkbenchSettingsRepository,
+            () => Task.CompletedTask,
+            localization);
+        await settings.InitializeAsync();
+
+        settings.SelectedLanguage = settings.LanguageOptions.Single(option => option.Language == WorkbenchLanguage.SimplifiedChinese);
+        await settings.ApplyLanguageCommand.ExecuteAsync(null);
+
+        Assert.Equal("项目主页", localization["Home.Title"]);
+        var recreated = Workbench.App.Services.AppServices.CreateForDatabasePath(context.DatabasePath, context.Time);
+        await recreated.InitializeAsync();
+        Assert.Equal(WorkbenchLanguage.SimplifiedChinese, await recreated.WorkbenchSettingsRepository.GetWorkbenchLanguageAsync());
         await recreated.DisposeAsync();
     }
 }
