@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Workbench.App.Worker;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
+using Workbench.App.Services;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -43,7 +44,7 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
         OpenError = null;
         if (_interactiveLauncher is null || !_interactiveLauncher.CanOpen(worker.Record))
         {
-            OpenError = "This Worker runtime does not support native Codex sessions.";
+            OpenError = LocalizationService.Current["Dynamic.WorkerRuntimeUnsupported"];
             return;
         }
 
@@ -92,7 +93,7 @@ public sealed class WorkerSessionCardViewModel(WorkerSessionRecord record)
 {
     internal WorkerSessionRecord Record => record;
     public string TaskTitle => record.TaskTitle; public string WorkerLabel => record.Label; public string Profile => record.Profile.ModelProfileId; public AgentSession Session => record.Session;
-    public string Status => record.Session.Status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => "Working", AgentSessionStatus.Completed => "Completed", AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => "Interrupted", AgentSessionStatus.Stopped or AgentSessionStatus.Archived => "Closed", _ => record.Session.Status.ToString() };
+    public string Status => record.Session.Status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => LocalizationService.Current["Dynamic.Working"], AgentSessionStatus.Completed => LocalizationService.Current["Dynamic.Completed"], AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => LocalizationService.Current["Dynamic.Interrupted"], AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Dynamic.Closed"], _ => record.Session.Status.ToString() };
     public string LastActiveAtText => record.LastActiveAt.LocalDateTime.ToString("g");
 }
 public sealed record WorkerTranscriptLineViewModel(string Role, string Text);

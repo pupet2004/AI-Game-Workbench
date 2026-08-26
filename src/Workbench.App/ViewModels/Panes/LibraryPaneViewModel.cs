@@ -9,6 +9,7 @@ using Workbench.Storage.Leaders;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Workbench.App.Memory;
+using Workbench.App.Services;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -44,6 +45,7 @@ public sealed record LibraryTimelineNodeView(
 
     public string ContextLabel => ContextKind switch
     {
+        // These context labels are protocol/debug identifiers and remain stable in logs and reviews.
         LibraryTimelineContextKind.B1AcceptedProjection => "B1 ACCEPTED PROJECTION",
         LibraryTimelineContextKind.LegacyContext => "LEGACY CONTEXT",
         _ => "LIBRARY RECORD"
@@ -129,10 +131,10 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public bool HasB1ProjectWorld => AcceptedStateReadModel is not null;
 
     public string AcceptedStateStatus => AcceptedStateReadModel is null
-        ? "This Project has no available B1 Accepted State projection."
+        ? LocalizationService.Current["Dynamic.AcceptedProjectionUnavailable"]
         : AcceptedStateReadModel.CurrentContributions.Count == 0
-            ? "No accepted Project statements have been established yet."
-            : $"{AcceptedStateReadModel.CurrentContributions.Count} accepted statement(s).";
+            ? LocalizationService.Current["Explorer.NoAccepted"]
+            : string.Format(LocalizationService.Current["Dynamic.AcceptedStatementsCount"], AcceptedStateReadModel.CurrentContributions.Count);
 
     public string ProjectName => Result.Project.Name;
 
@@ -141,20 +143,20 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public string ProjectPath => Result.Project.RootPath;
 
     public string GitStatus => !Result.Git.GitInstalled
-        ? "Unavailable"
-        : Result.Git.IsRepository ? "Repository" : "No Repository";
+        ? LocalizationService.Current["Dynamic.Unavailable"]
+        : Result.Git.IsRepository ? LocalizationService.Current["Dynamic.Repository"] : LocalizationService.Current["Dynamic.NoRepository"];
 
-    public string BranchText => Result.Git.IsDetachedHead ? "Detached" : Result.Git.BranchName ?? "—";
+    public string BranchText => Result.Git.IsDetachedHead ? LocalizationService.Current["Dynamic.Detached"] : Result.Git.BranchName ?? "—";
 
     public string ShortHead => string.IsNullOrWhiteSpace(Result.Git.HeadCommit)
         ? "—"
         : Result.Git.HeadCommit[..Math.Min(10, Result.Git.HeadCommit.Length)];
 
     public string WorkingTreeText => Result.Git.IsRepository
-        ? Result.Git.IsDirty ? "Modified" : "Clean"
+        ? Result.Git.IsDirty ? LocalizationService.Current["Dynamic.Modified"] : LocalizationService.Current["Dynamic.Clean"]
         : "—";
 
-    public string? StatusMessage => Result.Git.Error is null ? null : "Git status unavailable";
+    public string? StatusMessage => Result.Git.Error is null ? null : LocalizationService.Current["Dynamic.GitUnavailable"];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RotationPolicySummary))]
@@ -165,14 +167,14 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public partial LeaderSessionRotationPolicy EffectiveRotationPolicy { get; set; } = LeaderSessionRotationPolicy.Auto;
 
     public string RotationPolicySummary => RotationPolicyOverride is null
-        ? $"Using global setting ({EffectiveRotationPolicy})."
-        : $"Project setting: {EffectiveRotationPolicy}.";
+        ? string.Format(LocalizationService.Current["Dynamic.RotationUsingGlobal"], EffectiveRotationPolicy)
+        : string.Format(LocalizationService.Current["Dynamic.RotationProject"], EffectiveRotationPolicy);
 
     public ObservableCollection<ProjectMemoryItem> PendingCandidates { get; } = [];
     public ObservableCollection<ProjectMemoryItem> FormalMemories { get; } = [];
     public ObservableCollection<ProjectMemoryItem> LearnedMemories { get; } = [];
-    public string LearnedMemoryLabel => "Learned Memory · AI-generated";
-    [ObservableProperty] public partial string MemoryLearningStatus { get; set; } = "Memory learning: Up to date";
+    public string LearnedMemoryLabel => LocalizationService.Current["Dynamic.LearnedMemory"];
+    [ObservableProperty] public partial string MemoryLearningStatus { get; set; } = LocalizationService.Current["Dynamic.MemoryUpToDate"];
     [ObservableProperty] public partial string? SelectedCandidateSourceLabel { get; set; }
     [ObservableProperty] public partial ProjectMemoryItem? SelectedCandidate { get; set; }
     [ObservableProperty] public partial string CandidateEditContent { get; set; } = string.Empty;
@@ -218,7 +220,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public partial ProjectLibraryObject? SelectedLibraryObject { get; set; }
 
     public string CurrentOverviewText => string.IsNullOrWhiteSpace(SelectedLibraryObject?.CurrentOverview)
-        ? "No current overview yet."
+        ? LocalizationService.Current["Dynamic.NoOverview"]
         : SelectedLibraryObject.CurrentOverview;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -315,7 +317,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         if (_projectMemoryApi is null) throw new InvalidOperationException("Library Proposal review is unavailable.");
         await _projectMemoryApi.RejectLibraryProposalAsync(Result.Project.Id, proposal.Id, cancellationToken);
         SelectedLibraryProposal = null;
-        LibraryProposalStatusMessage = "Library proposal rejected; the Library was not changed.";
+        LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryProposalRejected"];
         await LoadLibraryAsync(cancellationToken);
     }
 
@@ -346,7 +348,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
                     var epoch = await _epochRepository.GetAsync(epochId, cancellationToken);
                     if (epoch?.EndedAt is not null)
                     {
-                        _candidateSourceLabels[candidate.Id] = $"From Leader session · {epoch.EndedAt.Value.ToString("MMM d", CultureInfo.InvariantCulture)}";
+                        _candidateSourceLabels[candidate.Id] = $"{LocalizationService.Current["Dynamic.FromLeaderSession"]} · {epoch.EndedAt.Value.ToString("MMM d", CultureInfo.InvariantCulture)}";
                     }
                 }
             }
@@ -355,10 +357,10 @@ public partial class LibraryPaneViewModel : ViewModelBase
         {
             var status = await _synthesisJobs.GetStatusAsync(Result.Project.Id, cancellationToken);
             MemoryLearningStatus = status.RunningCount > 0
-                ? "Learning..."
+                ? LocalizationService.Current["Dynamic.Learning"]
                 : status.PendingCount > 0
-                    ? $"Memory learning: {status.PendingCount} session{(status.PendingCount == 1 ? string.Empty : "s")} pending"
-                    : "Memory learning: Up to date";
+                    ? string.Format(LocalizationService.Current["Dynamic.MemorySessionsPending"], status.PendingCount)
+                    : LocalizationService.Current["Dynamic.MemoryUpToDate"];
         }
         OnPropertyChanged(nameof(PendingCandidateCount));
     }
@@ -482,12 +484,12 @@ public partial class LibraryPaneViewModel : ViewModelBase
         {
             await confirm(cancellationToken);
             SelectedLibraryProposal = null;
-            LibraryProposalStatusMessage = "Library proposal accepted.";
+            LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryProposalAccepted"];
             await LoadLibraryAsync(cancellationToken);
         }
         catch (LibraryRevisionConflictException)
         {
-            LibraryProposalStatusMessage = "Library changed since this proposal was prepared. Review and retry without overwriting newer data.";
+            LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryConflict"];
             await LoadLibraryAsync(cancellationToken);
         }
         catch (InvalidOperationException exception)
@@ -497,7 +499,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         }
         catch (Microsoft.Data.Sqlite.SqliteException)
         {
-            LibraryProposalStatusMessage = "The Library proposal could not be committed; no Library changes were saved.";
+            LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryCommitFailed"];
             await LoadLibraryAsync(cancellationToken);
         }
     }

@@ -58,8 +58,8 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     public string ProjectPath => _result.Project.RootPath;
     public string UserPrincipal => _services.UserPrincipalProvider.GetCurrent().Value;
     public string ProjectStateLabel => HasAcceptedState
-        ? "What this Project currently accepts"
-        : "No accepted Project statements have been established yet.";
+        ? LocalizationService.Current["Dynamic.ProjectAccepts"]
+        : LocalizationService.Current["Explorer.NoAccepted"];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasAcceptedState), nameof(ProjectStateLabel))]
@@ -139,8 +139,8 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                     contribution.Contribution.Scope.ToString(),
                     $"Decision commit {contribution.Decision.ProjectCommitSequence}",
                     contribution.LibraryProjections.Count == 0
-                        ? "No Library object mapping"
-                        : $"Library objects: {contribution.LibraryProjections.Count}"));
+                        ? LocalizationService.Current["Dynamic.LibraryNoMapping"]
+                        : string.Format(LocalizationService.Current["Dynamic.LibraryObjectsCount"], contribution.LibraryProjections.Count)));
             }
             SelectedLibraryContribution ??= LibraryContributions.FirstOrDefault();
             if (SelectedLibraryContribution is not null && string.IsNullOrWhiteSpace(LibraryNodeContent))
@@ -154,21 +154,21 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                 var actor = projection.AcceptedProjectState.LogicalActors[assignment.AssigneeActorRef];
                 var responsibility = projection.AcceptedProjectState.Responsibilities[assignment.ResponsibilityRef];
                 var continuation = projection.EffectiveCurrentAttemptRefs.TryGetValue(assignment.AssignmentRef, out var attempt) && attempt is not null
-                    ? $"Attempt selected: {attempt.Value}"
-                    : "Continuation: Not started";
+                    ? $"{LocalizationService.Current["Dynamic.AttemptSelected"]} {attempt.Value}"
+                    : LocalizationService.Current["Dynamic.NotStarted"];
                 ActiveWork.Add(new(
                     assignment.AssignmentRef,
                     assignment.AssignmentRef.ToString(),
-                    $"Actor: {actor.RoleKind}",
-                    $"Responsibility: {responsibility.Contract.Obligation}",
-                    $"Revision: {revision.RevisionRef}",
+                    $"{LocalizationService.Current["Dynamic.Actor"]} {actor.RoleKind}",
+                    $"{LocalizationService.Current["Dynamic.Responsibility"]} {responsibility.Contract.Obligation}",
+                    $"{LocalizationService.Current["Dynamic.Revision"]} {revision.RevisionRef}",
                     continuation));
             }
 
             NeedsAttention.Clear();
             if (state.Handoffs.Count == 0)
             {
-                NeedsAttention.Add(new("No unresolved authority inputs", "The Project has no recorded Handoff awaiting a decision."));
+                NeedsAttention.Add(new(LocalizationService.Current["Dynamic.NoUnresolvedInputs"], LocalizationService.Current["Dynamic.NoHandoffAwaiting"]));
             }
 
             RecentDecisions.Clear();
@@ -177,15 +177,15 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                 var effects = new List<string>();
                 if (decision.LogicalActorEstablishmentEffect is not null) effects.Add("LogicalActor");
                 if (decision.ResponsibilityEstablishmentEffect is not null) effects.Add("Responsibility");
-                if (decision.AssignmentDelegationEffect is not null) effects.Add("Assignment + Revision");
+                if (decision.AssignmentDelegationEffect is not null) effects.Add(LocalizationService.Current["Dynamic.AssignmentRevision"]);
                 if (decision.AssignmentDispositionEffect is not null) effects.Add("Disposition");
-                if (decision.RevisionActivationEffect is not null) effects.Add("Revision activation");
-                if (decision.AcceptedStateContributions.Count > 0) effects.Add($"{decision.AcceptedStateContributions.Count} accepted contribution(s)");
+                if (decision.RevisionActivationEffect is not null) effects.Add(LocalizationService.Current["Dynamic.RevisionActivation"]);
+                if (decision.AcceptedStateContributions.Count > 0) effects.Add(string.Format(LocalizationService.Current["Dynamic.AcceptedContributionsCount"], decision.AcceptedStateContributions.Count));
                 RecentDecisions.Add(new(
                     $"Decision commit {decision.ProjectCommitSequence}",
-                    effects.Count == 0 ? "No visible effects" : string.Join(", ", effects),
+                    effects.Count == 0 ? LocalizationService.Current["Dynamic.NoVisibleEffects"] : string.Join(", ", effects),
                     decision.AcceptedStateContributions.Count == 0
-                        ? "No accepted Project statements"
+                        ? LocalizationService.Current["Dynamic.NoAcceptedStatements"]
                         : string.Join("; ", decision.AcceptedStateContributions.Select(value => value.Statement))));
             }
 
@@ -241,14 +241,14 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                     LibraryTopic,
                     DateOnly.FromDateTime(_services.TimeProvider.GetUtcNow().UtcDateTime),
                     LibraryNodeContent));
-            LibraryStatusMessage = $"Library updated: {proposal.Draft.Category} / {proposal.Draft.Topic}.";
+            LibraryStatusMessage = string.Format(LocalizationService.Current["Dynamic.LibraryUpdated"], proposal.Draft.Category, proposal.Draft.Topic);
             IsLibraryComposerVisible = false;
             Loading = false;
             await ReloadAsync();
         }
         catch (Exception exception)
         {
-            ErrorMessage = $"Library update could not be saved; nothing was changed. {exception.Message}";
+            ErrorMessage = $"{LocalizationService.Current["Dynamic.LibraryUpdateFailed"]} {exception.Message}";
         }
         finally
         {

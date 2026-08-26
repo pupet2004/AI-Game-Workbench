@@ -80,5 +80,6 @@ public sealed class SettingsViewModelTests
         await recreated.InitializeAsync();
         Assert.Equal(WorkbenchLanguage.SimplifiedChinese, await recreated.WorkbenchSettingsRepository.GetWorkbenchLanguageAsync());
         await recreated.DisposeAsync();
+        await localization.SetLanguageAsync(WorkbenchLanguage.English);
     }
 }

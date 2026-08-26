@@ -51,10 +51,10 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
         var handoff = state.Handoffs.SingleOrDefault(value => value.HandoffRef == _handoffRef)
             ?? throw new B1CommandException(B1FailureCode.InvalidReference, "The Handoff no longer exists.");
         var claims = state.Claims.ToDictionary(value => value.ClaimRef);
-        HandoffText = $"Handoff: {handoff.HandoffRef}";
+        HandoffText = $"{LocalizationService.Current["Dynamic.Handoff"]} {handoff.HandoffRef}";
         SubmittedAsText = handoff.ResultClaimRef is { } resultRef && claims.TryGetValue(resultRef, out var resultClaim)
-            ? $"Submitted as: {resultClaim.ClaimantRef}"
-            : "Submitted as: LogicalActor";
+            ? $"{LocalizationService.Current["Dynamic.SubmittedAs"]} {resultClaim.ClaimantRef}"
+            : LocalizationService.Current["Dynamic.SubmittedLogicalActor"];
         PrimaryResultText = resultClaim?.Payload is ClaimPayload.Result result ? result.Statement : "";
         var proposed = handoff.ProposedContributionClaimRefs
             .Where(claims.ContainsKey)
@@ -62,7 +62,7 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
             .OfType<ClaimPayload.ProposedStateContribution>()
             .Select(value => value.Statement)
             .ToArray();
-        ProposedContributionText = proposed.Length == 0 ? "No proposed Project contribution." : string.Join("; ", proposed);
+        ProposedContributionText = proposed.Length == 0 ? LocalizationService.Current["Dynamic.NoContribution"] : string.Join("; ", proposed);
     }
 
     [RelayCommand]
@@ -74,12 +74,12 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
         try
         {
             var preview = await _services.GuidedDecision.PreviewAsync(BuildRequest());
-            PreviewText = $"Deciding as: {preview.DecidingAs}\nDisposition: {preview.Disposition}\nEffects: {string.Join(", ", preview.Effects)}\n\n{preview.ContributionSummary}";
+            PreviewText = $"{LocalizationService.Current["Dynamic.DecidingAs"]} {preview.DecidingAs}\n{LocalizationService.Current["Dynamic.Disposition"]} {preview.Disposition}\n{LocalizationService.Current["Dynamic.Effects"]} {string.Join(", ", preview.Effects)}\n\n{preview.ContributionSummary}";
             IsPreviewVisible = true;
         }
         catch (Exception exception)
         {
-            ErrorMessage = $"Preview could not be created; nothing was changed. {exception.Message}";
+            ErrorMessage = $"{LocalizationService.Current["Dynamic.DecisionPreviewFailed"]} {exception.Message}";
             IsPreviewVisible = false;
         }
         finally { IsBusy = false; }
@@ -94,10 +94,10 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
         try
         {
             var decision = await _services.GuidedDecision.CommitAsync(BuildRequest());
-            StatusMessage = $"Decision recorded (project event {decision.ProjectCommitSequence}). The overview and library view have been refreshed.";
+            StatusMessage = string.Format(LocalizationService.Current["Dynamic.DecisionRecorded"], decision.ProjectCommitSequence);
             IsPreviewVisible = false;
         }
-        catch (Exception exception) { ErrorMessage = $"Decision could not be recorded; nothing was changed. {exception.Message}"; }
+        catch (Exception exception) { ErrorMessage = $"{LocalizationService.Current["Dynamic.DecisionFailed"]} {exception.Message}"; }
         finally { IsBusy = false; }
     }
 

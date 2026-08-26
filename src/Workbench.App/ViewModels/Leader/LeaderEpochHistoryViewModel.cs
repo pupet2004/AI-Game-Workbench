@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Workbench.Storage.Leaders;
+using Workbench.App.Services;
 
 namespace Workbench.App.ViewModels.Leader;
 
@@ -62,7 +63,7 @@ public sealed partial class LeaderEpochHistoryViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasMore));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch { ErrorMessage = "Unable to load previous sessions"; }
+        catch { ErrorMessage = LocalizationService.Current["Dynamic.UnableLoadPrevious"]; }
         finally { IsLoading = false; OnPropertyChanged(nameof(HasError)); }
     }
 }
@@ -73,7 +74,7 @@ public sealed partial class ArchivedLeaderEpochViewModel : ViewModelBase
     public ArchivedLeaderEpochViewModel(StoredArchivedLeaderSessionEpoch epoch, LeaderMessageRepository messages)
     { Epoch = epoch; _messages = messages; }
     public StoredArchivedLeaderSessionEpoch Epoch { get; }
-    public string Header => $"{FormatDate(Epoch.EndedAt)} · {Epoch.MessageCount} message{(Epoch.MessageCount == 1 ? string.Empty : "s")}";
+    public string Header => $"{FormatDate(Epoch.EndedAt)} · {Epoch.MessageCount} {LocalizationService.Current[(Epoch.MessageCount == 1 ? "Dynamic.MessageSingular" : "Dynamic.MessagePlural")]}";
     public string Preview => CreateHandoffPreview(Epoch.HandoffSummary) ?? ReasonLabel(Epoch.RolloverReason);
     public string? FullHandoff => Epoch.HandoffSummary;
     public bool HasFullHandoff => !string.IsNullOrWhiteSpace(FullHandoff);
@@ -95,14 +96,14 @@ public sealed partial class ArchivedLeaderEpochViewModel : ViewModelBase
         if (IsLoading) return;
         IsLoading = true; ErrorMessage = null;
         try { foreach (var message in await _messages.GetAllAsync(Epoch.Id)) Messages.Add(new LeaderMessageViewModel(message.Role == "user" ? LeaderMessageRole.User : LeaderMessageRole.Assistant, message.Text)); }
-        catch { ErrorMessage = "Unable to load this session"; }
+        catch { ErrorMessage = LocalizationService.Current["Dynamic.UnableLoadSession"]; }
         finally { IsLoading = false; OnPropertyChanged(nameof(HasError)); }
     }
     private static string FormatDate(DateTimeOffset endedAt)
     {
         var date = endedAt.ToLocalTime().Date;
-        if (date == DateTime.Today) return "Today";
-        if (date == DateTime.Today.AddDays(-1)) return "Yesterday";
+        if (date == DateTime.Today) return LocalizationService.Current["Dynamic.Today"];
+        if (date == DateTime.Today.AddDays(-1)) return LocalizationService.Current["Dynamic.Yesterday"];
         return endedAt.ToLocalTime().ToString("MMM d");
     }
 
@@ -117,5 +118,5 @@ public sealed partial class ArchivedLeaderEpochViewModel : ViewModelBase
         return string.Concat(normalized.EnumerateRunes().Take(maximumRunes).Select(rune => rune.ToString())) + "…";
     }
 
-    private static string ReasonLabel(string? reason) => reason switch { "Manual" => "Started manually", "WorkdayBoundary" => "New workday", _ => "Previous session" };
+    private static string ReasonLabel(string? reason) => reason switch { "Manual" => LocalizationService.Current["Dynamic.StartedManually"], "WorkdayBoundary" => LocalizationService.Current["Dynamic.NewWorkday"], _ => LocalizationService.Current["Dynamic.PreviousSession"] };
 }

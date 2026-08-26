@@ -10,6 +10,7 @@ using Workbench.Storage.Leaders;
 using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
 using Workbench.App.Memory;
+using Workbench.App.Services;
 using Workbench.Core.Tasks;
 using Workbench.Core.Workers;
 using Workbench.Project.Git;
@@ -228,8 +229,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             _conversation.RotationMessage = state.Evaluation.IsDue
                 ? state.EffectivePolicy switch
                 {
-                    LeaderSessionRotationPolicy.Auto => "A fresh Leader session will start with your next message.",
-                    LeaderSessionRotationPolicy.Ask => "You’ll be asked whether to start a fresh Leader session.",
+                    LeaderSessionRotationPolicy.Auto => LocalizationService.Current["Dynamic.RotationAuto"],
+                    LeaderSessionRotationPolicy.Ask => LocalizationService.Current["Dynamic.RotationAsk"],
                     _ => null
                 }
                 : null;
@@ -335,7 +336,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             if (rotation.Evaluation.IsDue && rotation.EffectivePolicy == LeaderSessionRotationPolicy.Ask)
             {
                 _conversation.HasPendingRotationDecision = true;
-                _conversation.RotationMessage = "A fresh Leader session is available.";
+                _conversation.RotationMessage = LocalizationService.Current["Dynamic.FreshSessionAvailable"];
                 NotifyAllState();
                 return;
             }
@@ -352,7 +353,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 }
                 catch
                 {
-                    AddErrorMessage("Could not start a fresh Leader session. Your message was not sent.");
+                    AddErrorMessage(LocalizationService.Current["Dynamic.LeaderStartFailed"]);
                     NotifyAllState();
                     return;
                 }
@@ -397,7 +398,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
         catch
         {
-            AddErrorMessage("Could not start a fresh Leader session. Your message was not sent.");
+            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderStartFailed"]);
             NotifyAllState();
         }
     }
@@ -406,7 +407,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         if (!CanStartNewBrain)
         {
-            throw new InvalidOperationException("A new Leader brain cannot be started in the current state.");
+            throw new InvalidOperationException(LocalizationService.Current["Dynamic.NewBrainUnavailable"]);
         }
 
         try
@@ -419,7 +420,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
         catch
         {
-            AddErrorMessage("Could not start a fresh Leader session.");
+            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderFreshSessionFailed"]);
             NotifyAllState();
         }
     }
@@ -564,7 +565,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                         NotifyAllState();
                         break;
                     case AgentError:
-                        AddErrorMessage("Leader runtime reported an error.");
+                        AddErrorMessage(LocalizationService.Current["Dynamic.LeaderRuntimeError"]);
                         break;
                     case AgentTurnCompleted completed:
                         turnCompleted = true;
@@ -589,7 +590,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                 var candidate = SelectCandidate(resources, structured.Proposal.Recommendation);
                                 if (candidate is null)
                                 {
-                                    AddErrorMessage("No Worker resource is available for this draft.");
+                                    AddErrorMessage(LocalizationService.Current["Dynamic.NoWorkerResource"]);
                                 }
                                 else
                                 {
@@ -603,7 +604,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                     }
                                     else if (!created.Succeeded)
                                     {
-                                        AddErrorMessage("Leader response could not be processed.");
+                                        AddErrorMessage(LocalizationService.Current["Dynamic.LeaderResponseInvalid"]);
                                     }
                                 }
                             }
@@ -611,7 +612,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                         else if ((_draftProposalBuilder is not null || _projectMemoryApi is not null) && !string.IsNullOrWhiteSpace(finalText) && finalText.TrimStart().StartsWith('{'))
                         {
                             finalText = string.Empty;
-                            AddErrorMessage("Leader response could not be processed.");
+                            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderResponseInvalid"]);
                         }
                         if (assistant is null && !string.IsNullOrWhiteSpace(finalText))
                         {
@@ -633,7 +634,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             AgentSessionStatus.Interrupted or
                             AgentSessionStatus.Stopped)
                         {
-                            AddErrorMessage($"Leader turn ended: {completed.Result.FinalStatus}.");
+                            AddErrorMessage(string.Format(LocalizationService.Current["Dynamic.LeaderTurnEnded"], completed.Result.FinalStatus));
                         }
                         else if (completed.Result.FinalStatus == AgentSessionStatus.Completed)
                         {
@@ -654,7 +655,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             {
                                 if (persistedAssistant is null || _projectSummaryRepository is null)
                                 {
-                                    MemoryCommandStatus = "Summary persistence is pending and will be retried.";
+                                    MemoryCommandStatus = LocalizationService.Current["Dynamic.PendingSummary"];
                                 }
                                 else
                                 {
@@ -673,7 +674,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                             cancellationToken);
                                         if (!marked)
                                         {
-                                            MemoryCommandStatus = "Summary persistence is pending and will be retried.";
+                                            MemoryCommandStatus = LocalizationService.Current["Dynamic.PendingSummary"];
                                         }
                                     }
                                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -682,7 +683,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                     }
                                     catch
                                     {
-                                        MemoryCommandStatus = "Summary persistence is pending and will be retried.";
+                                        MemoryCommandStatus = LocalizationService.Current["Dynamic.PendingSummary"];
                                     }
                                 }
                             }
@@ -695,16 +696,16 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
             if (!turnCompleted)
             {
-                AddErrorMessage("Leader turn ended without completion.");
+                AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnIncomplete"]);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            AddErrorMessage("Leader turn was cancelled.");
+            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnCancelled"]);
         }
         catch (Exception)
         {
-            AddErrorMessage("Leader request failed. You can try again.");
+            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnFailed"]);
         }
         finally
         {
@@ -770,7 +771,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             _conversation.RuntimeStatus = null;
             _conversation.RuntimeErrorDetail = null;
             _conversation.Messages.Clear();
-            _conversation.RotationMessage = "Fresh Leader session started.";
+            _conversation.RotationMessage = LocalizationService.Current["Dynamic.FreshSessionStarted"];
             if (History is not null)
             {
                 await History.RefreshAfterRolloverAsync(cancellationToken);
@@ -797,7 +798,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
         catch (Exception)
         {
-            AddErrorMessage("Could not stop the Leader turn.");
+            AddErrorMessage(LocalizationService.Current["Dynamic.StopFailed"]);
         }
     }
 
@@ -815,7 +816,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         if (!approval.Options.Any(candidate => candidate.Id == option.Option.Id))
         {
-            throw new InvalidOperationException("The approval option is not valid for the pending request.");
+            throw new InvalidOperationException(LocalizationService.Current["Dynamic.InvalidApprovalOption"]);
         }
 
         _conversation.IsApprovalResponding = true;
@@ -833,7 +834,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
         catch (Exception)
         {
-            _conversation.ApprovalError = "Could not send the approval response.";
+            _conversation.ApprovalError = LocalizationService.Current["Dynamic.ApprovalFailed"];
         }
         finally
         {
@@ -895,7 +896,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         if (_projectMemoryApi is null || _conversation.Session is null)
         {
-            MemoryCommandStatus = "Library proposal could not be processed.";
+            MemoryCommandStatus = LocalizationService.Current["Dynamic.LibraryProposalProcessingFailed"];
             return;
         }
 
@@ -918,12 +919,12 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 command.Materials,
                 _timeProvider.GetUtcNow());
             await _projectMemoryApi.CreateLibraryProposalAsync(draft, cancellationToken);
-            MemoryCommandStatus = "Library proposal ready for review.";
+            MemoryCommandStatus = LocalizationService.Current["Dynamic.LibraryProposalReady"];
             if (_refreshLibraryPane is not null) await _refreshLibraryPane(cancellationToken);
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
         {
-            MemoryCommandStatus = "Library proposal could not be processed.";
+            MemoryCommandStatus = LocalizationService.Current["Dynamic.LibraryProposalProcessingFailed"];
         }
     }
 
@@ -938,7 +939,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         _conversation.ModelsLoaded = false;
         _conversation.RuntimeAccountAvailable = false;
-        _conversation.RuntimeStatus = "Leader unavailable";
+        _conversation.RuntimeStatus = LocalizationService.Current["Dynamic.LeaderUnavailable"];
         _conversation.RuntimeErrorDetail ??= fallbackDetail;
     }
 
@@ -946,7 +947,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         _conversation.ModelsLoaded = true;
         _conversation.RuntimeAccountAvailable = false;
-        _conversation.RuntimeStatus = "Current Leader session is unavailable.";
+        _conversation.RuntimeStatus = LocalizationService.Current["Dynamic.CurrentLeaderUnavailable"];
         _conversation.RuntimeErrorDetail = null;
     }
 
@@ -1029,7 +1030,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         var result = await _workerSessionRouter.StartAsync(request, cancellationToken);
         if (!result.Succeeded)
         {
-            AddErrorMessage("Worker could not be started.");
+            AddErrorMessage(LocalizationService.Current["Dynamic.WorkerStartFailed"]);
             return;
         }
 

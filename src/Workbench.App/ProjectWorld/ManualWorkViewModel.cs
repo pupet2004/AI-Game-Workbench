@@ -37,7 +37,7 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
     [ObservableProperty] public partial string ActorText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string ResponsibilityText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string RevisionText { get; private set; } = string.Empty;
-    [ObservableProperty] public partial string AttemptText { get; private set; } = "No Attempt selected";
+    [ObservableProperty] public partial string AttemptText { get; private set; } = LocalizationService.Current["Dynamic.NoAttempt"];
     [ObservableProperty] public partial string PrimaryResult { get; set; } = string.Empty;
     [ObservableProperty] public partial string ValidationsText { get; set; } = string.Empty;
     [ObservableProperty] public partial string UnresolvedIssuesText { get; set; } = string.Empty;
@@ -48,13 +48,13 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
     [ObservableProperty] public partial string? HandoffStatusMessage { get; set; }
     [ObservableProperty] public partial bool HasAttempt { get; private set; }
     [ObservableProperty] public partial bool HasHandoff { get; private set; }
-    [ObservableProperty] public partial string HandoffText { get; private set; } = "No Handoff selected";
+    [ObservableProperty] public partial string HandoffText { get; private set; } = LocalizationService.Current["Dynamic.NoHandoff"];
     [ObservableProperty] public partial bool IsBusy { get; private set; }
     [ObservableProperty] public partial string? ErrorMessage { get; private set; }
 
     public string WorkModeText => HasAttempt
-        ? "Continue Manual Work"
-        : "Begin Manual Work";
+        ? LocalizationService.Current["Dynamic.ContinueManual"]
+        : LocalizationService.Current["Dynamic.BeginManual"];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default) =>
         await ReloadAsync(cancellationToken);
@@ -73,32 +73,32 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
             var state = await _services.B1AuthorityRepository.LoadProjectStateAsync(projectRef, cancellationToken);
             var projection = B1Projector.Build(state);
             if (!projection.AcceptedProjectState.Assignments.TryGetValue(_assignmentRef, out var assignment))
-                throw new B1CommandException(B1FailureCode.InvalidReference, "The Assignment is no longer part of the current Project World.");
+                throw new B1CommandException(B1FailureCode.InvalidReference, LocalizationService.Current["Dynamic.AssignmentMissing"]);
 
             var revisionRef = projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[assignment.AssignmentRef];
             var revision = projection.AcceptedProjectState.Revisions[revisionRef];
             var actor = projection.AcceptedProjectState.LogicalActors[assignment.AssigneeActorRef];
             var responsibility = projection.AcceptedProjectState.Responsibilities[assignment.ResponsibilityRef];
-            AssignmentText = $"Assignment: {assignment.AssignmentRef}";
-            ActorText = $"Acting as: {actor.RoleKind}";
-            ResponsibilityText = $"Responsibility: {responsibility.Contract.Obligation}";
-            RevisionText = $"Effective Revision: {revision.RevisionRef} · {revision.Contract.WorkContract}";
+            AssignmentText = $"{LocalizationService.Current["Dynamic.Assignment"]} {assignment.AssignmentRef}";
+            ActorText = $"{LocalizationService.Current["Dynamic.ActingAs"]} {actor.RoleKind}";
+            ResponsibilityText = $"{LocalizationService.Current["Dynamic.Responsibility"]} {responsibility.Contract.Obligation}";
+            RevisionText = $"{LocalizationService.Current["Dynamic.EffectiveRevision"]} {revision.RevisionRef} · {revision.Contract.WorkContract}";
 
             HasAttempt = projection.EffectiveCurrentAttemptRefs.TryGetValue(assignment.AssignmentRef, out var selected) && selected is not null;
             AttemptText = HasAttempt
-                ? $"Current Attempt: {selected!.Value}"
-                : "No Attempt selected. Beginning work creates Attempt #1 and selects it explicitly.";
+                ? $"{LocalizationService.Current["Dynamic.CurrentAttempt"]} {selected!.Value}"
+                : $"{LocalizationService.Current["Dynamic.NoAttempt"]}. Beginning work creates Attempt #1 and selects it explicitly.";
             OnPropertyChanged(nameof(WorkModeText));
             HandoffRef? handoff = null;
             if (HasAttempt)
                 projection.EffectiveCurrentHandoffRefs.TryGetValue(selected!.Value, out handoff);
             HasHandoff = handoff is not null;
             _currentHandoffRef = HasHandoff ? handoff : null;
-            HandoffText = HasHandoff ? $"Current Handoff: {handoff!.Value}" : "No Handoff selected";
+            HandoffText = HasHandoff ? $"{LocalizationService.Current["Dynamic.CurrentHandoff"]} {handoff!.Value}" : LocalizationService.Current["Dynamic.NoHandoff"];
         }
         catch (Exception exception)
         {
-            ErrorMessage = $"Work could not be loaded; nothing was changed. {exception.Message}";
+            ErrorMessage = $"{LocalizationService.Current["Dynamic.WorkLoadFailed"]} {exception.Message}";
         }
         finally
         {
@@ -141,7 +141,7 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
         }
         catch (Exception exception)
         {
-            ErrorMessage = $"Work could not be started; nothing was changed. {exception.Message}";
+            ErrorMessage = $"{LocalizationService.Current["Dynamic.WorkStartFailed"]} {exception.Message}";
             IsBusy = false;
         }
     }
@@ -171,7 +171,7 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
             var state = await _services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
             var projection = B1Projector.Build(state);
             var attempt = projection.EffectiveCurrentAttemptRefs[_assignmentRef] ??
-                throw new B1CommandException(B1FailureCode.InvalidReference, "No selected Attempt exists.");
+                throw new B1CommandException(B1FailureCode.InvalidReference, LocalizationService.Current["Dynamic.AttemptMissing"]);
             await _services.GuidedHandoffComposer.RecordAsync(
                 attempt,
                 _assignmentRef,
@@ -195,7 +195,7 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
         }
         catch (Exception exception)
         {
-            ErrorMessage = $"Handoff could not be recorded; nothing was changed. {exception.Message}";
+            ErrorMessage = $"{LocalizationService.Current["Dynamic.HandoffRecordFailed"]} {exception.Message}";
         }
         finally
         {

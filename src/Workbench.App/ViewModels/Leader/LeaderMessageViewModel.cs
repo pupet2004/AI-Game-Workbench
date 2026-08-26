@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Workbench.App.Services;
 
 namespace Workbench.App.ViewModels.Leader;
 
@@ -22,9 +23,9 @@ public partial class LeaderMessageViewModel : ViewModelBase
 
     public string RoleLabel => Role switch
     {
-        LeaderMessageRole.User => "You",
+        LeaderMessageRole.User => LocalizationService.Current["Dynamic.You"],
         LeaderMessageRole.Assistant => "Leader",
-        _ => "Error"
+        _ => LocalizationService.Current["Dynamic.Error"]
     };
 
     [ObservableProperty]
