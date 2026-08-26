@@ -20,6 +20,21 @@
                 <TextBlock Text="Only start a fresh session when you choose to" TextWrapping="Wrap" />
             </StackPanel>
             <TextBlock Text="{Binding LeaderSessionRotationPolicy}" FontWeight="SemiBold" />
+            <Separator Margin="0,8" />
+            <TextBlock Text="Agent Runtimes" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="Manual work does not start an Agent. Enable only the Agents you want Workbench to use." TextWrapping="Wrap" />
+            <StackPanel Spacing="10">
+                <CheckBox Content="Enable Codex" IsChecked="{Binding IsCodexEnabled, Mode=TwoWay}" />
+                <TextBox Text="{Binding CodexExecutablePath, Mode=TwoWay}"
+                         PlaceholderText="Codex executable path (optional)" />
+                <CheckBox Content="Enable OpenCode" IsChecked="{Binding IsOpenCodeEnabled, Mode=TwoWay}" />
+                <TextBox Text="{Binding OpenCodeExecutablePath, Mode=TwoWay}"
+                         PlaceholderText="OpenCode executable path (optional)" />
+                <TextBlock Text="API keys, provider routing, models, and provider permissions remain in the selected Agent's native account/configuration. Workbench keeps project state independent of those credentials."
+                           TextWrapping="Wrap" Opacity="0.75" />
+                <Button Content="Save Agent Settings" Command="{Binding SaveAgentSettingsCommand}" />
+                <TextBlock Text="{Binding AgentSettingsStatus}" TextWrapping="Wrap" />
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -1,6 +1,7 @@
 using Workbench.Runtime.Providers;
 using Workbench.Runtime.Providers.Codex;
 using Workbench.Runtime.Runtime;
+using Workbench.Storage.Settings;
 
 namespace Workbench.App.Services;
 
@@ -15,12 +16,19 @@ internal static class CodexRuntimeComposition
     private const string CliPathVariable = "CODEX_CLI_PATH";
 
     public static async Task<IAgentRuntime> ConnectAsync(CancellationToken cancellationToken)
+        => await ConnectAsync(new AgentRuntimeSettings("codex", true, null), cancellationToken);
+
+    public static async Task<IAgentRuntime> ConnectAsync(
+        AgentRuntimeSettings settings,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(settings);
         var options = CreateOptions(
             Environment.GetEnvironmentVariable,
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            AppContext.BaseDirectory);
+            AppContext.BaseDirectory,
+            settings.NormalizedExecutablePath);
 
         if (File.Exists(options.ExecutablePath) && File.Exists(options.Arguments[0]))
         {
@@ -33,7 +41,8 @@ internal static class CodexRuntimeComposition
         var standaloneOptions = CreateStandaloneOptions(
             Environment.GetEnvironmentVariable,
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            AppContext.BaseDirectory);
+            AppContext.BaseDirectory,
+            settings.NormalizedExecutablePath);
         if (!File.Exists(standaloneOptions.ExecutablePath))
         {
             throw new FileNotFoundException("The local Codex CLI installation was not found.");
@@ -52,11 +61,13 @@ internal static class CodexRuntimeComposition
         Func<string, string?> getEnvironmentVariable,
         string programFilesPath,
         string applicationDataPath,
-        string appBaseDirectory)
+        string appBaseDirectory,
+        string? executableOverride = null)
     {
         ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
 
-        var executable = getEnvironmentVariable(ExecutableVariable)
+        var executable = executableOverride
+            ?? getEnvironmentVariable(ExecutableVariable)
             ?? Path.Combine(programFilesPath, "nodejs", "node.exe");
         var entry = getEnvironmentVariable(EntryVariable)
             ?? Path.Combine(
@@ -80,11 +91,13 @@ internal static class CodexRuntimeComposition
     internal static CodexAppServerOptions CreateStandaloneOptions(
         Func<string, string?> getEnvironmentVariable,
         string localApplicationDataPath,
-        string appBaseDirectory)
+        string appBaseDirectory,
+        string? executableOverride = null)
     {
         ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
 
-        var executable = getEnvironmentVariable(CliPathVariable)
+        var executable = executableOverride
+            ?? getEnvironmentVariable(CliPathVariable)
             ?? Path.Combine(localApplicationDataPath, "Programs", "OpenAI", "Codex", "bin", "codex.exe");
         var workingDirectory = getEnvironmentVariable(WorkingDirectoryVariable) ?? appBaseDirectory;
         return new CodexAppServerOptions(

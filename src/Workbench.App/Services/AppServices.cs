@@ -24,6 +24,8 @@ public sealed class AppServices : IAsyncDisposable
 {
     private readonly IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> _runtimeFactories;
     private readonly HashSet<int> _connectedRuntimeFactories = [];
+    private readonly IReadOnlyList<ConfiguredAgentRuntimeFactory> _configuredRuntimeFactories;
+    private readonly HashSet<int> _connectedConfiguredRuntimeFactories = [];
     private readonly List<IAsyncDisposable> _ownedRuntimes = [];
     private readonly SemaphoreSlim _runtimeConnectionGate = new(1, 1);
     private int _disposeRequested;
@@ -78,7 +80,8 @@ public sealed class AppServices : IAsyncDisposable
         IUserPrincipalProvider userPrincipalProvider,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
-        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> runtimeFactories)
+        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> runtimeFactories,
+        IReadOnlyList<ConfiguredAgentRuntimeFactory> configuredRuntimeFactories)
     {
         Database = database;
         ProjectRepository = projectRepository;
@@ -130,6 +133,7 @@ public sealed class AppServices : IAsyncDisposable
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
         _runtimeFactories = runtimeFactories;
+        _configuredRuntimeFactories = configuredRuntimeFactories;
     }
 
     public WorkbenchDatabase Database { get; }
@@ -201,19 +205,22 @@ public sealed class AppServices : IAsyncDisposable
 
     public static AppServices CreateDefault(
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory = null,
-        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null) =>
+        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null,
+        IReadOnlyList<ConfiguredAgentRuntimeFactory>? configuredRuntimeFactories = null) =>
         CreateForDatabasePath(
             DatabasePathProvider.GetDefaultDatabasePath(),
             TimeProvider.System,
             runtimeFactory: runtimeFactory,
-            additionalRuntimeFactories: additionalRuntimeFactories);
+            additionalRuntimeFactories: additionalRuntimeFactories,
+            configuredRuntimeFactories: configuredRuntimeFactories);
 
     public static AppServices CreateForDatabasePath(
         string databasePath,
         TimeProvider? timeProvider = null,
         AgentRuntimeRegistry? runtimeRegistry = null,
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory = null,
-        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null)
+        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null,
+        IReadOnlyList<ConfiguredAgentRuntimeFactory>? configuredRuntimeFactories = null)
     {
         var database = new WorkbenchDatabase(databasePath);
         var projectRepository = new ProjectRepository(database);
@@ -360,7 +367,8 @@ public sealed class AppServices : IAsyncDisposable
             userPrincipalProvider,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
-            CreateRuntimeFactories(runtimeFactory, additionalRuntimeFactories));
+            CreateRuntimeFactories(runtimeFactory, additionalRuntimeFactories),
+            configuredRuntimeFactories?.ToArray() ?? []);
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -372,7 +380,7 @@ public sealed class AppServices : IAsyncDisposable
 
     public async Task RetryRuntimeAsync(CancellationToken cancellationToken = default)
     {
-        if (_runtimeFactories.Count == 0 || Volatile.Read(ref _disposeRequested) != 0)
+        if ((_runtimeFactories.Count == 0 && _configuredRuntimeFactories.Count == 0) || Volatile.Read(ref _disposeRequested) != 0)
         {
             return;
         }
@@ -380,7 +388,9 @@ public sealed class AppServices : IAsyncDisposable
         await _runtimeConnectionGate.WaitAsync(cancellationToken);
         try
         {
-            if (Volatile.Read(ref _disposeRequested) != 0 || _connectedRuntimeFactories.Count == _runtimeFactories.Count)
+            if (Volatile.Read(ref _disposeRequested) != 0 ||
+                (_connectedRuntimeFactories.Count == _runtimeFactories.Count &&
+                 _connectedConfiguredRuntimeFactories.Count == _configuredRuntimeFactories.Count))
             {
                 return;
             }
@@ -420,6 +430,52 @@ public sealed class AppServices : IAsyncDisposable
                 catch (Exception)
                 {
                     RuntimeUnavailableDetail ??= "An Agent runtime could not be started.";
+                }
+            }
+
+            for (var index = 0; index < _configuredRuntimeFactories.Count; index++)
+            {
+                if (_connectedConfiguredRuntimeFactories.Contains(index))
+                {
+                    continue;
+                }
+
+                var factory = _configuredRuntimeFactories[index];
+                var settings = await WorkbenchSettingsRepository.GetAgentRuntimeSettingsAsync(
+                    factory.AgentId,
+                    cancellationToken: cancellationToken);
+                if (!settings.IsEnabled)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var runtime = await factory.ConnectAsync(settings, cancellationToken);
+                    if (Volatile.Read(ref _disposeRequested) != 0)
+                    {
+                        if (runtime is IAsyncDisposable lateDisposable)
+                        {
+                            await lateDisposable.DisposeAsync();
+                        }
+
+                        return;
+                    }
+
+                    RuntimeRegistry.Register(runtime);
+                    _connectedConfiguredRuntimeFactories.Add(index);
+                    if (runtime is IAsyncDisposable disposable)
+                    {
+                        _ownedRuntimes.Add(disposable);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    RuntimeUnavailableDetail ??= "An enabled Agent runtime could not be started.";
                 }
             }
 

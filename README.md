@@ -2,6 +2,16 @@
 
 Windows-first AI project workbench.
 
+## Windows Alpha Package
+
+Build the self-contained Windows package from a checkout:
+
+```powershell
+pwsh -NoLogo -NoProfile -File .\tools\publish-windows.ps1 -Version alpha
+```
+
+The resulting ZIP is in `artifacts\release`. Extract it and run `Workbench.App.exe`; no .NET runtime, Node.js, Codex, OpenCode, or other Agent installation is required for Manual mode. Enable an Agent only when needed in `Settings`, where an optional executable path can override the detected local installation.
+
 M0 — Empty Office
 Completed
 

@@ -1,6 +1,7 @@
 using Workbench.Runtime.Providers;
 using Workbench.Runtime.Providers.OpenCode;
 using Workbench.Runtime.Runtime;
+using Workbench.Storage.Settings;
 
 namespace Workbench.App.Services;
 
@@ -13,11 +14,18 @@ public static class OpenCodeRuntimeComposition
     private const string WorkingDirectoryVariable = "WORKBENCH_OPENCODE_CWD";
 
     public static async Task<IAgentRuntime> ConnectAsync(CancellationToken cancellationToken)
+        => await ConnectAsync(new AgentRuntimeSettings("opencode", true, null), cancellationToken);
+
+    public static async Task<IAgentRuntime> ConnectAsync(
+        AgentRuntimeSettings settings,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(settings);
         var options = CreateOptions(
             Environment.GetEnvironmentVariable,
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            AppContext.BaseDirectory);
+            AppContext.BaseDirectory,
+            settings.NormalizedExecutablePath);
 
         if (!File.Exists(options.ExecutablePath))
         {
@@ -33,11 +41,13 @@ public static class OpenCodeRuntimeComposition
     internal static OpenCodeAcpOptions CreateOptions(
         Func<string, string?> getEnvironmentVariable,
         string applicationDataPath,
-        string appBaseDirectory)
+        string appBaseDirectory,
+        string? executableOverride = null)
     {
         ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
 
-        var executable = getEnvironmentVariable(ExecutableVariable)
+        var executable = executableOverride
+            ?? getEnvironmentVariable(ExecutableVariable)
             ?? Path.Combine(applicationDataPath, "npm", "opencode.cmd");
         var workingDirectory = getEnvironmentVariable(WorkingDirectoryVariable) ?? appBaseDirectory;
         return new OpenCodeAcpOptions(executable, workingDirectory);

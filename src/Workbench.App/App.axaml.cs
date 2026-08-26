@@ -20,8 +20,11 @@ public partial class App : Application
         {
             var window = new MainWindow();
             var services = AppServices.CreateDefault(
-                CodexRuntimeComposition.ConnectAsync,
-                [OpenCodeRuntimeComposition.ConnectAsync]);
+                configuredRuntimeFactories:
+                [
+                    new ConfiguredAgentRuntimeFactory("codex", CodexRuntimeComposition.ConnectAsync),
+                    new ConfiguredAgentRuntimeFactory("opencode", OpenCodeRuntimeComposition.ConnectAsync)
+                ]);
             var viewModel = new MainWindowViewModel(
                 services,
                 new FolderPickerService(window));

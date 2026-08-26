@@ -33,4 +33,28 @@ public sealed class SettingsViewModelTests
         await workspace.LibraryPane.SetLeaderSessionRotationPolicyOverrideAsync(null);
         Assert.Null(workspace.LibraryPane.RotationPolicyOverride);
     }
+
+    [Fact]
+    public async Task Agent_runtime_settings_are_persisted_without_project_data()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var settings = context.CreateSettings();
+        await settings.InitializeAsync();
+
+        settings.IsCodexEnabled = true;
+        settings.CodexExecutablePath = "C:\\Tools\\codex.exe";
+        settings.IsOpenCodeEnabled = true;
+        settings.OpenCodeExecutablePath = "C:\\Tools\\opencode.cmd";
+        await settings.SaveAgentSettingsCommand.ExecuteAsync(null);
+
+        var recreated = Workbench.App.Services.AppServices.CreateForDatabasePath(context.DatabasePath, context.Time);
+        await recreated.InitializeAsync();
+        var codex = await recreated.WorkbenchSettingsRepository.GetAgentRuntimeSettingsAsync("codex");
+        var openCode = await recreated.WorkbenchSettingsRepository.GetAgentRuntimeSettingsAsync("opencode");
+        Assert.True(codex.IsEnabled);
+        Assert.Equal("C:\\Tools\\codex.exe", codex.ExecutablePath);
+        Assert.True(openCode.IsEnabled);
+        Assert.Equal("C:\\Tools\\opencode.cmd", openCode.ExecutablePath);
+        await recreated.DisposeAsync();
+    }
 }

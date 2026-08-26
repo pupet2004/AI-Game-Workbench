@@ -82,6 +82,39 @@ public sealed class RuntimeCompositionTests
     }
 
     [Fact]
+    public async Task Configured_agent_runtime_is_not_started_until_enabled_in_settings()
+    {
+        using var directory = new TemporaryDirectory("configured-runtime");
+        var runtime = new FakeAgentRuntime();
+        var connectionCount = 0;
+        var services = AppServices.CreateForDatabasePath(
+            Path.Combine(directory.Path, "workbench.db"),
+            configuredRuntimeFactories:
+            [
+                new ConfiguredAgentRuntimeFactory(
+                    "opencode",
+                    (_, _) =>
+                    {
+                        connectionCount++;
+                        return Task.FromResult<IAgentRuntime>(runtime);
+                    })
+            ]);
+        await services.InitializeAsync();
+
+        await services.RetryRuntimeAsync();
+        Assert.Equal(0, connectionCount);
+        Assert.Empty(services.RuntimeRegistry.Runtimes);
+
+        await services.WorkbenchSettingsRepository.SaveAgentRuntimeSettingsAsync(
+            new Workbench.Storage.Settings.AgentRuntimeSettings("opencode", true, "C:\\Tools\\opencode.cmd"));
+        await services.RetryRuntimeAsync();
+
+        Assert.Equal(1, connectionCount);
+        Assert.Same(runtime, Assert.Single(services.RuntimeRegistry.Runtimes));
+        await services.DisposeAsync();
+    }
+
+    [Fact]
     public async Task Workspace_receives_the_same_summary_repository_instance()
     {
         using var directory = new TemporaryDirectory("summary-workspace");
