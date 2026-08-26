@@ -5,7 +5,7 @@
              x:DataType="vm:ProjectWorldSetupViewModel">
     <ScrollViewer>
         <StackPanel Margin="48" Spacing="16" MaxWidth="820">
-            <TextBlock Text="Set up this project" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding [ProjectSetup.Title]}" FontSize="28" FontWeight="SemiBold" />
             <TextBlock Text="{Binding ProjectName}" FontSize="20" />
             <TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" Opacity="0.7" />
             <TextBlock Text="{Binding Status.DisplayLabel}" FontWeight="SemiBold" />
@@ -16,9 +16,9 @@
             <Border Padding="16" BorderBrush="Gray" BorderThickness="1" CornerRadius="6"
                     IsVisible="{Binding !IsGovernanceEstablished}">
                 <StackPanel Spacing="10">
-                    <TextBlock Text="Step 1 · Confirm project ownership" FontSize="18" />
+                    <TextBlock Text="{Binding [ProjectSetup.Step1]}" FontSize="18" />
                     <TextBlock Text="This records who is setting up the project. No earlier work, roles, or history is inferred." TextWrapping="Wrap" />
-                    <Button Content="Confirm project setup" Command="{Binding EstablishGovernanceCommand}"
+                    <Button Content="{Binding [ProjectSetup.Confirm]}" Command="{Binding EstablishGovernanceCommand}"
                             IsEnabled="{Binding CanEstablishGovernance}" HorizontalAlignment="Left" />
                 </StackPanel>
             </Border>
@@ -26,31 +26,31 @@
             <Border Padding="16" BorderBrush="Gray" BorderThickness="1" CornerRadius="6"
                     IsVisible="{Binding IsGovernanceEstablished}">
                 <StackPanel Spacing="10">
-                    <TextBlock Text="Step 2 · Describe the first responsibility" FontSize="18" />
-                    <TextBlock Text="Signed in as" />
+                    <TextBlock Text="{Binding [ProjectSetup.Step2]}" FontSize="18" />
+                    <TextBlock Text="{Binding [ProjectSetup.SignedIn]}" />
                     <TextBox Text="{Binding UserPrincipal}" IsReadOnly="True" />
-                    <TextBlock Text="Acting role (descriptive only)" />
+                    <TextBlock Text="{Binding [ProjectSetup.Role]}" />
                     <ComboBox ItemsSource="{Binding AvailableRoleKinds}" SelectedItem="{Binding SelectedRoleKind}" />
-                    <TextBlock Text="Responsibility" />
+                    <TextBlock Text="{Binding [ProjectSetup.Responsibility]}" />
                     <TextBox Text="{Binding ResponsibilityObligation}" PlaceholderText="What responsibility exists?" />
-                    <TextBlock Text="Expected outcome" />
+                    <TextBlock Text="{Binding [ProjectSetup.Expected]}" />
                     <TextBox Text="{Binding ResponsibilityExpectedOutcome}" PlaceholderText="What should this responsibility produce?" />
-                    <TextBlock Text="First assignment" />
+                    <TextBlock Text="{Binding [ProjectSetup.FirstAssignment]}" />
                     <TextBox Text="{Binding InitialAssignment}" PlaceholderText="What is the first bounded piece of work?" />
-                    <Button Content="Preview what will be recorded" Command="{Binding PreviewInitializationCommand}"
+                    <Button Content="{Binding [ProjectSetup.Preview]}" Command="{Binding PreviewInitializationCommand}"
                             IsEnabled="{Binding CanPreview}" HorizontalAlignment="Left" />
                     <Border Padding="12" Background="#12000000" IsVisible="{Binding IsPreviewVisible}">
                         <StackPanel Spacing="8">
                             <TextBlock Text="Before you continue" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" />
-                            <Button Content="Confirm and open project" Command="{Binding ConfirmInitializationCommand}"
+                            <Button Content="{Binding [ProjectSetup.ConfirmOpen]}" Command="{Binding ConfirmInitializationCommand}"
                                     IsEnabled="{Binding CanConfirm}" HorizontalAlignment="Left" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </Border>
             <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
-            <Button Content="Back to Project Home" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+            <Button Content="{Binding [ProjectSetup.Back]}" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

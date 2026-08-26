@@ -5,12 +5,12 @@
              x:DataType="vm:LibraryPaneViewModel">
     <Border Padding="16">
         <StackPanel Spacing="12">
-            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="LIBRARY" FontWeight="SemiBold" /><Button Grid.Column="1" Content="Focus" Command="{Binding FocusCommand}" /></Grid>
+            <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding [Library.Title]}" FontWeight="SemiBold" /><Button Grid.Column="1" Content="{Binding [Library.Focus]}" Command="{Binding FocusCommand}" /></Grid>
             <WrapPanel ItemHeight="28">
-                <Button Content="Overview" Command="{Binding ShowOverviewCommand}" />
-                <Button Content="Category" Command="{Binding ShowCategoryCommand}" />
-                <Button Content="Time" Command="{Binding ShowTimeCommand}" />
-                <Button Content="Project" Command="{Binding ShowProjectCommand}" />
+                <Button Content="{Binding [Library.Overview]}" Command="{Binding ShowOverviewCommand}" />
+                <Button Content="{Binding [Library.Category]}" Command="{Binding ShowCategoryCommand}" />
+                <Button Content="{Binding [Library.Time]}" Command="{Binding ShowTimeCommand}" />
+                <Button Content="{Binding [Library.Project]}" Command="{Binding ShowProjectCommand}" />
             </WrapPanel>
             <Border IsVisible="{Binding HasPendingLibraryProposals}" Padding="10" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="6">
@@ -29,7 +29,7 @@
                         <TextBox Text="{Binding ProposalEditOverview, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" />
                         <TextBlock Text="Materials / Sources" FontWeight="SemiBold" />
                         <ItemsControl ItemsSource="{Binding SelectedLibraryProposal.Draft.Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding MaterialKind}" /><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                        <WrapPanel><Button Content="Accept" Command="{Binding AcceptLibraryProposalCommand}" /><Button Content="Edit + Accept" Command="{Binding EditAndAcceptLibraryProposalCommand}" /><Button Content="Reject" Command="{Binding RejectLibraryProposalCommand}" /></WrapPanel>
+                        <WrapPanel><Button Content="{Binding [Library.Accept]}" Command="{Binding AcceptLibraryProposalCommand}" /><Button Content="{Binding [Library.EditAccept]}" Command="{Binding EditAndAcceptLibraryProposalCommand}" /><Button Content="{Binding [Library.Reject]}" Command="{Binding RejectLibraryProposalCommand}" /></WrapPanel>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -55,7 +55,7 @@
             <StackPanel IsVisible="{Binding IsCategory}" Spacing="8">
                 <TextBlock Text="Project Library · Category" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding LibraryCategories.Count, StringFormat=Categories: {0}}" />
-                <TextBlock IsVisible="{Binding !LibraryObjects.Count}" Text="Library has no organized entries yet." TextWrapping="Wrap" />
+                    <TextBlock IsVisible="{Binding !LibraryObjects.Count}" Text="{Binding [Library.NoEntries]}" TextWrapping="Wrap" />
                 <ItemsControl ItemsSource="{Binding CategoryGroups}">
                     <ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="3"><TextBlock Text="{Binding Category}" FontWeight="SemiBold" /><ItemsControl ItemsSource="{Binding Objects}"><ItemsControl.ItemTemplate><DataTemplate><Button Command="{Binding $parent[UserControl].DataContext.SelectLibraryObjectCommand}" CommandParameter="{Binding Id}"><StackPanel Spacing="2"><TextBlock Text="{Binding Topic}" /><TextBlock Text="{Binding CurrentOverview}" TextWrapping="Wrap" /></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate>
                 </ItemsControl>

@@ -51,7 +51,7 @@ public partial class HomeViewModel : ViewModelBase
 
     public ObservableCollection<RecentProjectItemViewModel> RecentProjects { get; } = [];
 
-    public string this[string key] => _localization[key];
+    public new string this[string key] => _localization[key];
 
     public bool HasNoRecentProjects => RecentProjects.Count == 0;
 

@@ -8,8 +8,8 @@
             <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                 <TextBlock Text="AI Game Workbench" FontWeight="SemiBold" />
                 <TextBlock Grid.Column="1" Margin="18,0,0,0" Text="{Binding Result.Project.Name}" />
-                <Button Grid.Column="2" Content="Reset Layout" Command="{Binding ResetLayoutCommand}" />
-                <Button Grid.Column="3" Margin="8,0,0,0" Content="Projects" Command="{Binding BackToProjectsCommand}" />
+                <Button Grid.Column="2" Content="{Binding [Workspace.ResetLayout]}" Command="{Binding ResetLayoutCommand}" />
+                <Button Grid.Column="3" Margin="8,0,0,0" Content="{Binding [Workspace.Projects]}" Command="{Binding BackToProjectsCommand}" />
             </Grid>
         </Border>
         <Grid x:Name="WorkspaceGrid" Grid.Row="1">

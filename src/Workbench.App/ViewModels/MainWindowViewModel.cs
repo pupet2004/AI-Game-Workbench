@@ -31,6 +31,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             services.LeaderMessageRepository,
             services.TimeProvider);
         _localization = localization ?? new LocalizationService(services.WorkbenchSettingsRepository);
+        _localization.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is "Item[]" or nameof(LocalizationService.Language))
+            {
+                OnPropertyChanged("Item[]");
+            }
+        };
         CurrentPage = CreateHome();
     }
 
@@ -44,6 +51,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         {
             await _services.InitializeAsync(cancellationToken);
             await _localization.InitializeAsync(cancellationToken);
+            _localization.AdoptAsCurrent();
             await home.LoadAsync(cancellationToken);
         }
         catch (DatabaseInitializationException)

@@ -30,7 +30,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public Func<Task> BackToProjects { get; }
 
-    public string this[string key] => _localization[key];
+    public new string this[string key] => _localization[key];
 
     public IReadOnlyList<LanguageOption> LanguageOptions { get; } =
     [
