@@ -78,6 +78,27 @@ public sealed class AgentRuntimeRegistryTests
             });
     }
 
+    [Fact]
+    public async Task Runtime_can_expose_a_model_from_a_different_provider()
+    {
+        var accountId = ProviderAccountId.New();
+        var agentProvider = new ProviderId("opencode");
+        var modelProvider = new ProviderId("deepseek");
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(new FakeAgentRuntime(
+            new ProviderDescriptor(agentProvider, "OpenCode"),
+            new ProviderAccountSummary(accountId, agentProvider, "OpenCode Account", true),
+            [new ModelProfile(modelProvider, "deepseek-v4-flash", "DeepSeek V4 Flash", AgentCapability.StructuredEvents)],
+            "opencode-acp"));
+
+        var resources = await registry.GetWorkerResourcesAsync();
+
+        var resource = Assert.Single(resources);
+        Assert.Equal("deepseek", resource.ProviderId);
+        Assert.Equal("deepseek-v4-flash", resource.ModelProfileId);
+        Assert.Equal("opencode-acp:opencode:" + accountId.Value.ToString("D"), resource.AgentRuntimeId);
+    }
+
     private static FakeAgentRuntime CreateRuntime(
         string provider,
         ProviderAccountId accountId,

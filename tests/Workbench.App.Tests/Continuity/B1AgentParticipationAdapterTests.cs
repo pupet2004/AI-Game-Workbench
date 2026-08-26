@@ -106,4 +106,72 @@ public sealed class B1AgentParticipationAdapterTests
         Assert.Empty(after.Handoffs);
         Assert.Empty(B1Projector.Build(after).AcceptedProjectState.CurrentContributions);
     }
+
+    [Fact]
+    public async Task OpenCode_agent_using_a_DeepSeek_model_follows_the_same_non_authoritative_path()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("b1-opencode-deepseek");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var projectRef = new ProjectRef(opened.Project.Id);
+        var principal = context.Services.UserPrincipalProvider.GetCurrent();
+        await context.Services.B1ProjectGovernance.CreateGovernedProjectForExistingProjectAsync(projectRef, principal);
+        await context.Services.ProjectWorldInitialization.CommitAsync(
+            new ProjectWorldInitializationRequest(projectRef, principal, RoleKind.Worker, "Own bounded work", "A reviewed result", "Do the work"));
+        var assignment = Assert.Single(B1Projector.Build(await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef)).AcceptedProjectState.Assignments.Values);
+        var runtime = new FakeAgentRuntime(
+            providerName: "OpenCode",
+            models: [new ModelProfile(new ProviderId("deepseek"), "deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", AgentCapability.StructuredEvents)]);
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "OpenCode completed the bounded work.", null),
+            context.Time.GetUtcNow()));
+
+        var result = await context.Services.B1AgentParticipation.ExecuteAsync(
+            runtime,
+            new B1AgentExecutionRequest(projectRef, principal, assignment.AssignmentRef,
+                "deepseek/deepseek-v4-flash", folder.Path, null, []));
+
+        Assert.Equal("deepseek/deepseek-v4-flash", result.Session.ModelId);
+        Assert.Equal(new ProviderId("opencode"), result.Session.ProviderId);
+        var after = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
+        Assert.Single(after.Attempts);
+        Assert.Single(after.SessionBindings);
+        Assert.Single(after.Handoffs);
+        Assert.Empty(B1Projector.Build(after).AcceptedProjectState.CurrentContributions);
+    }
+
+    [Fact]
+    public async Task A_different_agent_receives_the_selected_bounded_handoff_as_non_authoritative_context()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("b1-agent-handoff-continuation");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var projectRef = new ProjectRef(opened.Project.Id);
+        var principal = context.Services.UserPrincipalProvider.GetCurrent();
+        await context.Services.B1ProjectGovernance.CreateGovernedProjectForExistingProjectAsync(projectRef, principal);
+        await context.Services.ProjectWorldInitialization.CommitAsync(
+            new ProjectWorldInitializationRequest(projectRef, principal, RoleKind.Worker, "Own bounded work", "A reviewed result", "Do the work"));
+        var assignment = Assert.Single(B1Projector.Build(await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef)).AcceptedProjectState.Assignments.Values);
+        var firstRuntime = new FakeAgentRuntime(providerName: "OpenCode");
+        firstRuntime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "OpenCode completed phase one.", null), context.Time.GetUtcNow()));
+        var first = await context.Services.B1AgentParticipation.ExecuteAsync(
+            firstRuntime,
+            new B1AgentExecutionRequest(projectRef, principal, assignment.AssignmentRef, "deepseek/deepseek-v4-flash", folder.Path, null, []));
+
+        var secondRuntime = new FakeAgentRuntime(providerName: "Codex");
+        secondRuntime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, "Codex continued phase two.", null), context.Time.GetUtcNow()));
+        await context.Services.B1AgentParticipation.ExecuteAsync(
+            secondRuntime,
+            new B1AgentExecutionRequest(projectRef, principal, assignment.AssignmentRef, "gpt-5.6", folder.Path, null, [], first.Attempt.AttemptRef));
+
+        var prompt = Assert.Single(secondRuntime.SentRequests).Text;
+        Assert.Contains("Current continuation Handoff (non-authoritative; verify before relying on it):", prompt, StringComparison.Ordinal);
+        Assert.Contains("Result: OpenCode completed phase one.", prompt, StringComparison.Ordinal);
+        var after = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
+        Assert.Equal(2, after.SessionBindings.Count);
+        Assert.Equal(2, after.Handoffs.Count);
+        Assert.Empty(B1Projector.Build(after).AcceptedProjectState.CurrentContributions);
+    }
 }

@@ -19,7 +19,9 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var window = new MainWindow();
-            var services = AppServices.CreateDefault(CodexRuntimeComposition.ConnectAsync);
+            var services = AppServices.CreateDefault(
+                CodexRuntimeComposition.ConnectAsync,
+                [OpenCodeRuntimeComposition.ConnectAsync]);
             var viewModel = new MainWindowViewModel(
                 services,
                 new FolderPickerService(window));

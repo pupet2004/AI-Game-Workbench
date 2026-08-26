@@ -66,6 +66,7 @@ public sealed class B1AgentParticipationAdapter(
         var revision = projection.AcceptedProjectState.Revisions[revisionRef];
 
         var attempt = await ResolveAttemptAsync(state, projection, request, revisionRef, cancellationToken);
+        var continuationContext = BuildContinuationContext(state, projection, attempt.AttemptRef);
         var session = await runtime.CreateSessionAsync(
             new CreateAgentSessionRequest(runtime.Account.Id, request.ModelId, request.WorkingDirectory),
             cancellationToken);
@@ -86,7 +87,7 @@ public sealed class B1AgentParticipationAdapter(
             expectedBinding,
             cancellationToken);
 
-        var finalText = await ExecuteRuntimeAsync(runtime, session, revision.Contract.WorkContract, request.Prompt, cancellationToken);
+        var finalText = await ExecuteRuntimeAsync(runtime, session, revision.Contract.WorkContract, continuationContext, request.Prompt, cancellationToken);
         var handoff = await _guidedHandoffComposer.RecordAsync(
             attempt.AttemptRef,
             request.AssignmentRef,
@@ -140,10 +141,11 @@ public sealed class B1AgentParticipationAdapter(
         IAgentRuntime runtime,
         AgentSession session,
         string workContract,
+        string? continuationContext,
         string? prompt,
         CancellationToken cancellationToken)
     {
-        var requestText = BuildPrompt(workContract, prompt);
+        var requestText = BuildPrompt(workContract, continuationContext, prompt);
         string? finalText = null;
         var streamedText = new StringBuilder();
         await foreach (var agentEvent in runtime.SendAsync(
@@ -179,13 +181,61 @@ public sealed class B1AgentParticipationAdapter(
         return finalText.Trim();
     }
 
-    private static string BuildPrompt(string workContract, string? prompt)
+    private static string? BuildContinuationContext(
+        B1ProjectState state,
+        B1ProjectProjection projection,
+        AttemptRef attemptRef)
+    {
+        if (!projection.EffectiveCurrentHandoffRefs.TryGetValue(attemptRef, out var handoffRef) || handoffRef is not { } value)
+        {
+            return null;
+        }
+
+        var handoff = state.Handoffs.SingleOrDefault(candidate => candidate.HandoffRef == value)
+            ?? throw new B1AgentParticipationException("The selected continuation Handoff does not exist.");
+        var claims = state.Claims.ToDictionary(claim => claim.ClaimRef);
+        var builder = new StringBuilder();
+        builder.AppendLine("Current continuation Handoff (non-authoritative; verify before relying on it):");
+        AppendClaim(builder, "Result", handoff.ResultClaimRef, claims);
+        foreach (var claimRef in handoff.ValidationClaimRefs) AppendClaim(builder, "Validation", claimRef, claims);
+        foreach (var claimRef in handoff.UnresolvedIssueClaimRefs) AppendClaim(builder, "Unresolved issue", claimRef, claims);
+        foreach (var claimRef in handoff.ProposedContributionClaimRefs) AppendClaim(builder, "Proposed Project change", claimRef, claims);
+        foreach (var claimRef in handoff.ProposedAssignmentRevisionClaimRefs) AppendClaim(builder, "Proposed Assignment revision", claimRef, claims);
+        foreach (var evidence in handoff.EvidenceRefs) builder.Append("Evidence reference: ").AppendLine(evidence.Value);
+        return builder.ToString().TrimEnd();
+    }
+
+    private static void AppendClaim(StringBuilder builder, string label, ClaimRef claimRef, IReadOnlyDictionary<ClaimRef, Claim> claims)
+    {
+        if (!claims.TryGetValue(claimRef, out var claim))
+        {
+            throw new B1AgentParticipationException("The selected continuation Handoff references a missing Claim.");
+        }
+
+        var statement = claim.Payload switch
+        {
+            ClaimPayload.Result result => result.Statement,
+            ClaimPayload.Validation validation => validation.Statement,
+            ClaimPayload.UnresolvedIssue unresolved => unresolved.Statement,
+            ClaimPayload.ProposedStateContribution contribution => contribution.Statement,
+            ClaimPayload.ProposedAssignmentRevision revision => revision.ProposedContract.WorkContract,
+            _ => throw new B1AgentParticipationException("The selected continuation Handoff has an unknown Claim payload.")
+        };
+        builder.Append(label).Append(": ").AppendLine(statement);
+    }
+
+    private static string BuildPrompt(string workContract, string? continuationContext, string? prompt)
     {
         var builder = new StringBuilder();
         builder.AppendLine("Execute the bounded Project Assignment below.");
         builder.AppendLine("Your output is a work result for review, not an accepted Project fact.");
         builder.AppendLine();
         builder.Append("Assignment contract: ").AppendLine(workContract);
+        if (!string.IsNullOrWhiteSpace(continuationContext))
+        {
+            builder.AppendLine();
+            builder.AppendLine(continuationContext);
+        }
         if (!string.IsNullOrWhiteSpace(prompt))
         {
             builder.AppendLine();

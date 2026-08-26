@@ -22,7 +22,8 @@ namespace Workbench.App.Services;
 
 public sealed class AppServices : IAsyncDisposable
 {
-    private readonly Func<CancellationToken, Task<IAgentRuntime>>? _runtimeFactory;
+    private readonly IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> _runtimeFactories;
+    private readonly HashSet<int> _connectedRuntimeFactories = [];
     private readonly List<IAsyncDisposable> _ownedRuntimes = [];
     private readonly SemaphoreSlim _runtimeConnectionGate = new(1, 1);
     private int _disposeRequested;
@@ -77,7 +78,7 @@ public sealed class AppServices : IAsyncDisposable
         IUserPrincipalProvider userPrincipalProvider,
         AgentRuntimeRegistry runtimeRegistry,
         TimeProvider timeProvider,
-        Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory)
+        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> runtimeFactories)
     {
         Database = database;
         ProjectRepository = projectRepository;
@@ -128,7 +129,7 @@ public sealed class AppServices : IAsyncDisposable
         UserPrincipalProvider = userPrincipalProvider;
         RuntimeRegistry = runtimeRegistry;
         TimeProvider = timeProvider;
-        _runtimeFactory = runtimeFactory;
+        _runtimeFactories = runtimeFactories;
     }
 
     public WorkbenchDatabase Database { get; }
@@ -199,17 +200,20 @@ public sealed class AppServices : IAsyncDisposable
     public LeaderSummaryRecoveryReport? LastLeaderSummaryRecoveryReport { get; private set; }
 
     public static AppServices CreateDefault(
-        Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory = null) =>
+        Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory = null,
+        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null) =>
         CreateForDatabasePath(
             DatabasePathProvider.GetDefaultDatabasePath(),
             TimeProvider.System,
-            runtimeFactory: runtimeFactory);
+            runtimeFactory: runtimeFactory,
+            additionalRuntimeFactories: additionalRuntimeFactories);
 
     public static AppServices CreateForDatabasePath(
         string databasePath,
         TimeProvider? timeProvider = null,
         AgentRuntimeRegistry? runtimeRegistry = null,
-        Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory = null)
+        Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory = null,
+        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null)
     {
         var database = new WorkbenchDatabase(databasePath);
         var projectRepository = new ProjectRepository(database);
@@ -356,7 +360,7 @@ public sealed class AppServices : IAsyncDisposable
             userPrincipalProvider,
             effectiveRuntimeRegistry,
             effectiveTimeProvider,
-            runtimeFactory);
+            CreateRuntimeFactories(runtimeFactory, additionalRuntimeFactories));
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -368,7 +372,7 @@ public sealed class AppServices : IAsyncDisposable
 
     public async Task RetryRuntimeAsync(CancellationToken cancellationToken = default)
     {
-        if (_runtimeFactory is null || Volatile.Read(ref _disposeRequested) != 0)
+        if (_runtimeFactories.Count == 0 || Volatile.Read(ref _disposeRequested) != 0)
         {
             return;
         }
@@ -376,44 +380,76 @@ public sealed class AppServices : IAsyncDisposable
         await _runtimeConnectionGate.WaitAsync(cancellationToken);
         try
         {
-            if (Volatile.Read(ref _disposeRequested) != 0 || RuntimeRegistry.Runtimes.Count > 0)
+            if (Volatile.Read(ref _disposeRequested) != 0 || _connectedRuntimeFactories.Count == _runtimeFactories.Count)
             {
                 return;
             }
 
             RuntimeUnavailableDetail = null;
-            try
+            for (var index = 0; index < _runtimeFactories.Count; index++)
             {
-                var runtime = await _runtimeFactory(cancellationToken);
-                if (Volatile.Read(ref _disposeRequested) != 0)
+                if (_connectedRuntimeFactories.Contains(index))
                 {
-                    if (runtime is IAsyncDisposable lateDisposable)
+                    continue;
+                }
+
+                try
+                {
+                    var runtime = await _runtimeFactories[index](cancellationToken);
+                    if (Volatile.Read(ref _disposeRequested) != 0)
                     {
-                        await lateDisposable.DisposeAsync();
+                        if (runtime is IAsyncDisposable lateDisposable)
+                        {
+                            await lateDisposable.DisposeAsync();
+                        }
+
+                        return;
                     }
 
-                    return;
+                    RuntimeRegistry.Register(runtime);
+                    _connectedRuntimeFactories.Add(index);
+                    if (runtime is IAsyncDisposable disposable)
+                    {
+                        _ownedRuntimes.Add(disposable);
+                    }
                 }
-
-                RuntimeRegistry.Register(runtime);
-                if (runtime is IAsyncDisposable disposable)
+                catch (OperationCanceledException)
                 {
-                    _ownedRuntimes.Add(disposable);
+                    throw;
+                }
+                catch (Exception)
+                {
+                    RuntimeUnavailableDetail ??= "An Agent runtime could not be started.";
                 }
             }
-            catch (OperationCanceledException)
+
+            if (RuntimeRegistry.Runtimes.Count > 0)
             {
-                throw;
-            }
-            catch (Exception)
-            {
-                RuntimeUnavailableDetail = "Codex could not be started.";
+                RuntimeUnavailableDetail = null;
             }
         }
         finally
         {
             _runtimeConnectionGate.Release();
         }
+    }
+
+    private static IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> CreateRuntimeFactories(
+        Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory,
+        IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories)
+    {
+        var factories = new List<Func<CancellationToken, Task<IAgentRuntime>>>();
+        if (runtimeFactory is not null)
+        {
+            factories.Add(runtimeFactory);
+        }
+
+        if (additionalRuntimeFactories is not null)
+        {
+            factories.AddRange(additionalRuntimeFactories);
+        }
+
+        return factories;
     }
 
     public async ValueTask DisposeAsync()

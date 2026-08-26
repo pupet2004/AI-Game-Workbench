@@ -12,6 +12,7 @@ internal static class CodexRuntimeComposition
     private const string ExecutableVariable = "WORKBENCH_CODEX_EXECUTABLE";
     private const string EntryVariable = "WORKBENCH_CODEX_ENTRY";
     private const string WorkingDirectoryVariable = "WORKBENCH_CODEX_CWD";
+    private const string CliPathVariable = "CODEX_CLI_PATH";
 
     public static async Task<IAgentRuntime> ConnectAsync(CancellationToken cancellationToken)
     {
@@ -21,13 +22,25 @@ internal static class CodexRuntimeComposition
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             AppContext.BaseDirectory);
 
-        if (!File.Exists(options.ExecutablePath) || !File.Exists(options.Arguments[0]))
+        if (File.Exists(options.ExecutablePath) && File.Exists(options.Arguments[0]))
+        {
+            return await CodexAgentRuntime.ConnectAsync(
+                options,
+                CreateLocalAccountSummary().Id,
+                cancellationToken);
+        }
+
+        var standaloneOptions = CreateStandaloneOptions(
+            Environment.GetEnvironmentVariable,
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            AppContext.BaseDirectory);
+        if (!File.Exists(standaloneOptions.ExecutablePath))
         {
             throw new FileNotFoundException("The local Codex CLI installation was not found.");
         }
 
         return await CodexAgentRuntime.ConnectAsync(
-            options,
+            standaloneOptions,
             CreateLocalAccountSummary().Id,
             cancellationToken);
     }
@@ -60,6 +73,23 @@ internal static class CodexRuntimeComposition
         return new CodexAppServerOptions(
             executable,
             [entry, "app-server", "--stdio"],
+            workingDirectory,
+            TimeSpan.FromMinutes(2));
+    }
+
+    internal static CodexAppServerOptions CreateStandaloneOptions(
+        Func<string, string?> getEnvironmentVariable,
+        string localApplicationDataPath,
+        string appBaseDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
+
+        var executable = getEnvironmentVariable(CliPathVariable)
+            ?? Path.Combine(localApplicationDataPath, "Programs", "OpenAI", "Codex", "bin", "codex.exe");
+        var workingDirectory = getEnvironmentVariable(WorkingDirectoryVariable) ?? appBaseDirectory;
+        return new CodexAppServerOptions(
+            executable,
+            ["app-server", "--stdio"],
             workingDirectory,
             TimeSpan.FromMinutes(2));
     }

@@ -235,6 +235,43 @@ public sealed class RuntimeCompositionTests
     }
 
     [Fact]
+    public void Codex_composition_can_use_the_standalone_cli_installation()
+    {
+        var environment = new Dictionary<string, string?>
+        {
+            ["CODEX_CLI_PATH"] = "C:/Tools/codex.exe",
+            ["WORKBENCH_CODEX_CWD"] = "C:/Workbench/App"
+        };
+
+        var options = CodexRuntimeComposition.CreateStandaloneOptions(
+            name => environment.GetValueOrDefault(name),
+            "C:/Users/Test/AppData/Local",
+            "C:/AppBase");
+
+        Assert.Equal("C:/Tools/codex.exe", options.ExecutablePath);
+        Assert.Equal(["app-server", "--stdio"], options.Arguments);
+        Assert.Equal("C:/Workbench/App", options.WorkingDirectory);
+    }
+
+    [Fact]
+    public void OpenCode_composition_builds_an_acp_configuration_without_credentials()
+    {
+        var environment = new Dictionary<string, string?>
+        {
+            ["WORKBENCH_OPENCODE_EXECUTABLE"] = "C:/Tools/opencode.cmd",
+            ["WORKBENCH_OPENCODE_CWD"] = "C:/Workbench/App"
+        };
+
+        var options = OpenCodeRuntimeComposition.CreateOptions(
+            name => environment.GetValueOrDefault(name),
+            "C:/Users/Test/AppData/Roaming",
+            "C:/AppBase");
+
+        Assert.Equal("C:/Tools/opencode.cmd", options.ExecutablePath);
+        Assert.Equal("C:/Workbench/App", options.WorkingDirectory);
+    }
+
+    [Fact]
     public async Task App_services_initialize_storage_without_starting_runtime_then_connects_on_demand()
     {
         using var directory = new TemporaryDirectory("runtime-composition");
@@ -267,7 +304,7 @@ public sealed class RuntimeCompositionTests
         Assert.Empty(services.RuntimeRegistry.Runtimes);
         Assert.Null(services.RuntimeUnavailableDetail);
         await services.RetryRuntimeAsync();
-        Assert.Equal("Codex could not be started.", services.RuntimeUnavailableDetail);
+        Assert.Equal("An Agent runtime could not be started.", services.RuntimeUnavailableDetail);
         await main.DisposeAsync();
     }
 
@@ -289,6 +326,24 @@ public sealed class RuntimeCompositionTests
 
         Assert.Equal(2, attempts);
         Assert.Same(runtime, Assert.Single(services.RuntimeRegistry.Runtimes));
+        Assert.Null(services.RuntimeUnavailableDetail);
+        await services.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task One_runtime_can_connect_when_another_runtime_is_unavailable()
+    {
+        using var directory = new TemporaryDirectory("runtime-partial-availability");
+        var available = new FakeAgentRuntime(providerName: "OpenCode");
+        var services = AppServices.CreateForDatabasePath(
+            Path.Combine(directory.Path, "workbench.db"),
+            runtimeFactory: _ => Task.FromException<IAgentRuntime>(new InvalidOperationException("Codex unavailable")),
+            additionalRuntimeFactories: [_ => Task.FromResult<IAgentRuntime>(available)]);
+        await services.InitializeAsync();
+
+        await services.RetryRuntimeAsync();
+
+        Assert.Same(available, Assert.Single(services.RuntimeRegistry.Runtimes));
         Assert.Null(services.RuntimeUnavailableDetail);
         await services.DisposeAsync();
     }
@@ -374,7 +429,8 @@ public sealed class RuntimeCompositionTests
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var source = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "App.axaml.cs"));
 
-        Assert.Contains("AppServices.CreateDefault(CodexRuntimeComposition.ConnectAsync)", source, StringComparison.Ordinal);
+        Assert.Contains("CodexRuntimeComposition.ConnectAsync", source, StringComparison.Ordinal);
+        Assert.Contains("OpenCodeRuntimeComposition.ConnectAsync", source, StringComparison.Ordinal);
         Assert.Contains("window.Closing += async", source, StringComparison.Ordinal);
         Assert.Contains("await viewModel.DisposeAsync()", source, StringComparison.Ordinal);
         Assert.Contains("finally", source, StringComparison.Ordinal);

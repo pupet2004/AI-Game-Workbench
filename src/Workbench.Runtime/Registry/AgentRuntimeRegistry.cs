@@ -75,9 +75,8 @@ public sealed class AgentRuntimeRegistry
 
             var runtimeIdentity = WorkerResource.CreateRuntimeIdentity(runtime);
             resources.AddRange(models
-                .Where(model => model.ProviderId == runtime.Provider.Id)
                 .Select(model => new WorkerResource(
-                    runtime.Provider.Id.Value,
+                    model.ProviderId.Value,
                     runtime.Account.Id.Value.ToString(),
                     runtimeIdentity,
                     $"{runtime.Provider.DisplayName} · {runtime.Account.DisplayName}",
