@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 # Resolve the repository from this script so the current directory does not matter.
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\Workbench.App\Workbench.App.csproj'
-$runtimeDirectory = Join-Path $repo 'artifacts\local\native-surface'
+$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Debug\net10.0-windows'
 $publishedExecutable = Join-Path $runtimeDirectory 'Workbench.App.exe'
 
 if (-not (Test-Path -LiteralPath $project)) {
@@ -30,27 +30,10 @@ if ($running.Count -gt 0) {
 
 $env:WORKBENCH_NATIVE_AGENT_SURFACE = '1'
 
-if (-not (Test-Path -LiteralPath $publishedExecutable)) {
-    if ($NoBuild) {
-        throw "Native Surface executable not found: $publishedExecutable"
-    }
-
-    New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
-    $publishArguments = @(
-        'publish', $project,
-        '--configuration', 'Release',
-        '--runtime', 'win-x64',
-        '--self-contained', 'true',
-        '--output', $runtimeDirectory,
-        '-p:PublishSingleFile=true',
-        '-p:IncludeNativeLibrariesForSelfExtract=true',
-        '-p:PublishTrimmed=false',
-        '-p:DebugType=None',
-        '-p:DebugSymbols=false'
-    )
+if (-not $NoBuild) {
     Push-Location $repo
     try {
-        & dotnet @publishArguments
+        & dotnet build $project --configuration Debug --nologo
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }
@@ -58,6 +41,10 @@ if (-not (Test-Path -LiteralPath $publishedExecutable)) {
     finally {
         Pop-Location
     }
+}
+
+if (-not (Test-Path -LiteralPath $publishedExecutable)) {
+    throw "Native Surface executable not found: $publishedExecutable"
 }
 
 Push-Location $runtimeDirectory
