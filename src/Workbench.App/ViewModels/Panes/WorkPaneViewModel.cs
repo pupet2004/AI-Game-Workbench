@@ -42,7 +42,8 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
             var item = await ReconcileStatusAsync(session, cancellationToken);
             item = await ReconcileStatusAsync(item, cancellationToken);
             var plan = await LoadPlanAsync(item, cancellationToken);
-            Workers.Add(new WorkerSessionCardViewModel(item, plan));
+            Workers.Add(new WorkerSessionCardViewModel(item, plan,
+                compact: item.Session.Status == AgentSessionStatus.Completed && sessions.Count > 3));
         }
         OnPropertyChanged(nameof(HasWorkers));
     }
@@ -207,13 +208,14 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
     [RelayCommand] private Task Focus() => _focus();
     private static int Rank(AgentSessionStatus status) => status switch { AgentSessionStatus.Running => 0, AgentSessionStatus.WaitingApproval => 1, AgentSessionStatus.Ready => 2, AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => 3, AgentSessionStatus.Completed => 4, _ => 5 };
 }
-public sealed class WorkerSessionCardViewModel
+public sealed partial class WorkerSessionCardViewModel : ObservableObject
 {
     private readonly WorkerSessionRecord record;
-    public WorkerSessionCardViewModel(WorkerSessionRecord record, IReadOnlyList<string>? plan = null)
+    public WorkerSessionCardViewModel(WorkerSessionRecord record, IReadOnlyList<string>? plan = null, bool compact = false)
     {
         this.record = record;
         PlanSteps = BuildPlan(plan ?? []);
+        IsCompact = compact;
     }
 
     internal WorkerSessionRecord Record => record;
@@ -225,6 +227,9 @@ public sealed class WorkerSessionCardViewModel
     public string Status => record.Session.Status switch { AgentSessionStatus.Running => LocalizationService.Current["Dynamic.Working"], AgentSessionStatus.WaitingApproval => LocalizationService.Current["Dynamic.Waiting"], AgentSessionStatus.Ready => LocalizationService.Current["Dynamic.Ready"], AgentSessionStatus.Completed => LocalizationService.Current["Dynamic.Completed"], AgentSessionStatus.Interrupted => LocalizationService.Current["Dynamic.Interrupted"], AgentSessionStatus.Failed => LocalizationService.Current["Dynamic.Failed"], AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Dynamic.Closed"], _ => record.Session.Status.ToString() };
     public bool CanContinue => record.Session.Status is AgentSessionStatus.Interrupted or AgentSessionStatus.Failed;
     public string LastActiveAtText => record.LastActiveAt.LocalDateTime.ToString("g");
+    public string CompactTimeText => record.LastActiveAt.LocalDateTime.ToString("MM/dd HH:mm");
+    [ObservableProperty] public partial bool IsCompact { get; set; }
+    [RelayCommand] private void ToggleCompact() => IsCompact = !IsCompact;
     public IReadOnlyList<WorkerPlanStepViewModel> PlanSteps { get; }
     public bool HasPlan => PlanSteps.Count > 0;
     public string ProgressText => !HasPlan ? string.Empty : record.Session.Status == AgentSessionStatus.Completed ? $"{PlanSteps.Count}/{PlanSteps.Count} · 已完成" : $"{PlanSteps.Count(step => step.Marker == "✓")}/{PlanSteps.Count}";

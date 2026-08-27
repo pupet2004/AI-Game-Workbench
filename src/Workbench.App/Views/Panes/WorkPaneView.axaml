@@ -4,9 +4,24 @@
              x:Class="Workbench.App.Views.Panes.WorkPaneView"
              x:Name="WorkRoot"
              x:DataType="vm:WorkPaneViewModel">
-    <Border Padding="10,8,16,8" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Top">
-        <StackPanel Spacing="8" VerticalAlignment="Top">
+    <UserControl.Styles>
+        <Style Selector="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="#202020" />
+            <Setter Property="BorderBrush" Value="#4A4A4A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="9,5" />
+        </Style>
+        <Style Selector="Border.workerCard:pointerover">
+            <Setter Property="Background" Value="#2A2A2A" />
+            <Setter Property="BorderBrush" Value="#8A8A8A" />
+        </Style>
+    </UserControl.Styles>
+    <Border Padding="10,2,16,8" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Top" HorizontalContentAlignment="Stretch">
+        <StackPanel Spacing="5" VerticalAlignment="Top" Margin="0">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding [Worker.Title]}" FontWeight="SemiBold" /><Button Grid.Column="1" Content="{Binding [Worker.Focus]}" Command="{Binding FocusCommand}" /></Grid>
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.Empty]}" FontSize="18" />
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.EmptyDescription]}" TextWrapping="Wrap" Foreground="#667085" />
@@ -39,10 +54,17 @@
             <ItemsControl IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
-                        <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="4">
+                        <Border Classes="workerCard" Margin="0,0,0,5" Padding="10" Background="#000000" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
+                            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="4">
+                                <Grid IsVisible="{Binding IsCompact}" ColumnDefinitions="*,Auto,Auto" Grid.ColumnSpan="3">
+                                    <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="1" Text="{Binding CompactTimeText}" Foreground="#8A8A8A" VerticalAlignment="Center" Margin="8,0" />
+                                    <Button Grid.Column="2" Content="⌃" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="展开任务详情" Padding="7,3" />
+                                </Grid>
+                                <Grid IsVisible="{Binding !IsCompact}" Grid.RowSpan="2" Grid.ColumnSpan="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="4">
                                 <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" />
-                                <Button Grid.Column="1" Grid.RowSpan="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" />
+                                <Button Grid.Column="1" Grid.RowSpan="2" Content="⌄" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="收缩任务详情" Padding="7,3" />
+                                <Button Grid.Column="2" Grid.RowSpan="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" Padding="7,3" />
                                 <TextBlock Grid.Row="1" Text="{Binding WorkerLabel}" />
                                 <TextBlock Grid.Row="2" Text="{Binding Profile}" Foreground="#667085" />
                                 <Grid Grid.Row="3" ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid>
@@ -63,6 +85,7 @@
                                     </ItemsControl>
                                 </StackPanel>
                                 <Button Grid.Row="5" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
+                                </Grid>
                             </Grid>
                         </Border>
                     </DataTemplate>
