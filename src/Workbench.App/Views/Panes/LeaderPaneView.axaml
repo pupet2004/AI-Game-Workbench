@@ -32,6 +32,7 @@
                           SelectedItem="{Binding SelectedModel, Mode=TwoWay}"
                           IsEnabled="{Binding IsModelSelectionEnabled}"
                           HorizontalAlignment="Stretch"
+                          MaxDropDownHeight="420"
                           PlaceholderText="{Binding [Leader.SelectModel]}">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="leader:LeaderModelOptionViewModel">
@@ -51,7 +52,8 @@
                                    FontWeight="SemiBold" />
                         <ComboBox ItemsSource="{Binding AvailableModels}"
                                   SelectedItem="{Binding BrainTargetModel, Mode=TwoWay}"
-                                  HorizontalAlignment="Stretch">
+                                  HorizontalAlignment="Stretch"
+                                  MaxDropDownHeight="420">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="leader:LeaderModelOptionViewModel">
                                     <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
