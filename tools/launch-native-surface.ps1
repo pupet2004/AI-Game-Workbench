@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
-$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Release\net10.0'
+$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Release\net10.0-windows\publish'
 $executable = Join-Path $runtimeDirectory 'Workbench.App.exe'
 
 if (-not (Test-Path -LiteralPath $executable)) {

@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 # Resolve the repository from this script so the current directory does not matter.
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\Workbench.App\Workbench.App.csproj'
-$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Release\net10.0'
+$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Release\net10.0-windows\win-x64'
 $publishedExecutable = Join-Path $runtimeDirectory 'Workbench.App.exe'
 
 if (-not (Test-Path -LiteralPath $project)) {

@@ -19,14 +19,25 @@ public partial class WorkPaneView : UserControl
     {
         if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed ||
             e.Source is not Visual source ||
-            (source as Border ?? source.FindAncestorOfType<Border>()) is not { DataContext: WorkerSessionCardViewModel worker } target ||
+            FindWorkerCard(source) is not { } card ||
             DataContext is not WorkPaneViewModel pane)
         {
             return;
         }
 
-        OpenWorkerMenu(target, pane, worker);
+        OpenWorkerMenu(card.Target, pane, card.Worker);
         e.Handled = true;
+    }
+
+    private static (Control Target, WorkerSessionCardViewModel Worker)? FindWorkerCard(Visual source)
+    {
+        for (Visual? current = source; current is not null; current = current.GetVisualParent())
+        {
+            if (current is Control control && control.DataContext is WorkerSessionCardViewModel worker)
+                return (control, worker);
+        }
+
+        return null;
     }
 
     private static void OpenWorkerMenu(Control target, WorkPaneViewModel pane, WorkerSessionCardViewModel worker)
