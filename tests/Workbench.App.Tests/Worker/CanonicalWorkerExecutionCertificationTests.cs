@@ -48,7 +48,7 @@ public sealed class CanonicalWorkerExecutionCertificationTests
         Assert.Single(await fixture.Repository.ListAsync(fixture.Project.Id));
         var execution = (await fixture.Repository.ListAsync(fixture.Project.Id)).Single();
         Assert.Equal(fixture.ExecutionId, execution.ExecutionId);
-        Assert.Equal(WorkerExecutionState.Running, execution.State);
+        Assert.Equal(WorkerExecutionState.CompletedPendingReview, execution.State);
     }
 
     [Fact]

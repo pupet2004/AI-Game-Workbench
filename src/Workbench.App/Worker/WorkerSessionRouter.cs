@@ -364,17 +364,18 @@ public sealed class WorkerSessionRouter(
                     WorkerHandoffPayload? payload = null;
                     var isTypedHandoff = !string.IsNullOrWhiteSpace(finalText) && WorkerHandoffPayloadParser.TryParse(finalText, out payload);
                     var eventId = Guid.NewGuid();
+                    var canPublishHandoff = true;
                     if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && assignments is not null)
                     {
                         var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
                             eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message, payload.ValidationSummary }), time.GetUtcNow(), cancellationToken);
-                        if (transition != AssignmentStateTransitionResult.Applied) continue;
+                        canPublishHandoff = transition == AssignmentStateTransitionResult.Applied;
                     }
                     else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
                     {
                         var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.NeedsLeaderDecision,
                             eventId, "WorkerNeedsLeaderDecisionReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message }), time.GetUtcNow(), cancellationToken);
-                        if (transition != AssignmentStateTransitionResult.Applied) continue;
+                        canPublishHandoff = transition == AssignmentStateTransitionResult.Applied;
                     }
 
                     if (executions is not null && executionId.HasValue)
@@ -391,7 +392,7 @@ public sealed class WorkerSessionRouter(
                         await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, nextState, CancellationToken.None);
                     }
 
-                    if (string.IsNullOrWhiteSpace(finalText)) continue;
+                    if (!canPublishHandoff || string.IsNullOrWhiteSpace(finalText)) continue;
                     var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
                         isTypedHandoff ? payload!.Message : finalText, time.GetUtcNow(),
                         isTypedHandoff ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision,
