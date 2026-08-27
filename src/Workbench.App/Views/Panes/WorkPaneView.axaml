@@ -4,9 +4,9 @@
              x:Class="Workbench.App.Views.Panes.WorkPaneView"
              x:Name="WorkRoot"
              x:DataType="vm:WorkPaneViewModel">
-    <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="12">
+    <Border Padding="10,8,16,8" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Top">
+        <StackPanel Spacing="8" VerticalAlignment="Top">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding [Worker.Title]}" FontWeight="SemiBold" /><Button Grid.Column="1" Content="{Binding [Worker.Focus]}" Command="{Binding FocusCommand}" /></Grid>
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.Empty]}" FontSize="18" />
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.EmptyDescription]}" TextWrapping="Wrap" Foreground="#667085" />
@@ -39,13 +39,29 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
                         <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="4">
                                 <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" />
                                 <Button Grid.Column="1" Grid.RowSpan="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" />
                                 <TextBlock Grid.Row="1" Text="{Binding WorkerLabel}" />
                                 <TextBlock Grid.Row="2" Text="{Binding Profile}" Foreground="#667085" />
                                 <Grid Grid.Row="3" ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid>
-                                <Button Grid.Row="4" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
+                                <StackPanel Grid.Row="4" IsVisible="{Binding HasPlan}" Spacing="3">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Text="任务进度" Foreground="#D0D4DC" FontSize="12" />
+                                        <TextBlock Grid.Column="1" Text="{Binding ProgressText}" Foreground="#D0D4DC" FontSize="12" />
+                                    </Grid>
+                                    <ItemsControl ItemsSource="{Binding PlanSteps}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                                    <TextBlock Text="{Binding Marker}" Foreground="#FFFFFF" Opacity="{Binding Opacity}" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" Foreground="#FFFFFF" Opacity="{Binding Opacity}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                <Button Grid.Row="5" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
                             </Grid>
                         </Border>
                     </DataTemplate>

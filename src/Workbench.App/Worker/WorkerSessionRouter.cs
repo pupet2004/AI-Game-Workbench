@@ -35,7 +35,8 @@ public sealed record WorkerSessionRecord(
     ExecutionProfile Profile,
     string Label,
     DateTimeOffset LastActiveAt,
-    Guid? ExecutionId = null);
+    Guid? ExecutionId = null,
+    Guid TaskRevisionId = default);
 
 public sealed record WorkerHandoff(
     Guid ProjectId,
@@ -163,7 +164,8 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
             execution.ExternalSessionId, StatusFor(execution.State), execution.CreatedAt, execution.UpdatedAt);
         return new WorkerSessionRecord(execution.ProjectId, execution.TaskId,
             historical?.TaskTitle ?? "Worker execution", session, execution.ExecutionProfile,
-            historical?.Label ?? "Worker", now, execution.ExecutionId);
+            historical?.Label ?? "Worker", now, execution.ExecutionId,
+            execution.CurrentAcknowledgedRevision.RevisionId);
     }
 
     private async Task<WorkerSessionRecord?> GetLegacySessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken)
@@ -292,17 +294,19 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
 internal sealed record StoredSession(Guid ProjectId, Guid TaskId, string TaskTitle, Guid SessionId, Guid AccountId, string ProviderId,
     string ModelId, string? WorkingDirectory, string? ExternalSessionId, AgentSessionStatus Status,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string RecommendedProviderId, string RecommendedAccountId,
-    string RecommendedModelId, string RecommendedRuntimeId, string Label, DateTimeOffset LastActiveAt)
+    string RecommendedModelId, string RecommendedRuntimeId, string Label, DateTimeOffset LastActiveAt,
+    Guid TaskRevisionId = default)
 {
     public static StoredSession From(WorkerSessionRecord value) => new(value.ProjectId, value.TaskId, value.TaskTitle, value.Session.Id.Value,
         value.Session.AccountId.Value, value.Session.ProviderId.Value, value.Session.ModelId, value.Session.WorkingDirectory,
         value.Session.ExternalSessionId, value.Session.Status, value.Session.CreatedAt, value.Session.UpdatedAt,
         value.Profile.ProviderId, value.Profile.ProviderAccountId, value.Profile.ModelProfileId, value.Profile.AgentRuntimeId,
-        value.Label, value.LastActiveAt);
+        value.Label, value.LastActiveAt, value.TaskRevisionId);
     public WorkerSessionRecord ToRecord() => new(ProjectId, TaskId, TaskTitle,
         new AgentSession(new AgentSessionId(SessionId), new Workbench.Runtime.Providers.ProviderAccountId(AccountId),
             new Workbench.Runtime.Providers.ProviderId(ProviderId), ModelId, WorkingDirectory, ExternalSessionId, Status, CreatedAt, UpdatedAt),
-        ExecutionProfile.Create(RecommendedProviderId, RecommendedAccountId, RecommendedModelId, RecommendedRuntimeId), Label, LastActiveAt);
+        ExecutionProfile.Create(RecommendedProviderId, RecommendedAccountId, RecommendedModelId, RecommendedRuntimeId), Label, LastActiveAt,
+        TaskRevisionId: TaskRevisionId);
 }
 
 internal sealed record StoredHandoff(
@@ -375,7 +379,7 @@ public sealed class WorkerSessionRouter(
                     await executions.UpdateStateAsync(request.Project.Id, request.TaskId, request.ExecutionId.Value, WorkerExecutionState.Running, cancellationToken);
                 }
                 await store.SaveSessionAsync(new WorkerSessionRecord(request.Project.Id, request.TaskId, request.TaskTitle, session,
-                    request.ExecutionProfile, request.WorkerLabel, time.GetUtcNow(), executionId), cancellationToken);
+                    request.ExecutionProfile, request.WorkerLabel, time.GetUtcNow(), executionId, request.TaskRevisionId), cancellationToken);
             }
             catch (Exception exception)
             {

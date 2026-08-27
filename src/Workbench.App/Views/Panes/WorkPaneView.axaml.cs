@@ -3,16 +3,33 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Avalonia;
+using Avalonia.Threading;
 using Workbench.App.ViewModels.Panes;
 
 namespace Workbench.App.Views.Panes;
 
 public partial class WorkPaneView : UserControl
 {
+    private readonly DispatcherTimer _progressPulseTimer;
+    private double _pulsePhase;
+
     public WorkPaneView()
     {
         InitializeComponent();
         AddHandler(InputElement.PointerPressedEvent, OnAnyPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        _progressPulseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+        _progressPulseTimer.Tick += OnProgressPulseTick;
+        _progressPulseTimer.Start();
+    }
+
+    private void OnProgressPulseTick(object? sender, EventArgs e)
+    {
+        _pulsePhase += 0.08d;
+        var opacity = 0.58d + (Math.Sin(_pulsePhase * Math.PI * 2d) + 1d) * 0.18d;
+        if (DataContext is not WorkPaneViewModel pane) return;
+        foreach (var worker in pane.Workers)
+            foreach (var step in worker.PlanSteps)
+                step.SetPulse(opacity);
     }
 
     private void OnAnyPointerPressed(object? sender, PointerPressedEventArgs e)

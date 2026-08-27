@@ -65,7 +65,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             FocusWorkAsync,
             workerRoutingStore,
             runtimeRegistry,
-            new CodexInteractiveSessionLauncher());
+            new CodexInteractiveSessionLauncher(),
+            taskRevisions: taskRevisionRepository);
         LibraryPane = new LibraryPaneViewModel(
             result,
             FocusLibraryAsync,
