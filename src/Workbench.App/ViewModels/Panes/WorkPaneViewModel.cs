@@ -6,6 +6,8 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.App.Services;
 using Workbench.Storage.Tasks;
+using Workbench.Runtime.Runtime;
+using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -17,7 +19,9 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
     private readonly IAgentInteractiveSessionLauncher? _interactiveLauncher;
     private readonly WorkerRemovalService? _removalService;
     private readonly TaskRevisionRepository? _taskRevisions;
-    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null, WorkerRemovalService? removalService = null, TaskRevisionRepository? taskRevisions = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; _taskRevisions = taskRevisions; _removalService = removalService ?? (store is not null && runtimes is not null ? new WorkerRemovalService(runtimes, store, TimeProvider.System) : null); }
+    private readonly WorkerSessionRouter? _workerRouter;
+    private readonly CoreProject? _project;
+    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null, WorkerRemovalService? removalService = null, TaskRevisionRepository? taskRevisions = null, WorkerSessionRouter? workerRouter = null, CoreProject? project = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; _taskRevisions = taskRevisions; _workerRouter = workerRouter; _project = project; _removalService = removalService ?? (store is not null && runtimes is not null ? new WorkerRemovalService(runtimes, store, TimeProvider.System) : null); }
     public ObservableCollection<WorkerSessionCardViewModel> Workers { get; } = [];
     public ObservableCollection<WorkerTranscriptLineViewModel> Transcript { get; } = [];
     public bool HasWorkers => Workers.Count > 0;
@@ -33,12 +37,35 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
     {
         Workers.Clear(); if (_store is null) return;
         var sessions = await _store.ListSessionsAsync(projectId, cancellationToken);
-        foreach (var item in sessions.OrderBy(item => Rank(item.Session.Status)).ThenByDescending(item => item.LastActiveAt))
+        foreach (var session in sessions.OrderBy(item => Rank(item.Session.Status)).ThenByDescending(item => item.LastActiveAt))
         {
+            var item = await ReconcileStatusAsync(session, cancellationToken);
+            item = await ReconcileStatusAsync(item, cancellationToken);
             var plan = await LoadPlanAsync(item, cancellationToken);
             Workers.Add(new WorkerSessionCardViewModel(item, plan));
         }
         OnPropertyChanged(nameof(HasWorkers));
+    }
+
+    private async Task<WorkerSessionRecord> ReconcileStatusAsync(WorkerSessionRecord worker, CancellationToken cancellationToken)
+    {
+        if (_store is null || _runtimes is null || worker.Session.Status is not (AgentSessionStatus.Running or AgentSessionStatus.WaitingApproval)) return worker;
+        if (worker.LastActiveAt > DateTimeOffset.UtcNow.AddSeconds(-2)) return worker;
+        IAgentRuntime runtime;
+        try { runtime = _runtimes.GetByAccount(worker.Session.AccountId); }
+        catch (KeyNotFoundException) { return worker; }
+        AgentSessionStatus observed;
+        try { observed = await runtime.GetStatusAsync(worker.Session, cancellationToken); }
+        catch { return worker; }
+        if (observed is AgentSessionStatus.Ready or AgentSessionStatus.Created) observed = AgentSessionStatus.Interrupted;
+        if (observed is not (AgentSessionStatus.Completed or AgentSessionStatus.Failed or AgentSessionStatus.Interrupted) || observed == worker.Session.Status) return worker;
+        try
+        {
+            var changedAt = DateTimeOffset.UtcNow;
+            await _store.OverrideStatusAsync(new WorkerStatusOverride(worker.ProjectId, worker.TaskId, worker.Session.Id, observed, changedAt, "Provider status reconciled by Workbench"), cancellationToken);
+            return worker with { Session = worker.Session with { Status = observed, UpdatedAt = changedAt }, LastActiveAt = changedAt };
+        }
+        catch { return worker; }
     }
 
     private async Task<IReadOnlyList<string>> LoadPlanAsync(WorkerSessionRecord worker, CancellationToken cancellationToken)
@@ -72,6 +99,44 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
         OpenWorkerAsync(worker, cancellationToken);
 
     [RelayCommand] private Task OpenWorker(WorkerSessionCardViewModel worker) => OpenWorkerAsync(worker);
+    [RelayCommand] private async Task ContinueWorker(WorkerSessionCardViewModel worker)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        if (!worker.CanContinue) return;
+        OpenError = null;
+        if (_workerRouter is null || _project is null || _store is null)
+        {
+            await OpenWorkerAsync(worker);
+            return;
+        }
+
+        try
+        {
+            var revisionId = worker.Record.TaskRevisionId;
+            var revisions = _taskRevisions is null
+                ? Array.Empty<Workbench.Core.Tasks.TaskRevision>()
+                : await _taskRevisions.ListAsync(worker.Record.ProjectId, worker.Record.TaskId);
+            var revision = revisions.FirstOrDefault(item => item.Id == revisionId) ?? revisions.LastOrDefault();
+            revisionId = revision?.Id ?? revisionId;
+            var acceptance = revision is null ? string.Empty : string.Join("\n", revision.Acceptance.Select(item => $"- {item}"));
+            var prompt = $"上一轮 Worker 执行因 Agent 对话中断或操作失败而停止。请复用当前会话，检查工作区现状，继续完成原 Assignment。\n\n目标：{revision?.Goal ?? worker.TaskTitle}\n范围：{revision?.Scope ?? "按原 Assignment 继续"}\n验收标准：\n{acceptance}";
+            var runningRecord = worker.Record with
+            {
+                Session = worker.Session with { Status = AgentSessionStatus.Running, UpdatedAt = DateTimeOffset.UtcNow },
+                LastActiveAt = DateTimeOffset.UtcNow
+            };
+            await _store.SaveSessionAsync(runningRecord);
+            var result = await _workerRouter.StartAsync(new WorkerStartRequest(
+                _project, worker.Record.TaskId, revisionId, worker.TaskTitle, worker.Record.Profile, prompt,
+                worker.Session.Id, worker.WorkerLabel, WaitForCompletion: false));
+            if (!result.Succeeded) OpenError = result.Error;
+            await LoadAsync(worker.Record.ProjectId);
+        }
+        catch (Exception exception)
+        {
+            OpenError = exception.Message;
+        }
+    }
     [RelayCommand] private void RequestWorkerRemoval(WorkerSessionCardViewModel worker)
     {
         PendingWorkerRemoval = worker;
@@ -157,7 +222,8 @@ public sealed class WorkerSessionCardViewModel
     public string ExternalSessionId => record.Session.ExternalSessionId ?? "未提供";
     public string WorkingDirectory => record.Session.WorkingDirectory ?? "未提供";
     public string Runtime => record.Profile.AgentRuntimeId;
-    public string Status => record.Session.Status switch { AgentSessionStatus.Running => LocalizationService.Current["Dynamic.Working"], AgentSessionStatus.WaitingApproval => LocalizationService.Current["Dynamic.Waiting"], AgentSessionStatus.Ready => LocalizationService.Current["Dynamic.Ready"], AgentSessionStatus.Completed => LocalizationService.Current["Dynamic.Completed"], AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => LocalizationService.Current["Dynamic.Interrupted"], AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Dynamic.Closed"], _ => record.Session.Status.ToString() };
+    public string Status => record.Session.Status switch { AgentSessionStatus.Running => LocalizationService.Current["Dynamic.Working"], AgentSessionStatus.WaitingApproval => LocalizationService.Current["Dynamic.Waiting"], AgentSessionStatus.Ready => LocalizationService.Current["Dynamic.Ready"], AgentSessionStatus.Completed => LocalizationService.Current["Dynamic.Completed"], AgentSessionStatus.Interrupted => LocalizationService.Current["Dynamic.Interrupted"], AgentSessionStatus.Failed => LocalizationService.Current["Dynamic.Failed"], AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Dynamic.Closed"], _ => record.Session.Status.ToString() };
+    public bool CanContinue => record.Session.Status is AgentSessionStatus.Interrupted or AgentSessionStatus.Failed;
     public string LastActiveAtText => record.LastActiveAt.LocalDateTime.ToString("g");
     public IReadOnlyList<WorkerPlanStepViewModel> PlanSteps { get; }
     public bool HasPlan => PlanSteps.Count > 0;

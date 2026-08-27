@@ -5,6 +5,7 @@ using Avalonia.VisualTree;
 using Avalonia;
 using Avalonia.Threading;
 using Workbench.App.ViewModels.Panes;
+using Workbench.Runtime.Agents;
 
 namespace Workbench.App.Views.Panes;
 
@@ -60,6 +61,8 @@ public partial class WorkPaneView : UserControl
     private static void OpenWorkerMenu(Control target, WorkPaneViewModel pane, WorkerSessionCardViewModel worker)
     {
         var menu = new ContextMenu();
+        if (worker.Session.Status is AgentSessionStatus.Interrupted or AgentSessionStatus.Failed)
+            menu.Items.Add(new MenuItem { Header = "继续当前任务", Command = pane.ContinueWorkerCommand, CommandParameter = worker });
         menu.Items.Add(new MenuItem { Header = "重新检查状态", Command = pane.RefreshWorkerStatusCommand, CommandParameter = worker });
         menu.Items.Add(new MenuItem { Header = "标记为已结束", Command = pane.MarkWorkerCompletedCommand, CommandParameter = worker });
         menu.Items.Add(new MenuItem { Header = "查看详情", Command = pane.RequestWorkerDetailsCommand, CommandParameter = worker });

@@ -28,6 +28,7 @@
                     <TextBlock Text="{Binding DetailedWorker.TaskTitle}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding DetailedWorker.WorkerLabel}" />
                     <TextBlock Text="{Binding DetailedWorker.Status}" />
+                    <Button IsVisible="{Binding DetailedWorker.CanContinue}" Content="继续当前任务" Command="{Binding ContinueWorkerCommand}" CommandParameter="{Binding DetailedWorker}" HorizontalAlignment="Left" />
                     <TextBlock Text="{Binding DetailedWorker.SessionId, StringFormat=Session: {0}}" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding DetailedWorker.ExternalSessionId, StringFormat=External session: {0}}" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding DetailedWorker.Runtime, StringFormat=Runtime: {0}}" />
