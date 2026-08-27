@@ -86,6 +86,27 @@ public sealed class LibraryCategoryTimeViewTests
     }
 
     [Fact]
+    public async Task Selecting_the_current_library_object_again_collapses_its_detail()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("library-toggle-detail");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var library = context.Services.ProjectLibraryEvolutionRepository;
+        var libraryObject = await library.CreateObjectAsync(opened.Project.Id, "Project", "Current status", context.Time.GetUtcNow());
+        await library.UpdateOverviewAsync(opened.Project.Id, libraryObject.Id, "A long current overview.", 0, context.Time.GetUtcNow());
+
+        var pane = new LibraryPaneViewModel(opened, () => Task.CompletedTask, evolutionLibrary: library);
+        await pane.ShowCategoryAsync();
+        await pane.SelectLibraryObjectAsync(libraryObject.Id);
+        Assert.NotNull(pane.SelectedLibraryObject);
+
+        await pane.SelectLibraryObjectAsync(libraryObject.Id);
+
+        Assert.Null(pane.SelectedLibraryObject);
+        Assert.Empty(pane.ObjectTimeline);
+    }
+
+    [Fact]
     public async Task Legacy_and_b1_projection_nodes_keep_distinct_context_labels()
     {
         await using var context = await AppTestContext.CreateAsync();

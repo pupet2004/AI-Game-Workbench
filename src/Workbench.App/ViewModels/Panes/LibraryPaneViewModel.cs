@@ -273,6 +273,13 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public async Task SelectLibraryObjectAsync(Guid objectId, CancellationToken cancellationToken = default)
     {
         if (_evolutionLibrary is null) return;
+        if (SelectedLibraryObject?.Id == objectId)
+        {
+            SelectedLibraryObject = null;
+            ObjectTimeline.Clear();
+            return;
+        }
+
         var selected = await _evolutionLibrary.GetObjectAsync(Result.Project.Id, objectId, cancellationToken);
         if (selected is null) return;
 
