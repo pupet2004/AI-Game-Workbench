@@ -35,23 +35,22 @@
                     <Button Content="从 Workbench 移除记录" Command="{Binding RequestWorkerRemovalCommand}" CommandParameter="{Binding DetailedWorker}" HorizontalAlignment="Left" />
                 </StackPanel>
             </Border>
-            <ListBox IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}" SelectedItem="{Binding SelectedWorker}">
-                <ListBox.Styles>
-                    <Style Selector="ListBoxItem:selected">
-                        <Setter Property="Background" Value="Transparent" />
-                    </Style>
-                    <Style Selector="ListBoxItem:pointerover">
-                        <Setter Property="Background" Value="#202020" />
-                    </Style>
-                </ListBox.Styles>
-                <ListBox.ItemTemplate>
+            <ItemsControl IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}">
+                <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
                         <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
-                            <StackPanel Spacing="3"><TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" /><TextBlock Text="{Binding WorkerLabel}" /><TextBlock Text="{Binding Profile}" Foreground="#667085" /><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid><Button Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" /></StackPanel>
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="3">
+                                <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" />
+                                <Button Grid.Column="1" Grid.RowSpan="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" />
+                                <TextBlock Grid.Row="1" Text="{Binding WorkerLabel}" />
+                                <TextBlock Grid.Row="2" Text="{Binding Profile}" Foreground="#667085" />
+                                <Grid Grid.Row="3" ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid>
+                                <Button Grid.Row="4" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
+                            </Grid>
                         </Border>
                     </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
             <ItemsControl ItemsSource="{Binding Transcript}">
                 <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:WorkerTranscriptLineViewModel"><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>

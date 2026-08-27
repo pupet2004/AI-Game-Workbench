@@ -12,7 +12,7 @@ public partial class HomeView : UserControl
     public HomeView()
     {
         InitializeComponent();
-        AddHandler(InputElement.PointerPressedEvent, OnProjectPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(InputElement.PointerPressedEvent, OnProjectPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
     private void OnProjectPointerPressed(object? sender, PointerPressedEventArgs e)

@@ -12,7 +12,7 @@ public partial class WorkPaneView : UserControl
     public WorkPaneView()
     {
         InitializeComponent();
-        AddHandler(InputElement.PointerPressedEvent, OnAnyPointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(InputElement.PointerPressedEvent, OnAnyPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
     private void OnAnyPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -37,6 +37,18 @@ public partial class WorkPaneView : UserControl
         menu.Items.Add(new MenuItem { Header = "查看详情", Command = pane.RequestWorkerDetailsCommand, CommandParameter = worker });
         menu.Items.Add(new MenuItem { Header = "从 Workbench 移除", Command = pane.RequestWorkerRemovalCommand, CommandParameter = worker });
         menu.Open(target);
+    }
+
+    private void OnWorkerActionsClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: WorkerSessionCardViewModel worker } target ||
+            DataContext is not WorkPaneViewModel pane)
+        {
+            return;
+        }
+
+        OpenWorkerMenu(target, pane, worker);
+        e.Handled = true;
     }
 
     private async void OnWorkerCardPointerPressed(object? sender, PointerPressedEventArgs e)

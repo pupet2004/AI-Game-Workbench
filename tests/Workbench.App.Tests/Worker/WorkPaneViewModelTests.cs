@@ -273,7 +273,8 @@ public sealed class WorkPaneViewModelTests
         Assert.Contains("ConfirmWorkerRemovalCommand", markup, StringComparison.Ordinal);
         Assert.Contains("CancelWorkerRemovalCommand", markup, StringComparison.Ordinal);
         Assert.Contains("OnWorkerCardPointerPressed", markup, StringComparison.Ordinal);
-        Assert.Contains("ListBoxItem:selected", markup, StringComparison.Ordinal);
+        Assert.Contains("OnWorkerActionsClick", markup, StringComparison.Ordinal);
+        Assert.Contains("<ItemsControl IsVisible=\"{Binding HasWorkers}\"", markup, StringComparison.Ordinal);
         Assert.Contains("CornerRadius=\"8\"", markup, StringComparison.Ordinal);
         Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
         Assert.Contains("标记为已结束", codeBehind, StringComparison.Ordinal);
