@@ -1194,7 +1194,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
         catch (Exception)
         {
-            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnFailed"]);
+            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderSteerFailed"]);
             NotifyAllState();
         }
     }
