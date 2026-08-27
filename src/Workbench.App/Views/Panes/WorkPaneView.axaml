@@ -46,7 +46,7 @@
                 </ListBox.Styles>
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
-                        <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed" ContextRequested="OnWorkerCardContextRequested">
+                        <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
                             <StackPanel Spacing="3"><TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" /><TextBlock Text="{Binding WorkerLabel}" /><TextBlock Text="{Binding Profile}" Foreground="#667085" /><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid><Button Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" /></StackPanel>
                         </Border>
                     </DataTemplate>
