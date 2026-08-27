@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 # Resolve the repository from this script so the current directory does not matter.
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\Workbench.App\Workbench.App.csproj'
-$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Debug\net10.0-windows'
+$runtimeDirectory = Join-Path $repo 'artifacts\local\native-surface'
 $publishedExecutable = Join-Path $runtimeDirectory 'Workbench.App.exe'
 
 if (-not (Test-Path -LiteralPath $project)) {
@@ -31,9 +31,12 @@ if ($running.Count -gt 0) {
 $env:WORKBENCH_NATIVE_AGENT_SURFACE = '1'
 
 if (-not $NoBuild) {
+    $runtimeDirectory = Join-Path $repo ('artifacts\local\run-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    $publishedExecutable = Join-Path $runtimeDirectory 'Workbench.App.exe'
+    New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
     Push-Location $repo
     try {
-        & dotnet build $project --configuration Debug --nologo
+        & dotnet build $project --configuration Debug --nologo --output $runtimeDirectory
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }

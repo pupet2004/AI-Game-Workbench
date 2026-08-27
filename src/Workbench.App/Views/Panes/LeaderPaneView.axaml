@@ -209,17 +209,21 @@
                                        FontWeight="SemiBold"
                                        TextWrapping="Wrap" />
                         </Border>
-                        <ItemsControl ItemsSource="{Binding WorkerResources}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Content="{Binding ModelDisplayName}"
-                                            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
-                                            Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
-                                            Command="{Binding DataContext.ChangeWorkerResourceCommand, ElementName=Root}"
-                                            CommandParameter="{Binding}" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <ScrollViewer MaxHeight="220"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding WorkerResources}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding ModelDisplayName}"
+                                                Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                                                Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                                                Command="{Binding DataContext.ChangeWorkerResourceCommand, ElementName=Root}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                         <Button Content="{Binding [Leader.ConfirmWorker]}"
                                 Background="{DynamicResource SystemControlBackgroundAccentBrush}"
                                 Foreground="{DynamicResource SystemControlForegroundAltHighBrush}"

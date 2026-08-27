@@ -2,29 +2,25 @@ $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\Workbench.App\Workbench.App.csproj'
-$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Debug\net10.0-windows'
-$executable = Join-Path $runtimeDirectory 'Workbench.App.exe'
+$runRoot = Join-Path $repo 'artifacts\local'
 
 if (-not (Test-Path -LiteralPath $project)) {
     throw "Workbench project not found: $project"
 }
 
-$running = @(Get-Process -Name 'Workbench.App' -ErrorAction SilentlyContinue | Where-Object {
-    try {
-        $_.Path -and $_.Path.Equals($executable, [StringComparison]::OrdinalIgnoreCase)
-    }
-    catch {
-        $false
-    }
-})
+$running = @(Get-Process -Name 'Workbench.App' -ErrorAction SilentlyContinue)
 if ($running.Count -gt 0) {
+    Write-Output 'Workbench.App is already running. Close it before starting a rebuilt instance.'
     exit 0
 }
 
 $env:WORKBENCH_NATIVE_AGENT_SURFACE = '1'
+$runtimeDirectory = Join-Path $runRoot ('dev-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$executable = Join-Path $runtimeDirectory 'Workbench.App.exe'
+New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
 Push-Location $repo
 try {
-    & dotnet build $project --configuration Debug --nologo
+    & dotnet build $project --configuration Debug --nologo --output $runtimeDirectory
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

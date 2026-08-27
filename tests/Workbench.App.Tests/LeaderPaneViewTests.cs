@@ -15,6 +15,8 @@ public sealed class LeaderPaneViewTests
         Assert.Contains("StopCommand", markup, StringComparison.Ordinal);
         Assert.Contains("RetryRuntimeCommand", markup, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(markup, "MaxDropDownHeight=\"420\""));
+        Assert.Contains("MaxHeight=\"220\"", markup, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{Binding WorkerResources}\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]
