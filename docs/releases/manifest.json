@@ -1,0 +1,20 @@
+{
+  "product": "AI Game Workbench",
+  "version": "v0.1.0-alpha.20260827",
+  "track": "alpha",
+  "recordedAt": "2026-08-27",
+  "target": "win-x64",
+  "sourceCommit": "f4f399f",
+  "releaseTag": "v0.1.0-alpha.20260827",
+  "verification": {
+    "fullSolutionTests": 1017,
+    "appTests": 491,
+    "liveWeiQi3Acceptance": 1,
+    "warnings": 0,
+    "errors": 0
+  },
+  "artifact": {
+    "path": "artifacts/release/AI.Game.Workbench-v0.1.0-alpha.20260827-win-x64.zip",
+    "sha256": "fd4fa269355f0ff538de24fc7eda837e1d6e390428b977474942c51a3c30db82"
+  }
+}

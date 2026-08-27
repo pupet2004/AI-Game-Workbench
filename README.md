@@ -1,6 +1,30 @@
 # AI Game Workbench
 
-Windows-first AI project workbench.
+> **The project persists. Agents don't have to.**
+
+AI Game Workbench is a Windows-first reference implementation for long-running AI project continuity. A Project World keeps accepted state, decisions, handoffs, evidence, and routing history durable while Leaders, Workers, models, sessions, and runtimes remain replaceable.
+
+```text
+Codex / OpenCode / other Agents
+              |
+       Workbench Relay
+              |
+       Project World
+       |      |       |
+  Accepted  Decisions Handoffs
+    State              |
+                   Sources / Evidence
+```
+
+Current release track: **Alpha** (`v0.1.0-alpha.20260827`). The real WEIQI3 cross-Agent acceptance path has been exercised locally: Leader -> Worker -> Handoff -> Decision -> Agent replacement -> project recovery.
+
+## Documentation
+
+- [Alpha whitepaper](docs/whitepaper/workbench-alpha-whitepaper.md)
+- [Architecture](docs/architecture/workbench-alpha-architecture.md)
+- [WEIQI3 demo script](docs/demo/weiqi3-cross-agent-demo.md)
+- [Alpha known limitations](docs/alpha-known-limitations.md)
+- [Release record](docs/releases/v0.1.0-alpha.20260827.md)
 
 ## Windows Alpha Package
 
