@@ -256,6 +256,9 @@ internal sealed class TestTaskEventStore(WorkbenchDatabase database) : IWorkerRo
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), handoff.ProjectId, handoff.TaskId, null, "WorkerToLeaderHandoff", JsonSerializer.Serialize(handoff), handoff.CreatedAt), cancellationToken);
     public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) =>
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), removal.ProjectId, removal.TaskId, null, "WorkerRemoved", JsonSerializer.Serialize(removal), removal.RemovedAt), cancellationToken);
+
+    public Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default) =>
+        _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), status.ProjectId, status.TaskId, null, "WorkerStatusOverride", JsonSerializer.Serialize(status), status.ChangedAt), cancellationToken);
 }
 
 internal static class WorkerRoutingEvent

@@ -23,6 +23,7 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
     [ObservableProperty] public partial string? OpenError { get; set; }
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasPendingWorkerRemoval))] public partial WorkerSessionCardViewModel? PendingWorkerRemoval { get; set; }
     [ObservableProperty] public partial string? RemovalError { get; set; }
+    [ObservableProperty] public partial string? StatusError { get; set; }
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasWorkerDetails))] public partial WorkerSessionCardViewModel? DetailedWorker { get; set; }
     public bool HasPendingWorkerRemoval => PendingWorkerRemoval is not null;
     public bool HasWorkerDetails => DetailedWorker is not null;
@@ -64,6 +65,40 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
         RemovalError = null;
     }
     [RelayCommand] private void RequestWorkerDetails(WorkerSessionCardViewModel worker) => DetailedWorker = worker;
+    [RelayCommand] private async Task RefreshWorkerStatus(WorkerSessionCardViewModel worker)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        StatusError = null;
+        try
+        {
+            await LoadAsync(worker.Record.ProjectId);
+        }
+        catch (Exception exception)
+        {
+            StatusError = exception.Message;
+        }
+    }
+    [RelayCommand] private async Task MarkWorkerCompleted(WorkerSessionCardViewModel worker)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        if (_store is null) return;
+        StatusError = null;
+        try
+        {
+            await _store.OverrideStatusAsync(new WorkerStatusOverride(
+                worker.Record.ProjectId,
+                worker.Record.TaskId,
+                worker.Record.Session.Id,
+                AgentSessionStatus.Completed,
+                DateTimeOffset.UtcNow,
+                "User marked Worker completed in Workbench"));
+            await LoadAsync(worker.Record.ProjectId);
+        }
+        catch (Exception exception)
+        {
+            StatusError = exception.Message;
+        }
+    }
     [RelayCommand] private void CloseWorkerDetails() => DetailedWorker = null;
     [RelayCommand] private void CancelWorkerRemoval()
     {

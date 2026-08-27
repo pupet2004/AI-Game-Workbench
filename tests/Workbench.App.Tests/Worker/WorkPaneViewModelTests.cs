@@ -274,6 +274,10 @@ public sealed class WorkPaneViewModelTests
         Assert.Contains("CancelWorkerRemovalCommand", markup, StringComparison.Ordinal);
         Assert.Contains("OnWorkerDetailsClick", markup, StringComparison.Ordinal);
         Assert.Contains("OnWorkerRemovalClick", markup, StringComparison.Ordinal);
+        Assert.Contains("OnWorkerStatusRefreshClick", markup, StringComparison.Ordinal);
+        Assert.Contains("OnWorkerMarkCompletedClick", markup, StringComparison.Ordinal);
+        Assert.Contains("标记为已结束", markup, StringComparison.Ordinal);
+        Assert.Contains("ListBoxItem:selected", markup, StringComparison.Ordinal);
         Assert.Contains("CornerRadius=\"8\"", markup, StringComparison.Ordinal);
         Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
     }
@@ -286,6 +290,23 @@ public sealed class WorkPaneViewModelTests
         var card = new WorkerSessionCardViewModel(new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Waiting task", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow));
 
         Assert.NotEqual("Working", card.Status);
+    }
+
+    [Fact]
+    public async Task User_can_mark_a_worker_completed_without_deleting_its_session_record()
+    {
+        var runtime = new FakeAgentRuntime();
+        var store = new InMemoryWorkerRoutingStore();
+        var record = Session(Guid.NewGuid(), Guid.NewGuid(), "Stale task", "Worker", AgentSessionStatus.Running, TimeSpan.Zero);
+        await store.SaveSessionAsync(record);
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, new AgentRuntimeRegistry());
+        await pane.LoadAsync(record.ProjectId);
+
+        await pane.MarkWorkerCompletedCommand.ExecuteAsync(Assert.Single(pane.Workers));
+
+        var card = Assert.Single(pane.Workers);
+        Assert.Equal("Completed", card.Status);
+        Assert.Single(await store.ListSessionsAsync(record.ProjectId));
     }
 
     [Fact]
@@ -362,4 +383,19 @@ internal sealed class InMemoryWorkerRoutingStore : IWorkerRoutingStore
     public Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) => Task.FromResult(_sessions.LastOrDefault(item => item.ProjectId == projectId && item.TaskId == taskId && item.Session.Id == sessionId));
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) { Removals.Add(removal); return Task.CompletedTask; }
+    public Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default)
+    {
+        var index = _sessions.FindLastIndex(item => item.ProjectId == status.ProjectId && item.TaskId == status.TaskId && item.Session.Id == status.WorkerSessionId);
+        if (index >= 0)
+        {
+            var current = _sessions[index];
+            var changedAt = status.ChangedAt;
+            _sessions[index] = current with
+            {
+                Session = current.Session with { Status = status.Status, UpdatedAt = changedAt },
+                LastActiveAt = changedAt
+            };
+        }
+        return Task.CompletedTask;
+    }
 }

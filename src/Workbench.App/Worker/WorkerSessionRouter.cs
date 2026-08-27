@@ -52,6 +52,14 @@ public sealed record WorkerHandoff(
 
 public sealed record WorkerRemoval(Guid ProjectId, Guid TaskId, AgentSessionId WorkerSessionId, DateTimeOffset RemovedAt);
 
+public sealed record WorkerStatusOverride(
+    Guid ProjectId,
+    Guid TaskId,
+    AgentSessionId WorkerSessionId,
+    AgentSessionStatus Status,
+    DateTimeOffset ChangedAt,
+    string Reason);
+
 public interface IWorkerRoutingStore
 {
     Task SaveSessionAsync(WorkerSessionRecord session, CancellationToken cancellationToken = default);
@@ -59,6 +67,7 @@ public interface IWorkerRoutingStore
     Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default);
     Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default);
     Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default);
+    Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default);
 }
 
 public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
@@ -119,6 +128,28 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), removal.ProjectId, removal.TaskId, null,
             "WorkerRemoved", JsonSerializer.Serialize(removal), removal.RemovedAt), cancellationToken);
 
+    public async Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default)
+    {
+        if (_executions is not null)
+        {
+            var execution = await _executions.GetByAgentSessionIdAsync(status.ProjectId, status.TaskId, status.WorkerSessionId.Value, cancellationToken);
+            if (execution is not null)
+            {
+                var nextState = status.Status switch
+                {
+                    AgentSessionStatus.Completed => WorkerExecutionState.CompletedPendingReview,
+                    AgentSessionStatus.Interrupted => WorkerExecutionState.Interrupted,
+                    AgentSessionStatus.Failed => WorkerExecutionState.Failed,
+                    _ => throw new ArgumentException("Only terminal Worker statuses can be overridden.", nameof(status))
+                };
+                await _executions.UpdateStateAsync(status.ProjectId, status.TaskId, execution.ExecutionId, nextState, cancellationToken);
+            }
+        }
+
+        await _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), status.ProjectId, status.TaskId, null,
+            "WorkerStatusOverride", JsonSerializer.Serialize(status), status.ChangedAt), cancellationToken);
+    }
+
     private async Task<WorkerSessionRecord> ToRecordAsync(StoredWorkerExecution execution, CancellationToken cancellationToken)
     {
         var sessionId = Guid.Parse(execution.AgentSessionId!);
@@ -140,8 +171,28 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
         var events = await _events.ListAsync(projectId, taskId, 200, cancellationToken);
         if (events.Where(item => item.Type == "WorkerRemoved")
             .Select(TryDeserializeRemoval).Any(item => item?.WorkerSessionId == sessionId)) return null;
-        return events.Where(item => item.Type == "WorkerSessionStarted")
+        var session = events.Where(item => item.Type == "WorkerSessionStarted")
             .Select(TryDeserializeSession).LastOrDefault(item => item?.Session.Id == sessionId);
+        if (session is null) return null;
+
+        var handoff = events.Where(item => item.Type == "WorkerToLeaderHandoff").Select(TryDeserializeHandoff)
+            .Where(item => item?.WorkerSessionId == sessionId).OrderByDescending(item => item!.CreatedAt).FirstOrDefault();
+        var statusOverride = events.Where(item => item.Type == "WorkerStatusOverride").Select(TryDeserializeStatusOverride)
+            .Where(item => item?.WorkerSessionId == sessionId).OrderByDescending(item => item!.ChangedAt).FirstOrDefault();
+        if (statusOverride is { } overrideValue && (handoff is null || overrideValue.ChangedAt > handoff.CreatedAt))
+        {
+            return session with
+            {
+                Session = session.Session with { Status = overrideValue.Status, UpdatedAt = overrideValue.ChangedAt },
+                LastActiveAt = overrideValue.ChangedAt
+            };
+        }
+
+        return handoff is null ? session : session with
+        {
+            Session = session.Session with { Status = handoff.Status, UpdatedAt = handoff.CreatedAt },
+            LastActiveAt = handoff.CreatedAt
+        };
     }
 
     private async Task<IReadOnlyList<WorkerSessionRecord>> ListLegacySessionsAsync(Guid projectId, CancellationToken cancellationToken)
@@ -153,14 +204,27 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
         var sessions = new List<WorkerSessionRecord>(started.Length);
         foreach (var session in started.Where(item => !removed.Contains(item.Session.Id)))
         {
-            var handoff = (await _events.ListAsync(projectId, session.TaskId, 200, cancellationToken))
-                .Where(item => item.Type == "WorkerToLeaderHandoff").Select(TryDeserializeHandoff)
+            var taskEvents = await _events.ListAsync(projectId, session.TaskId, 200, cancellationToken);
+            var handoff = taskEvents.Where(item => item.Type == "WorkerToLeaderHandoff").Select(TryDeserializeHandoff)
                 .Where(item => item?.WorkerSessionId == session.Session.Id).OrderByDescending(item => item!.CreatedAt).FirstOrDefault();
-            sessions.Add(handoff is null ? session : session with
+            var statusOverride = taskEvents.Where(item => item.Type == "WorkerStatusOverride").Select(TryDeserializeStatusOverride)
+                .Where(item => item?.WorkerSessionId == session.Session.Id).OrderByDescending(item => item!.ChangedAt).FirstOrDefault();
+            if (statusOverride is { } overrideValue && (handoff is null || overrideValue.ChangedAt > handoff.CreatedAt))
             {
-                Session = session.Session with { Status = handoff.Status, UpdatedAt = handoff.CreatedAt },
-                LastActiveAt = handoff.CreatedAt
-            });
+                sessions.Add(session with
+                {
+                    Session = session.Session with { Status = overrideValue.Status, UpdatedAt = overrideValue.ChangedAt },
+                    LastActiveAt = overrideValue.ChangedAt
+                });
+            }
+            else
+            {
+                sessions.Add(handoff is null ? session : session with
+                {
+                    Session = session.Session with { Status = handoff.Status, UpdatedAt = handoff.CreatedAt },
+                    LastActiveAt = handoff.CreatedAt
+                });
+            }
         }
         return sessions;
     }
@@ -185,6 +249,11 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
                 parsed.Kind, parsed.ValidationSummary, parsed.SourceEventId, parsed.TaskRevisionId);
         }
         catch (JsonException) { return null; }
+    }
+
+    private static WorkerStatusOverride? TryDeserializeStatusOverride(StoredTaskEvent item)
+    {
+        try { return JsonSerializer.Deserialize<WorkerStatusOverride>(item.Payload); } catch (JsonException) { return null; }
     }
 
     private static bool TryReadGuid(JsonElement value, out Guid result)

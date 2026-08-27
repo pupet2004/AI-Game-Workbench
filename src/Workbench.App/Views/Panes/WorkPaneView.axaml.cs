@@ -31,6 +31,26 @@ public partial class WorkPaneView : UserControl
         }
     }
 
+    private void OnWorkerStatusRefreshClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: Control target } } menuItem &&
+            DataContext is WorkPaneViewModel pane &&
+            target.DataContext is WorkerSessionCardViewModel worker)
+        {
+            pane.RefreshWorkerStatusCommand.Execute(worker);
+        }
+    }
+
+    private void OnWorkerMarkCompletedClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: Control target } } menuItem &&
+            DataContext is WorkPaneViewModel pane &&
+            target.DataContext is WorkerSessionCardViewModel worker)
+        {
+            pane.MarkWorkerCompletedCommand.Execute(worker);
+        }
+    }
+
     private async void OnWorkerCardPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed ||
