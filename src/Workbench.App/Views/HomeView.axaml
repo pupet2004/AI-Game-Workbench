@@ -41,14 +41,9 @@
                         <Button Margin="0,4"
                                 Padding="12"
                                 IsEnabled="{Binding IsAvailable}"
+                                ContextRequested="OnProjectContextRequested"
                                 Command="{Binding $parent[UserControl].DataContext.OpenRecentProjectCommand}"
                                 CommandParameter="{Binding}">
-                            <Button.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="查看详情" Click="OnProjectDetailsClick" />
-                                    <MenuItem Header="删除 Workbench 记录" Click="OnProjectRemovalClick" />
-                                </ContextMenu>
-                            </Button.ContextMenu>
                             <StackPanel Spacing="3">
                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding Type}" />

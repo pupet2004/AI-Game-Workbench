@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Workbench.App.ViewModels;
 
@@ -11,27 +12,19 @@ public partial class HomeView : UserControl
         InitializeComponent();
     }
 
-    private void OnProjectDetailsClick(object? sender, RoutedEventArgs e) => InvokeProjectCommand(sender, details: true);
-
-    private void OnProjectRemovalClick(object? sender, RoutedEventArgs e) => InvokeProjectCommand(sender, details: false);
-
-    private void InvokeProjectCommand(object? sender, bool details)
+    private void OnProjectContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (sender is not MenuItem { Parent: ContextMenu { PlacementTarget: Control target } } menuItem ||
+        if (sender is not Button { DataContext: RecentProjectItemViewModel project } target ||
             DataContext is not HomeViewModel home ||
-            target.DataContext is not RecentProjectItemViewModel project)
+            !project.IsAvailable)
         {
             return;
         }
 
-        if (details)
-        {
-            home.RequestProjectDetailsCommand.Execute(project);
-        }
-        else
-        {
-            home.RequestProjectRemovalCommand.Execute(project);
-        }
-
+        var menu = new ContextMenu();
+        menu.Items.Add(new MenuItem { Header = "查看详情", Command = home.RequestProjectDetailsCommand, CommandParameter = project });
+        menu.Items.Add(new MenuItem { Header = "删除 Workbench 记录", Command = home.RequestProjectRemovalCommand, CommandParameter = project });
+        menu.Open(target);
+        e.Handled = true;
     }
 }

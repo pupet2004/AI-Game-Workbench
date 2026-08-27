@@ -268,18 +268,16 @@ public sealed class WorkPaneViewModelTests
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var markup = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "WorkPaneView.axaml"));
+        var codeBehind = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "WorkPaneView.axaml.cs"));
 
-        Assert.Contains("从 Workbench 移除", markup, StringComparison.Ordinal);
         Assert.Contains("ConfirmWorkerRemovalCommand", markup, StringComparison.Ordinal);
         Assert.Contains("CancelWorkerRemovalCommand", markup, StringComparison.Ordinal);
-        Assert.Contains("OnWorkerDetailsClick", markup, StringComparison.Ordinal);
-        Assert.Contains("OnWorkerRemovalClick", markup, StringComparison.Ordinal);
-        Assert.Contains("OnWorkerStatusRefreshClick", markup, StringComparison.Ordinal);
-        Assert.Contains("OnWorkerMarkCompletedClick", markup, StringComparison.Ordinal);
-        Assert.Contains("标记为已结束", markup, StringComparison.Ordinal);
+        Assert.Contains("OnWorkerCardContextRequested", markup, StringComparison.Ordinal);
         Assert.Contains("ListBoxItem:selected", markup, StringComparison.Ordinal);
         Assert.Contains("CornerRadius=\"8\"", markup, StringComparison.Ordinal);
         Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
+        Assert.Contains("标记为已结束", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("从 Workbench 移除", codeBehind, StringComparison.Ordinal);
     }
 
     [Fact]

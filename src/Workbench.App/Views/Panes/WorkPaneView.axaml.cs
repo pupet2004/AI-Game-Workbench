@@ -11,44 +11,21 @@ public partial class WorkPaneView : UserControl
 {
     public WorkPaneView() => InitializeComponent();
 
-    private void OnWorkerDetailsClick(object? sender, RoutedEventArgs e)
+    private void OnWorkerCardContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: Control target } } menuItem &&
-            DataContext is WorkPaneViewModel pane &&
-            target.DataContext is WorkerSessionCardViewModel worker)
+        if (sender is not Border { DataContext: WorkerSessionCardViewModel worker } target ||
+            DataContext is not WorkPaneViewModel pane)
         {
-            pane.RequestWorkerDetailsCommand.Execute(worker);
+            return;
         }
-    }
 
-    private void OnWorkerRemovalClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: Control target } } menuItem &&
-            DataContext is WorkPaneViewModel pane &&
-            target.DataContext is WorkerSessionCardViewModel worker)
-        {
-            pane.RequestWorkerRemovalCommand.Execute(worker);
-        }
-    }
-
-    private void OnWorkerStatusRefreshClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: Control target } } menuItem &&
-            DataContext is WorkPaneViewModel pane &&
-            target.DataContext is WorkerSessionCardViewModel worker)
-        {
-            pane.RefreshWorkerStatusCommand.Execute(worker);
-        }
-    }
-
-    private void OnWorkerMarkCompletedClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: Control target } } menuItem &&
-            DataContext is WorkPaneViewModel pane &&
-            target.DataContext is WorkerSessionCardViewModel worker)
-        {
-            pane.MarkWorkerCompletedCommand.Execute(worker);
-        }
+        var menu = new ContextMenu();
+        menu.Items.Add(new MenuItem { Header = "重新检查状态", Command = pane.RefreshWorkerStatusCommand, CommandParameter = worker });
+        menu.Items.Add(new MenuItem { Header = "标记为已结束", Command = pane.MarkWorkerCompletedCommand, CommandParameter = worker });
+        menu.Items.Add(new MenuItem { Header = "查看详情", Command = pane.RequestWorkerDetailsCommand, CommandParameter = worker });
+        menu.Items.Add(new MenuItem { Header = "从 Workbench 移除", Command = pane.RequestWorkerRemovalCommand, CommandParameter = worker });
+        menu.Open(target);
+        e.Handled = true;
     }
 
     private async void OnWorkerCardPointerPressed(object? sender, PointerPressedEventArgs e)
