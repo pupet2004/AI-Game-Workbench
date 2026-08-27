@@ -1,0 +1,9 @@
+# Local render and conversion output
+qa/
+rendered/
+*.pdf
+
+# Temporary editor and OS files
+~$*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+title: "Workbench: A Project Continuity Layer for Long-Term AI Collaboration"
+message: "If this architecture or whitepaper is useful, please cite the Architecture Preview."
+type: software
+version: "0.1.0-preview"
+date-released: 2026-08-27
+authors:
+  - name: "pupet"
+abstract: >-
+  An open architecture experiment for preserving project identity, decision
+  provenance, accepted state, and recoverability across changing AI agents,
+  models, sessions, and tools.
+license: MIT
+repository-code: "https://github.com/zhangshiwei159-hue/AI-Game-Workbench"
+url: "https://github.com/zhangshiwei159-hue/AI-Game-Workbench"
