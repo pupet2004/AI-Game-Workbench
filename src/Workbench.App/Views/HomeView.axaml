@@ -45,8 +45,8 @@
                                 CommandParameter="{Binding}">
                             <Button.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="查看详情" Command="{Binding #HomeRoot.DataContext.RequestProjectDetailsCommand}" CommandParameter="{Binding}" />
-                                    <MenuItem Header="删除 Workbench 记录" Command="{Binding #HomeRoot.DataContext.RequestProjectRemovalCommand}" CommandParameter="{Binding}" />
+                                    <MenuItem Header="查看详情" Click="OnProjectDetailsClick" />
+                                    <MenuItem Header="删除 Workbench 记录" Click="OnProjectRemovalClick" />
                                 </ContextMenu>
                             </Button.ContextMenu>
                             <StackPanel Spacing="3">

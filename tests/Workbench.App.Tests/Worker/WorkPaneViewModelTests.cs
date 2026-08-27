@@ -272,7 +272,8 @@ public sealed class WorkPaneViewModelTests
         Assert.Contains("从 Workbench 移除", markup, StringComparison.Ordinal);
         Assert.Contains("ConfirmWorkerRemovalCommand", markup, StringComparison.Ordinal);
         Assert.Contains("CancelWorkerRemovalCommand", markup, StringComparison.Ordinal);
-        Assert.Contains("RequestWorkerDetailsCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("OnWorkerDetailsClick", markup, StringComparison.Ordinal);
+        Assert.Contains("OnWorkerRemovalClick", markup, StringComparison.Ordinal);
         Assert.Contains("CornerRadius=\"8\"", markup, StringComparison.Ordinal);
         Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
     }

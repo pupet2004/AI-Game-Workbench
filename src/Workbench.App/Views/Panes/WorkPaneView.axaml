@@ -40,8 +40,8 @@
                         <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
                             <Border.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="查看详情" Command="{Binding #WorkRoot.DataContext.RequestWorkerDetailsCommand}" CommandParameter="{Binding}" />
-                                    <MenuItem Header="从 Workbench 移除" Command="{Binding #WorkRoot.DataContext.RequestWorkerRemovalCommand}" CommandParameter="{Binding}" />
+                                    <MenuItem Header="查看详情" Click="OnWorkerDetailsClick" />
+                                    <MenuItem Header="从 Workbench 移除" Click="OnWorkerRemovalClick" />
                                 </ContextMenu>
                             </Border.ContextMenu>
                             <StackPanel Spacing="3"><TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" /><TextBlock Text="{Binding WorkerLabel}" /><TextBlock Text="{Binding Profile}" Foreground="#667085" /><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid><Button Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" /></StackPanel>
