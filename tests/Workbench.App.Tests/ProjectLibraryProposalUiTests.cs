@@ -59,6 +59,22 @@ public sealed class ProjectLibraryProposalUiTests
     }
 
     [Fact]
+    public async Task Accept_with_one_pending_proposal_auto_selects_and_does_not_crash()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        var created = await context.Services.ProjectMemoryApi.CreateLibraryProposalAsync(Draft(workspace.Result.Project.Id));
+        await workspace.LibraryPane.InitializeAsync();
+
+        workspace.LibraryPane.SelectedLibraryProposal = null;
+        await workspace.LibraryPane.AcceptLibraryProposalAsync();
+
+        Assert.Equal(LibraryProposalStatus.Accepted,
+            (await context.Services.ProjectMemoryApi.GetLibraryProposalAsync(workspace.Result.Project.Id, created.Id))!.Status);
+        Assert.Empty(workspace.LibraryPane.PendingLibraryProposals);
+    }
+
+    [Fact]
     public async Task Edit_and_accept_immediately_refreshes_category_time_overview_timeline_and_materials()
     {
         await using var context = await AppTestContext.CreateAsync();

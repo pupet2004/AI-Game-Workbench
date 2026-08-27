@@ -296,7 +296,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     public async Task AcceptLibraryProposalAsync(CancellationToken cancellationToken = default)
     {
-        var proposal = SelectedLibraryProposal ?? throw new InvalidOperationException("Select a Library Proposal first.");
+        var proposal = ResolveLibraryProposal();
+        if (proposal is null) return;
         await ConfirmLibraryProposalAsync(
             token => _projectMemoryApi!.AcceptLibraryProposalAsync(Result.Project.Id, proposal.Id, token),
             cancellationToken);
@@ -304,7 +305,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     public async Task EditAndAcceptLibraryProposalAsync(CancellationToken cancellationToken = default)
     {
-        var proposal = SelectedLibraryProposal ?? throw new InvalidOperationException("Select a Library Proposal first.");
+        var proposal = ResolveLibraryProposal();
+        if (proposal is null) return;
         var edit = new LibraryProposalEdit(ProposalEditContent, ProposalEditOverview, proposal.Draft.Materials);
         await ConfirmLibraryProposalAsync(
             token => _projectMemoryApi!.EditAndAcceptLibraryProposalAsync(Result.Project.Id, proposal.Id, edit, token),
@@ -313,8 +315,13 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     public async Task RejectLibraryProposalAsync(CancellationToken cancellationToken = default)
     {
-        var proposal = SelectedLibraryProposal ?? throw new InvalidOperationException("Select a Library Proposal first.");
-        if (_projectMemoryApi is null) throw new InvalidOperationException("Library Proposal review is unavailable.");
+        var proposal = ResolveLibraryProposal();
+        if (proposal is null) return;
+        if (_projectMemoryApi is null)
+        {
+            LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryProposalReviewUnavailable"];
+            return;
+        }
         await _projectMemoryApi.RejectLibraryProposalAsync(Result.Project.Id, proposal.Id, cancellationToken);
         SelectedLibraryProposal = null;
         LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryProposalRejected"];
@@ -447,7 +454,24 @@ public partial class LibraryPaneViewModel : ViewModelBase
             foreach (var proposal in await _projectMemoryApi.GetPendingLibraryProposalsAsync(Result.Project.Id, cancellationToken))
                 PendingLibraryProposals.Add(proposal);
         }
+        if (SelectedLibraryProposal is null && PendingLibraryProposals.Count == 1)
+            SelectedLibraryProposal = PendingLibraryProposals[0];
         OnPropertyChanged(nameof(HasPendingLibraryProposals));
+    }
+
+    private ProjectLibraryProposal? ResolveLibraryProposal()
+    {
+        var proposal = SelectedLibraryProposal;
+        if (proposal is null && PendingLibraryProposals.Count == 1)
+        {
+            proposal = PendingLibraryProposals[0];
+            SelectedLibraryProposal = proposal;
+        }
+
+        if (proposal is null)
+            LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryProposalSelectionRequired"];
+
+        return proposal;
     }
 
     private async Task LoadAcceptedStateAsync(CancellationToken cancellationToken)
@@ -479,7 +503,11 @@ public partial class LibraryPaneViewModel : ViewModelBase
         Func<CancellationToken, Task> confirm,
         CancellationToken cancellationToken)
     {
-        if (_projectMemoryApi is null) throw new InvalidOperationException("Library Proposal review is unavailable.");
+        if (_projectMemoryApi is null)
+        {
+            LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryProposalReviewUnavailable"];
+            return;
+        }
         try
         {
             await confirm(cancellationToken);
@@ -500,6 +528,11 @@ public partial class LibraryPaneViewModel : ViewModelBase
         catch (Microsoft.Data.Sqlite.SqliteException)
         {
             LibraryProposalStatusMessage = LocalizationService.Current["Dynamic.LibraryCommitFailed"];
+            await LoadLibraryAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            LibraryProposalStatusMessage = exception.Message;
             await LoadLibraryAsync(cancellationToken);
         }
     }
