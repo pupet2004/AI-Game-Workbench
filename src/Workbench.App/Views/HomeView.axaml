@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Workbench.App.ViewModels"
              x:Class="Workbench.App.Views.HomeView"
+             x:Name="HomeRoot"
              x:DataType="vm:HomeViewModel">
     <ScrollViewer>
         <StackPanel Margin="32" Spacing="16">
@@ -13,6 +14,25 @@
                 <Button Grid.Column="1" Content="{Binding [Home.Settings]}" Command="{Binding ShowSettingsCommand}" />
             </Grid>
             <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
+            <Border IsVisible="{Binding HasProjectDetails}" Padding="12" BorderBrush="#555" BorderThickness="1" CornerRadius="8" Background="#171717">
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="项目详情" FontWeight="SemiBold" /><Button Grid.Column="1" Content="关闭" Command="{Binding CloseProjectDetailsCommand}" /></Grid>
+                    <TextBlock Text="{Binding DetailedProject.Name}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding DetailedProject.ProjectId}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DetailedProject.RootPath}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DetailedProject.Type}" />
+                    <TextBlock Text="{Binding DetailedProject.CreatedAtText, StringFormat=创建：{0}}" />
+                    <TextBlock Text="{Binding DetailedProject.LastOpenedAtText, StringFormat=最近打开：{0}}" />
+                    <Button Content="删除 Workbench 记录" Command="{Binding RequestProjectRemovalCommand}" CommandParameter="{Binding DetailedProject}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+            <Border IsVisible="{Binding HasPendingProjectRemoval}" Padding="10" BorderBrush="#D9A441" BorderThickness="1" CornerRadius="8" Background="#2A1F08">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="只从 Workbench 移除该项目记录？本地文件夹不会被删除。" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding ProjectRemovalError}" IsVisible="{Binding ProjectRemovalError}" Foreground="#FFB4AB" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="取消" Command="{Binding CancelProjectRemovalCommand}" /><Button Content="确认删除记录" Command="{Binding ConfirmProjectRemovalCommand}" /></StackPanel>
+                </StackPanel>
+            </Border>
             <TextBlock Text="{Binding [Home.Empty]}"
                        IsVisible="{Binding HasNoRecentProjects}" TextWrapping="Wrap" Opacity="0.75" />
             <ItemsControl ItemsSource="{Binding RecentProjects}">
@@ -23,6 +43,12 @@
                                 IsEnabled="{Binding IsAvailable}"
                                 Command="{Binding $parent[UserControl].DataContext.OpenRecentProjectCommand}"
                                 CommandParameter="{Binding}">
+                            <Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="查看详情" Command="{Binding #HomeRoot.DataContext.RequestProjectDetailsCommand}" CommandParameter="{Binding}" />
+                                    <MenuItem Header="删除 Workbench 记录" Command="{Binding #HomeRoot.DataContext.RequestProjectRemovalCommand}" CommandParameter="{Binding}" />
+                                </ContextMenu>
+                            </Button.ContextMenu>
                             <StackPanel Spacing="3">
                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding Type}" />

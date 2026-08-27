@@ -62,7 +62,18 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasProjectDetails))]
+    public partial RecentProjectItemViewModel? DetailedProject { get; set; }
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasPendingProjectRemoval))]
+    public partial RecentProjectItemViewModel? PendingProjectRemoval { get; set; }
+
+    [ObservableProperty]
+    public partial string? ProjectRemovalError { get; set; }
+
     public bool CanOpenProjects => !IsBusy;
+    public bool HasProjectDetails => DetailedProject is not null;
+    public bool HasPendingProjectRemoval => PendingProjectRemoval is not null;
 
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -122,6 +133,47 @@ public partial class HomeViewModel : ViewModelBase
 
     [RelayCommand]
     private Task OpenRecentProject(RecentProjectItemViewModel item) => OpenRecentProjectAsync(item);
+
+    [RelayCommand]
+    private void RequestProjectDetails(RecentProjectItemViewModel item) => DetailedProject = item;
+
+    [RelayCommand]
+    private void CloseProjectDetails() => DetailedProject = null;
+
+    [RelayCommand]
+    private void RequestProjectRemoval(RecentProjectItemViewModel item)
+    {
+        PendingProjectRemoval = item;
+        ProjectRemovalError = null;
+    }
+
+    [RelayCommand]
+    private void CancelProjectRemoval()
+    {
+        PendingProjectRemoval = null;
+        ProjectRemovalError = null;
+    }
+
+    [RelayCommand]
+    private async Task ConfirmProjectRemoval()
+    {
+        if (PendingProjectRemoval is not { } item)
+            return;
+
+        ProjectRemovalError = null;
+        try
+        {
+            await _projectRepository.RemoveAsync(item.Project.Id);
+            RecentProjects.Remove(item);
+            if (DetailedProject == item) DetailedProject = null;
+            PendingProjectRemoval = null;
+            OnPropertyChanged(nameof(HasNoRecentProjects));
+        }
+        catch (Exception exception)
+        {
+            ProjectRemovalError = exception.Message;
+        }
+    }
 
     public async Task OpenPathAsync(string folderPath, CancellationToken cancellationToken = default)
     {

@@ -23,7 +23,9 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
     [ObservableProperty] public partial string? OpenError { get; set; }
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasPendingWorkerRemoval))] public partial WorkerSessionCardViewModel? PendingWorkerRemoval { get; set; }
     [ObservableProperty] public partial string? RemovalError { get; set; }
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasWorkerDetails))] public partial WorkerSessionCardViewModel? DetailedWorker { get; set; }
     public bool HasPendingWorkerRemoval => PendingWorkerRemoval is not null;
+    public bool HasWorkerDetails => DetailedWorker is not null;
     public async Task LoadAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         Workers.Clear(); if (_store is null) return;
@@ -61,6 +63,8 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
         PendingWorkerRemoval = worker;
         RemovalError = null;
     }
+    [RelayCommand] private void RequestWorkerDetails(WorkerSessionCardViewModel worker) => DetailedWorker = worker;
+    [RelayCommand] private void CloseWorkerDetails() => DetailedWorker = null;
     [RelayCommand] private void CancelWorkerRemoval()
     {
         PendingWorkerRemoval = null;
@@ -83,17 +87,22 @@ public sealed partial class WorkPaneViewModel : ViewModelBase
 
         Workers.Remove(worker);
         if (SelectedWorker == worker) SelectedWorker = null;
+        if (DetailedWorker == worker) DetailedWorker = null;
         PendingWorkerRemoval = null;
         OnPropertyChanged(nameof(HasWorkers));
     }
     [RelayCommand] private Task Focus() => _focus();
-    private static int Rank(AgentSessionStatus status) => status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => 0, AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => 1, AgentSessionStatus.Completed => 2, _ => 3 };
+    private static int Rank(AgentSessionStatus status) => status switch { AgentSessionStatus.Running => 0, AgentSessionStatus.WaitingApproval => 1, AgentSessionStatus.Ready => 2, AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => 3, AgentSessionStatus.Completed => 4, _ => 5 };
 }
 public sealed class WorkerSessionCardViewModel(WorkerSessionRecord record)
 {
     internal WorkerSessionRecord Record => record;
     public string TaskTitle => record.TaskTitle; public string WorkerLabel => record.Label; public string Profile => record.Profile.ModelProfileId; public AgentSession Session => record.Session;
-    public string Status => record.Session.Status switch { AgentSessionStatus.Running or AgentSessionStatus.Ready => LocalizationService.Current["Dynamic.Working"], AgentSessionStatus.Completed => LocalizationService.Current["Dynamic.Completed"], AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => LocalizationService.Current["Dynamic.Interrupted"], AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Dynamic.Closed"], _ => record.Session.Status.ToString() };
+    public string SessionId => record.Session.Id.Value.ToString();
+    public string ExternalSessionId => record.Session.ExternalSessionId ?? "未提供";
+    public string WorkingDirectory => record.Session.WorkingDirectory ?? "未提供";
+    public string Runtime => record.Profile.AgentRuntimeId;
+    public string Status => record.Session.Status switch { AgentSessionStatus.Running => LocalizationService.Current["Dynamic.Working"], AgentSessionStatus.WaitingApproval => LocalizationService.Current["Dynamic.Waiting"], AgentSessionStatus.Ready => LocalizationService.Current["Dynamic.Ready"], AgentSessionStatus.Completed => LocalizationService.Current["Dynamic.Completed"], AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => LocalizationService.Current["Dynamic.Interrupted"], AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Dynamic.Closed"], _ => record.Session.Status.ToString() };
     public string LastActiveAtText => record.LastActiveAt.LocalDateTime.ToString("g");
 }
 public sealed record WorkerTranscriptLineViewModel(string Role, string Text);

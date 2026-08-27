@@ -5,6 +5,7 @@
              x:Name="WorkRoot"
              x:DataType="vm:WorkPaneViewModel">
     <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="12">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding [Worker.Title]}" FontWeight="SemiBold" /><Button Grid.Column="1" Content="{Binding [Worker.Focus]}" Command="{Binding FocusCommand}" /></Grid>
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.Empty]}" FontSize="18" />
@@ -20,12 +21,26 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+            <Border IsVisible="{Binding HasWorkerDetails}" Padding="10" BorderBrush="#555" BorderThickness="1" CornerRadius="8" Background="#171717">
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Worker 详情" FontWeight="SemiBold" /><Button Grid.Column="1" Content="关闭" Command="{Binding CloseWorkerDetailsCommand}" /></Grid>
+                    <TextBlock Text="{Binding DetailedWorker.TaskTitle}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding DetailedWorker.WorkerLabel}" />
+                    <TextBlock Text="{Binding DetailedWorker.Status}" />
+                    <TextBlock Text="{Binding DetailedWorker.SessionId, StringFormat=Session: {0}}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DetailedWorker.ExternalSessionId, StringFormat=External session: {0}}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DetailedWorker.Runtime, StringFormat=Runtime: {0}}" />
+                    <TextBlock Text="{Binding DetailedWorker.WorkingDirectory, StringFormat=工作目录: {0}}" TextWrapping="Wrap" />
+                    <Button Content="从 Workbench 移除记录" Command="{Binding RequestWorkerRemovalCommand}" CommandParameter="{Binding DetailedWorker}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
             <ListBox IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}" SelectedItem="{Binding SelectedWorker}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
-                        <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="4" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
+                        <Border Margin="0,0,0,6" Padding="10" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
                             <Border.ContextMenu>
                                 <ContextMenu>
+                                    <MenuItem Header="查看详情" Command="{Binding #WorkRoot.DataContext.RequestWorkerDetailsCommand}" CommandParameter="{Binding}" />
                                     <MenuItem Header="从 Workbench 移除" Command="{Binding #WorkRoot.DataContext.RequestWorkerRemovalCommand}" CommandParameter="{Binding}" />
                                 </ContextMenu>
                             </Border.ContextMenu>
@@ -38,5 +53,6 @@
                 <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:WorkerTranscriptLineViewModel"><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>
         </StackPanel>
+        </ScrollViewer>
     </Border>
 </UserControl>

@@ -199,6 +199,7 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
     private static AgentSessionStatus StatusFor(WorkerExecutionState state) => state switch
     {
         WorkerExecutionState.Running => AgentSessionStatus.Running,
+        WorkerExecutionState.Blocked => AgentSessionStatus.WaitingApproval,
         WorkerExecutionState.CompletedPendingReview => AgentSessionStatus.Completed,
         WorkerExecutionState.Failed => AgentSessionStatus.Failed,
         WorkerExecutionState.Interrupted => AgentSessionStatus.Interrupted,
@@ -352,43 +353,76 @@ public sealed class WorkerSessionRouter(
         async Task RunWorkerTurnAsync()
         {
             var workerPrompt = $"{request.LeaderPrompt}\n\n{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Worker)}";
-            await foreach (var item in runtime.SendAsync(session, new AgentRequest(workerPrompt), cancellationToken))
+            var completionObserved = false;
+            try
             {
-                if (item is not AgentTurnCompleted completed || string.IsNullOrWhiteSpace(completed.Result.FinalText)) continue;
-                var isTypedHandoff = WorkerHandoffPayloadParser.TryParse(completed.Result.FinalText, out var payload);
-                var eventId = Guid.NewGuid();
-                if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && assignments is not null)
+                await foreach (var item in runtime.SendAsync(session, new AgentRequest(workerPrompt), cancellationToken))
                 {
-                    var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
-                        eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message, payload.ValidationSummary }), time.GetUtcNow(), cancellationToken);
-                    if (transition != AssignmentStateTransitionResult.Applied) continue;
-                }
-                else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
-                {
-                    var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.NeedsLeaderDecision,
-                        eventId, "WorkerNeedsLeaderDecisionReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message }), time.GetUtcNow(), cancellationToken);
-                    if (transition != AssignmentStateTransitionResult.Applied) continue;
-                }
+                    if (item is not AgentTurnCompleted completed) continue;
+                    completionObserved = true;
+                    var finalText = completed.Result.FinalText ?? string.Empty;
+                    WorkerHandoffPayload? payload = null;
+                    var isTypedHandoff = !string.IsNullOrWhiteSpace(finalText) && WorkerHandoffPayloadParser.TryParse(finalText, out payload);
+                    var eventId = Guid.NewGuid();
+                    if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && assignments is not null)
+                    {
+                        var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
+                            eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message, payload.ValidationSummary }), time.GetUtcNow(), cancellationToken);
+                        if (transition != AssignmentStateTransitionResult.Applied) continue;
+                    }
+                    else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
+                    {
+                        var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.NeedsLeaderDecision,
+                            eventId, "WorkerNeedsLeaderDecisionReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message }), time.GetUtcNow(), cancellationToken);
+                        if (transition != AssignmentStateTransitionResult.Applied) continue;
+                    }
 
-                var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
-                    isTypedHandoff ? payload!.Message : completed.Result.FinalText!, time.GetUtcNow(),
-                    isTypedHandoff ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision,
-                    isTypedHandoff ? payload!.ValidationSummary : null, eventId, request.TaskRevisionId);
+                    if (executions is not null && executionId.HasValue)
+                    {
+                        var nextState = completed.Result.FinalStatus switch
+                        {
+                            AgentSessionStatus.Completed when isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport => WorkerExecutionState.CompletedPendingReview,
+                            AgentSessionStatus.Completed when isTypedHandoff => WorkerExecutionState.Blocked,
+                            AgentSessionStatus.Completed => WorkerExecutionState.CompletedPendingReview,
+                            AgentSessionStatus.Interrupted or AgentSessionStatus.Stopped => WorkerExecutionState.Interrupted,
+                            AgentSessionStatus.Failed => WorkerExecutionState.Failed,
+                            _ => WorkerExecutionState.Failed
+                        };
+                        await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, nextState, CancellationToken.None);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(finalText)) continue;
+                    var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
+                        isTypedHandoff ? payload!.Message : finalText, time.GetUtcNow(),
+                        isTypedHandoff ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision,
+                        isTypedHandoff ? payload!.ValidationSummary : null, eventId, request.TaskRevisionId);
+                    await store.AppendHandoffAsync(handoff, cancellationToken);
+                    if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && reviews is not null)
+                        await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
+                    if (request.OnHandoff is not null)
+                    {
+                        try { await request.OnHandoff(handoff, cancellationToken); }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                        catch { }
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                if (!completionObserved && executions is not null && executionId.HasValue)
+                    try { await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, WorkerExecutionState.Interrupted, CancellationToken.None); } catch { }
+                throw;
+            }
+            catch
+            {
                 if (executions is not null && executionId.HasValue)
-                {
-                    await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value,
-                        isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport ? WorkerExecutionState.CompletedPendingReview : WorkerExecutionState.Blocked,
-                        cancellationToken);
-                }
-                await store.AppendHandoffAsync(handoff, cancellationToken);
-                if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && reviews is not null)
-                    await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
-                if (request.OnHandoff is not null)
-                {
-                    try { await request.OnHandoff(handoff, cancellationToken); }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                    catch { }
-                }
+                    try { await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, WorkerExecutionState.Failed, CancellationToken.None); } catch { }
+                throw;
+            }
+            finally
+            {
+                if (!completionObserved && !cancellationToken.IsCancellationRequested && executions is not null && executionId.HasValue)
+                    try { await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, WorkerExecutionState.Failed, CancellationToken.None); } catch { }
             }
         }
 
@@ -402,19 +436,6 @@ public sealed class WorkerSessionRouter(
                 async completed =>
                 {
                     _ = completed.Exception;
-                    if (executions is not null && executionId.HasValue)
-                    {
-                        try
-                        {
-                            await executions.UpdateStateAsync(
-                                request.Project.Id,
-                                request.TaskId,
-                                executionId.Value,
-                                WorkerExecutionState.Failed,
-                                CancellationToken.None);
-                        }
-                        catch { }
-                    }
                 },
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,

@@ -20,6 +20,9 @@ public sealed partial class RecentProjectItemViewModel : ViewModelBase
     public string Name => Project.Name;
 
     public string RootPath => Project.RootPath;
+    public string ProjectId => Project.Id.ToString();
+    public string CreatedAtText => Project.CreatedAt.LocalDateTime.ToString("g");
+    public string LastOpenedAtText => Project.LastOpenedAt.LocalDateTime.ToString("g");
 
     public ProjectType Type => Project.Type;
 

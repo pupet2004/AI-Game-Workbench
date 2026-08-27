@@ -272,6 +272,19 @@ public sealed class WorkPaneViewModelTests
         Assert.Contains("从 Workbench 移除", markup, StringComparison.Ordinal);
         Assert.Contains("ConfirmWorkerRemovalCommand", markup, StringComparison.Ordinal);
         Assert.Contains("CancelWorkerRemovalCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("RequestWorkerDetailsCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("CornerRadius=\"8\"", markup, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Waiting_worker_is_not_presented_as_working()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", "C:/Project", "thread-waiting", AgentSessionStatus.WaitingApproval, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Waiting task", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow));
+
+        Assert.NotEqual("Working", card.Status);
     }
 
     [Fact]

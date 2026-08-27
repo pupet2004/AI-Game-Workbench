@@ -126,6 +126,24 @@ public sealed class HomeViewModelTests
     }
 
     [Fact]
+    public async Task Removing_project_record_does_not_delete_local_folder()
+    {
+        using var folder = new TemporaryDirectory();
+        await using var context = await AppTestContext.CreateAsync();
+        await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var home = context.CreateHome();
+        await home.LoadAsync();
+        var item = Assert.Single(home.RecentProjects);
+
+        home.RequestProjectRemovalCommand.Execute(item);
+        await home.ConfirmProjectRemovalCommand.ExecuteAsync(null);
+
+        Assert.Empty(home.RecentProjects);
+        Assert.True(Directory.Exists(folder.Path));
+        Assert.Null(await context.Services.ProjectRepository.GetByIdAsync(item.Project.Id));
+    }
+
+    [Fact]
     public async Task Open_failure_keeps_home_active()
     {
         await using var context = await AppTestContext.CreateAsync();
