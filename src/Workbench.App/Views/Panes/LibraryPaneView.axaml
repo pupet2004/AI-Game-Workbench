@@ -4,7 +4,8 @@
              x:Class="Workbench.App.Views.Panes.LibraryPaneView"
              x:DataType="vm:LibraryPaneViewModel">
     <Border Padding="16">
-        <StackPanel Spacing="12">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Hidden">
+            <StackPanel Spacing="12">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding [Library.Title]}" FontWeight="SemiBold" /><Button Grid.Column="1" Content="{Binding [Library.Focus]}" Command="{Binding FocusCommand}" /></Grid>
             <WrapPanel ItemHeight="28">
                 <Button Content="{Binding [Library.Overview]}" Command="{Binding ShowOverviewCommand}" />
@@ -83,6 +84,7 @@
                 <TextBlock Text="Working Tree:" /><TextBlock Text="{Binding WorkingTreeText}" />
                 <TextBlock Text="{Binding StatusMessage}" Foreground="IndianRed" />
             </StackPanel>
-        </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
     </Border>
 </UserControl>
