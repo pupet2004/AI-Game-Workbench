@@ -79,6 +79,44 @@ public sealed class LeaderDraftProposalTests
     }
 
     [Fact]
+    public void Fenced_structured_response_is_unwrapped_before_parsing()
+    {
+        var json = """
+            ```json
+            {"response":"Visible.","draft_proposal":null,"memory_commands":null,"summary_deltas":null}
+            ```
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+        Assert.Equal("Visible.", parsed.Response);
+        Assert.Empty(parsed.SummaryDeltas);
+    }
+
+    [Fact]
+    public void Consecutive_structured_envelopes_use_the_last_complete_response()
+    {
+        var json = """
+            {"response":"Intermediate audit progress.","draft_proposal":null,"memory_commands":null,"summary_deltas":null}{"response":"Final audit conclusion.","draft_proposal":null,"memory_commands":null,"summary_deltas":null}
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+        Assert.Equal("Final audit conclusion.", parsed.Response);
+        Assert.Empty(parsed.SummaryDeltas);
+    }
+
+    [Fact]
+    public void Non_protocol_text_between_envelopes_is_rejected()
+    {
+        var json = """
+            {"response":"First.","draft_proposal":null,"memory_commands":null,"summary_deltas":null}
+            progress text
+            {"response":"Second.","draft_proposal":null,"memory_commands":null,"summary_deltas":null}
+            """;
+
+        Assert.False(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out _));
+    }
+
+    [Fact]
     public void Null_summary_sidecar_is_normal_no_summary()
     {
         const string json = "{\"response\":\"No durable rationale.\",\"draft_proposal\":null,\"memory_commands\":null,\"summary_deltas\":null}";

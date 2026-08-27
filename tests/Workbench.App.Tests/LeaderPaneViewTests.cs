@@ -17,6 +17,17 @@ public sealed class LeaderPaneViewTests
     }
 
     [Fact]
+    public void Native_surface_uses_explicit_steer_and_chat_keyboard_semantics()
+    {
+        var codeBehind = ReadLeaderSurfaceCodeBehind();
+
+        Assert.Contains("$('action').disabled=state.busy&&!canSteer", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("e.key==='Enter'&&!e.shiftKey", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("command:'steer'", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Working · type to steer", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Leader_conversation_is_scrollable_and_input_stays_in_bottom_row()
     {
         var markup = ReadLeaderView();
@@ -66,8 +77,8 @@ public sealed class LeaderPaneViewTests
     {
         var markup = ReadLeaderView();
 
-        Assert.Contains("Content=\"{Binding [Leader.NewBrain]}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("StartNewBrainCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"{Binding [Leader.ChangeBrain]}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenBrainPickerCommand", markup, StringComparison.Ordinal);
         Assert.Contains("HasPendingRotationDecision", markup, StringComparison.Ordinal);
         Assert.Contains("Content=\"{Binding [Leader.ContinuePrevious]}\"", markup, StringComparison.Ordinal);
         Assert.Contains("ContinuePreviousCommand", markup, StringComparison.Ordinal);
@@ -129,6 +140,12 @@ public sealed class LeaderPaneViewTests
             "Views",
             "Panes",
             "LeaderPaneView.axaml"));
+    }
+
+    private static string ReadLeaderSurfaceCodeBehind()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        return File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "LeaderAgentSurfaceView.axaml.cs"));
     }
 
     private static int CountOccurrences(string value, string fragment) =>

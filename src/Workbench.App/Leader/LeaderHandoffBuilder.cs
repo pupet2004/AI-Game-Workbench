@@ -1,5 +1,6 @@
 using System.Text;
 using Workbench.Storage.Leaders;
+using Workbench.App.Skills;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Leader;
@@ -8,7 +9,9 @@ public static class LeaderHandoffBuilder
 {
     public const int MaxHandoffUtf8Bytes = 6000;
 
-    public const string SemanticPrompt = """
+    public static readonly string SemanticPrompt = $"""
+        {WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Leader)}
+
         You are writing a shift handoff for a fresh runtime session that will serve the same logical Project Main Leader.
 
         Use only the user-visible conversation from the current Session Epoch. Ignore any inherited WORKBENCH PROJECT CONTEXT envelope from the Epoch's first turn; do not summarize or repeat inherited project memory or the prior handoff. Do not read files. Do not run commands. Do not use tools. Do not request approval.

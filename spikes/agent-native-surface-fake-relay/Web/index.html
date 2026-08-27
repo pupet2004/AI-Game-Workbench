@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workbench Agent Surface Spike</title>
+  <style>
+    :root { color-scheme: dark; font-family: Segoe UI, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #111820; color: #e7edf3; }
+    header { padding: 16px 20px; border-bottom: 1px solid #2b3844; background: #18232d; }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #9fb0bf; font-size: 12px; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: calc(100vh - 79px); }
+    section { min-width: 0; }
+    #transcript { padding: 22px; overflow: auto; max-height: 62vh; user-select: text; }
+    .message { max-width: 82ch; margin: 0 0 18px; padding: 14px 16px; border: 1px solid #2b3844; border-radius: 8px; background: #17212a; white-space: pre-wrap; line-height: 1.5; }
+    .message.user { margin-left: auto; background: #20372e; border-color: #35634d; }
+    .message .label { display: block; margin-bottom: 6px; color: #8fa5b4; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; user-select: none; }
+    .message code { color: #a9d4ff; }
+    .tool { border-left: 3px solid #d1a84e; padding: 8px 12px; margin: 8px 0 18px; color: #d8c99e; background: #241f16; }
+    .approval { border: 1px solid #b07c32; background: #2c2112; padding: 12px; margin-bottom: 18px; border-radius: 8px; }
+    button, input[type=file] { font: inherit; }
+    button { border: 1px solid #3b5364; color: #e7edf3; background: #243442; border-radius: 6px; padding: 7px 11px; cursor: pointer; }
+    button:hover { background: #2e4658; }
+    button:disabled { opacity: .45; cursor: default; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 22px 14px; }
+    .composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 14px 22px 20px; border-top: 1px solid #2b3844; }
+    textarea { min-height: 72px; resize: vertical; width: 100%; padding: 10px; border: 1px solid #3b5364; border-radius: 6px; background: #10171d; color: #e7edf3; }
+    aside { border-left: 1px solid #2b3844; padding: 18px; background: #141d25; overflow: auto; }
+    h2 { margin: 0 0 10px; font-size: 14px; }
+    .card { border: 1px solid #2b3844; padding: 12px; border-radius: 8px; margin-bottom: 14px; }
+    dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; font-size: 12px; }
+    dt { color: #8fa5b4; } dd { margin: 0; overflow-wrap: anywhere; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { display: flex; gap: 8px; align-items: flex-start; margin: 7px 0; font-size: 12px; }
+    .pass { color: #7bd6a4; } .pending { color: #9fb0bf; }
+    #log { max-height: 180px; overflow: auto; font: 11px Consolas, monospace; color: #9fb0bf; white-space: pre-wrap; }
+    .hint { color: #9fb0bf; font-size: 12px; margin: 0 0 12px; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } aside { border-left: 0; border-top: 1px solid #2b3844; } #transcript { max-height: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Agent Native Surface Spike</h1>
+    <div class="meta"><span id="connection">Connecting…</span><span>Fake Relay only</span><span>Host owns identity, transcript, and governance</span></div>
+  </header>
+  <main>
+    <section>
+      <div id="transcript" aria-label="Transcript"></div>
+      <div id="approval-root"></div>
+      <div class="actions">
+        <button id="stop" disabled>Stop</button>
+        <button id="steer" disabled>Steer current turn</button>
+        <button id="reload">Reload transcript</button>
+        <label><input id="attachment" type="file" /></label>
+        <button id="selection-check">Run DOM selection check</button>
+      </div>
+      <form id="composer" class="composer">
+        <textarea id="input" placeholder="Send a message to the Fake Agent…"></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+    <aside>
+      <div class="card">
+        <h2>Workbench binding</h2>
+        <dl id="binding"></dl>
+      </div>
+      <div class="card">
+        <h2>Capability proof</h2>
+        <p class="hint">Drag from the blank space beside one message across another to verify native DOM selection.</p>
+        <ul id="checks"></ul>
+      </div>
+      <div class="card"><h2>Relay log</h2><div id="log"></div></div>
+    </aside>
+  </main>
+  <script>
+    const checks = {
+      selection: 'DOM selection across messages', streaming: 'Streaming deltas', approval: 'Approval round-trip',
+      interrupt: 'Stop / interrupt', steer: 'Steer', attachment: 'Attachment token', transcript: 'Transcript reload',
+      metadata: 'Assignment / Attempt metadata', handoff: 'Result → non-authoritative Handoff', restart: 'Kill / restart continuity'
+    };
+    const previewOnly = !window.chrome?.webview;
+    const state = { passed: new Set(), messages: new Map(), currentTurn: null, capabilities: {}, boot: Number(sessionStorage.getItem('boot') || 0) + 1, previewApproval: null, previewSequence: 0 };
+    sessionStorage.setItem('boot', String(state.boot));
+    const $ = id => document.getElementById(id);
+    function log(text) { const node = document.createElement('div'); node.textContent = text; $('log').prepend(node); }
+    function pass(key) { state.passed.add(key); const item = document.querySelector(`[data-check="${key}"]`); if (item) { item.className = 'pass'; item.textContent = '✓ ' + checks[key]; } }
+    function renderChecks() { $('checks').innerHTML = Object.entries(checks).map(([key, text]) => `<li data-check="${key}" class="${state.passed.has(key) ? 'pass' : 'pending'}">${state.passed.has(key) ? '✓' : '○'} ${text}</li>`).join(''); }
+    function send(message) {
+      if (!window.chrome?.webview) { log('Preview-only local event: ' + message.type + (message.command ? `:${message.command}` : '')); previewHandle(message); return; }
+      window.chrome.webview.postMessage(JSON.stringify(message));
+      log('→ ' + message.type + (message.command ? `:${message.command}` : ''));
+    }
+    function previewEmit(eventType, payload) { onEvent({ type: 'event', sequence: ++state.previewSequence, eventType, payload }); }
+    function previewHandle(message) {
+      if (message.type !== 'command') return;
+      if (message.command === 'send_turn') {
+        const turn = ++state.boot;
+        const messageId = `preview-assistant-${turn}`;
+        state.currentTurn = `preview-turn-${turn}`;
+        previewEmit('user_message', { messageId: `preview-user-${turn}`, text: message.text });
+        previewEmit('turn_started', { turnId: state.currentTurn });
+        setTimeout(() => previewEmit('assistant_delta', { messageId, text: 'Preview streaming delta: the browser surface is receiving events. ' }), 180);
+        setTimeout(() => { state.previewApproval = `preview-approval-${turn}`; previewEmit('approval_requested', { requestId: state.previewApproval, description: 'Preview approval: allow the simulated provider action?', options: [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }] }); }, 450);
+        return;
+      }
+      if (message.command === 'respond_approval' && message.requestId === state.previewApproval) {
+        const option = message.option || 'deny';
+        previewEmit('approval_resolved', { requestId: message.requestId, option });
+        setTimeout(() => { previewEmit('assistant_delta', { messageId: `preview-assistant-${state.boot}`, text: option === 'allow' ? 'Approval resolved. This result will become a non-authoritative Handoff.' : 'Approval denied. No project state was changed.' }); previewEmit('turn_completed', { turnId: state.currentTurn, status: 'completed' }); previewEmit('handoff_created', { handoffId: `preview-handoff-${state.boot}`, authorityDecisionCreated: false }); }, 160);
+        return;
+      }
+      if (message.command === 'attach') { previewEmit('attachment_received', { token: `preview-attachment-token-${Date.now()}`, name: message.file?.name, size: message.file?.size, mediaType: message.file?.type }); return; }
+      if (message.command === 'interrupt') { previewEmit('turn_interrupted', { reason: 'preview_stop' }); return; }
+      if (message.command === 'steer') { previewEmit('steer_acknowledged', { turnId: state.currentTurn, text: message.text }); }
+    }
+    function renderBinding(binding) {
+      state.capabilities = binding.capabilities || {};
+      $('binding').innerHTML = Object.entries(binding).filter(([key]) => key !== 'capabilities').map(([key, value]) => `<dt>${key}</dt><dd>${value ?? '—'}</dd>`).join('');
+      $('steer').disabled = state.capabilities.steer !== true;
+      $('steer').title = state.capabilities.steer === true ? 'Send a steer command' : 'This provider adapter does not expose steer.';
+      pass('metadata');
+    }
+    function upsertMessage(message) {
+      let node = state.messages.get(message.id);
+      if (!node) { node = document.createElement('article'); node.className = `message ${message.role}`; node.dataset.messageId = message.id; node.innerHTML = `<span class="label">${message.role}</span><span class="body"></span>`; $('transcript').append(node); state.messages.set(message.id, node); }
+      node.querySelector('.body').textContent = message.text || '';
+      $('transcript').scrollTop = $('transcript').scrollHeight;
+    }
+    function appendMessage(id, role, delta) {
+      const existing = state.messages.get(id);
+      const text = (existing?.querySelector('.body').textContent || '') + (delta || '');
+      upsertMessage({ id, role, text });
+    }
+    function onEvent(event) {
+      log('← event:' + event.eventType);
+      const p = event.payload || {};
+      if (event.eventType === 'transcript') { state.messages.clear(); $('transcript').replaceChildren(); (p.messages || []).forEach(upsertMessage); if (state.boot > 1) pass('transcript'); pass('restart'); return; }
+      if (event.eventType === 'assistant_delta') { appendMessage(p.messageId, 'assistant', p.text); pass('streaming'); return; }
+      if (event.eventType === 'user_message') { upsertMessage({ id: p.messageId, role: 'user', text: p.text }); return; }
+      if (event.eventType === 'tool_started' || event.eventType === 'tool_completed' || event.eventType === 'tool_event') { const tool = document.createElement('div'); tool.className = 'tool'; tool.textContent = `${event.eventType}: ${p.name || ''} ${p.detail || ''}`; $('transcript').append(tool); return; }
+      if (event.eventType === 'approval_requested') {
+        const root = $('approval-root');
+        const options = p.options?.length ? p.options : [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }];
+        root.innerHTML = `<div class="approval"><strong>Approval requested</strong><p>${p.description}</p>${options.map(option => `<button data-approval="${option.id}">${option.label}</button>`).join(' ')}</div>`;
+        root.querySelectorAll('button').forEach(button => button.onclick = () => send({ type: 'command', command: 'respond_approval', requestId: p.requestId, option: button.dataset.approval })); pass('approval'); return;
+      }
+      if (event.eventType === 'approval_resolved') { $('approval-root').replaceChildren(); return; }
+      if (event.eventType === 'turn_started') { state.currentTurn = p.turnId; $('stop').disabled = state.capabilities.interrupt !== true; $('steer').disabled = state.capabilities.steer !== true; return; }
+      if (event.eventType === 'turn_interrupted') { $('stop').disabled = true; pass('interrupt'); return; }
+      if (event.eventType === 'steer_acknowledged') { pass('steer'); return; }
+      if (event.eventType === 'steer_unavailable') { $('steer').disabled = true; $('steer').title = p.reason || 'Steer is unavailable.'; return; }
+      if (event.eventType === 'error') { log('Relay error: ' + p.message); return; }
+      if (event.eventType === 'attachment_received') { log(`attachment token: ${p.token}`); upsertMessage({ id: `attachment-${p.token}`, role: 'user', text: `Attached file: ${p.name}\nHost token: ${p.token}` }); pass('attachment'); return; }
+      if (event.eventType === 'turn_completed') { $('stop').disabled = true; $('steer').disabled = true; pass('handoff'); return; }
+      if (event.eventType === 'handoff_created') { log('Handoff created without AuthorityDecision'); pass('handoff'); return; }
+    }
+    function renderSeedTranscript() {
+      if ($('transcript').children.length > 0) return;
+      upsertMessage({ id: 'preview-1', role: 'assistant', text: 'Preview message: this is native DOM text. You can start dragging from the blank space beside it.' });
+      upsertMessage({ id: 'preview-2', role: 'assistant', text: 'Open the desktop Fake Relay host to receive streaming, approval, attachment token, and Handoff events.' });
+    }
+    window.workbenchReceive = raw => { const message = typeof raw === 'string' ? JSON.parse(raw) : raw; if (message.type === 'initialize') { $('connection').textContent = `Connected · ${message.session.agentSessionId}`; renderBinding(message.session); (message.events || []).forEach(onEvent); } else if (message.type === 'event') onEvent(message); };
+    $('composer').onsubmit = event => { event.preventDefault(); const text = $('input').value.trim(); if (!text) return; send({ type: 'command', command: 'send_turn', text }); $('input').value = ''; };
+    $('stop').onclick = () => send({ type: 'command', command: 'interrupt', turnId: state.currentTurn });
+    $('steer').onclick = () => { if (state.capabilities.steer === true) send({ type: 'command', command: 'steer', turnId: state.currentTurn, text: 'Focus on the smallest verifiable result.' }); };
+    $('reload').onclick = () => location.reload();
+    $('attachment').onchange = event => { const file = event.target.files[0]; if (file) send({ type: 'command', command: 'attach', file: { name: file.name, size: file.size, type: file.type } }); };
+    $('selection-check').onclick = () => { const nodes = [...document.querySelectorAll('.message .body')]; if (nodes.length < 2) return; const range = document.createRange(); range.setStart(nodes[0].firstChild, 0); range.setEnd(nodes[nodes.length - 1].firstChild, nodes[nodes.length - 1].textContent.length); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); pass('selection'); log('DOM range spans multiple messages; native selection is enabled.'); };
+    renderSeedTranscript();
+    renderChecks();
+    if (window.chrome?.webview) {
+      window.chrome.webview.addEventListener('message', event => window.workbenchReceive(event.data));
+      send({ type: 'ready', boot: state.boot });
+    } else {
+      $('connection').textContent = 'Standalone preview · local event simulation';
+      renderBinding({ projectId: 'preview-project', role: 'leader', assignmentId: 'preview-assignment', attemptId: 'preview-attempt', agentSessionId: 'preview-session', provider: 'preview', capabilities: { streaming: true, approval: true, interrupt: true, steer: true, attachments: true, transcript: true } });
+      log('Preview-only simulation is active; use the desktop host for real Relay verification.');
+    }
+  </script>
+</body>
+</html>

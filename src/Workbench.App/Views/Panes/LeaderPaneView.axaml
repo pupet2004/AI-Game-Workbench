@@ -2,21 +2,22 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Workbench.App.ViewModels.Panes"
              xmlns:leader="using:Workbench.App.ViewModels.Leader"
+             xmlns:views="using:Workbench.App.Views.Panes"
              x:Class="Workbench.App.Views.Panes.LeaderPaneView"
              x:Name="Root"
              x:DataType="vm:LeaderPaneViewModel">
-    <Border Padding="16" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
-        <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12">
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+    <Border Padding="16,16,16,4" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="0">
+            <Grid Grid.Row="0" Margin="0,0,0,12" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                 <TextBlock Text="{Binding [Leader.Title]}" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <Button Grid.Column="1"
-                        Content="{Binding [Leader.NewBrain]}"
-                        Command="{Binding StartNewBrainCommand}"
-                        IsEnabled="{Binding CanStartNewBrain}" />
+                        Content="{Binding [Leader.ChangeBrain]}"
+                        Command="{Binding OpenBrainPickerCommand}"
+                        IsEnabled="{Binding CanChangeBrain}" />
                 <Button Grid.Column="2" Content="{Binding [Leader.Focus]}" Command="{Binding FocusCommand}" />
             </Grid>
 
-            <StackPanel Grid.Row="1" Spacing="6">
+            <StackPanel Grid.Row="1" Margin="0,0,0,12" Spacing="6">
                 <Border IsVisible="{Binding ShowRotationMessage}"
                         Padding="8"
                         Background="#FFF8E7"
@@ -38,9 +39,37 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
+                <Border IsVisible="{Binding IsBrainPickerVisible}"
+                        Padding="10"
+                        Background="#171717"
+                        BorderBrush="#555"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{Binding [Leader.ChangeBrainTitle]}"
+                                   Foreground="#FFFFFF"
+                                   FontWeight="SemiBold" />
+                        <ComboBox ItemsSource="{Binding AvailableModels}"
+                                  SelectedItem="{Binding BrainTargetModel, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="leader:LeaderModelOptionViewModel">
+                                    <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="{Binding [Leader.ChangeBrainConfirm]}"
+                                    Command="{Binding SwitchBrainCommand}"
+                                    IsEnabled="{Binding CanChangeBrain}" />
+                            <Button Content="{Binding [Leader.ChangeBrainCancel]}"
+                                    Command="{Binding CancelBrainPickerCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
                 <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasRuntimeStatus}">
-                    <TextBlock Text="{Binding RuntimeStatus}"
-                               Foreground="#B42318"
+                    <TextBlock x:Name="RuntimeStatusText"
+                               Foreground="#FFFFFF"
                                TextWrapping="Wrap" />
                     <Button Grid.Column="1"
                             Content="{Binding [Leader.Retry]}"
@@ -52,7 +81,14 @@
                 </Border>
             </StackPanel>
 
-            <Grid Grid.Row="2">
+            <views:LeaderAgentSurfaceView Grid.Row="2"
+                                          Margin="0,0,0,4"
+                                          DataContext="{Binding}"
+                                          IsVisible="{Binding IsNativeAgentSurfaceEnabled}" />
+
+            <Grid Grid.Row="2"
+                  Margin="0,0,0,12"
+                  IsVisible="{Binding IsLegacyTranscriptVisible}">
                 <ScrollViewer x:Name="ConversationScrollViewer"
                               Loaded="OnLoaded"
                               VerticalScrollBarVisibility="Auto"
@@ -78,7 +114,7 @@
                                                 <Border IsVisible="{Binding HasError}" Padding="6" Background="#FFF8E7" CornerRadius="4">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <TextBlock Text="{Binding ErrorMessage}" Foreground="#B42318" />
-                                                        <Button Content="Retry" Command="{Binding RetryCommand}" />
+                                    <Button Content="{Binding [Leader.Retry]}" Command="{Binding RetryCommand}" />
                                                     </StackPanel>
                                                 </Border>
                                                 <ItemsControl ItemsSource="{Binding Messages}" IsVisible="{Binding IsExpanded}">
@@ -195,7 +231,7 @@
                         Background="#EEF4FF"
                         CornerRadius="6">
                     <StackPanel Spacing="8">
-                                   <TextBlock Text="A fresh Leader session is available."
+                                   <TextBlock Text="{Binding RotationMessage}"
                                    FontWeight="SemiBold"
                                    Foreground="#344054"
                                    TextWrapping="Wrap" />
@@ -213,7 +249,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border IsVisible="{Binding HasPendingApproval}"
+                <Border IsVisible="{Binding ShowNativeApproval}"
                         Padding="12"
                         BorderBrush="#D9A441"
                         BorderThickness="1"
@@ -247,7 +283,10 @@
                 </Border>
             </StackPanel>
 
-            <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <Grid Grid.Row="4"
+                  IsVisible="{Binding IsLegacyTranscriptVisible}"
+                  ColumnDefinitions="*,Auto,Auto"
+                  ColumnSpacing="8">
                 <TextBox Text="{Binding DraftMessage, Mode=TwoWay}"
                          PlaceholderText="{Binding [Leader.MessagePlaceholder]}"
                          AcceptsReturn="True"

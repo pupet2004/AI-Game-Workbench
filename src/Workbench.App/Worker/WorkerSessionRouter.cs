@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Workbench.App.Leader;
+using Workbench.App.Skills;
 using Workbench.Core.Tasks;
 using Workbench.Core.Workers;
 using Workbench.Runtime.Agents;
@@ -21,7 +22,8 @@ public sealed record WorkerStartRequest(
     string WorkerLabel,
     Func<WorkerHandoff, CancellationToken, Task>? OnHandoff = null,
     Guid? ExecutionId = null,
-    WorkerExecutionIdentity? ExecutionIdentity = null);
+    WorkerExecutionIdentity? ExecutionIdentity = null,
+    bool WaitForCompletion = true);
 
 public sealed record WorkerStartResult(bool Succeeded, AgentSession? WorkerSession, string? Error);
 
@@ -347,43 +349,76 @@ public sealed class WorkerSessionRouter(
             }
         }
 
-        await foreach (var item in runtime.SendAsync(session, new AgentRequest(request.LeaderPrompt), cancellationToken))
+        async Task RunWorkerTurnAsync()
         {
-            if (item is not AgentTurnCompleted completed || string.IsNullOrWhiteSpace(completed.Result.FinalText)) continue;
-            var isTypedHandoff = WorkerHandoffPayloadParser.TryParse(completed.Result.FinalText, out var payload);
-            var eventId = Guid.NewGuid();
-            if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && assignments is not null)
+            var workerPrompt = $"{request.LeaderPrompt}\n\n{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Worker)}";
+            await foreach (var item in runtime.SendAsync(session, new AgentRequest(workerPrompt), cancellationToken))
             {
-                var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
-                    eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message, payload.ValidationSummary }), time.GetUtcNow(), cancellationToken);
-                if (transition != AssignmentStateTransitionResult.Applied) continue;
-            }
-            else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
-            {
-                var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.NeedsLeaderDecision,
-                    eventId, "WorkerNeedsLeaderDecisionReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message }), time.GetUtcNow(), cancellationToken);
-                if (transition != AssignmentStateTransitionResult.Applied) continue;
-            }
+                if (item is not AgentTurnCompleted completed || string.IsNullOrWhiteSpace(completed.Result.FinalText)) continue;
+                var isTypedHandoff = WorkerHandoffPayloadParser.TryParse(completed.Result.FinalText, out var payload);
+                var eventId = Guid.NewGuid();
+                if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && assignments is not null)
+                {
+                    var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
+                        eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message, payload.ValidationSummary }), time.GetUtcNow(), cancellationToken);
+                    if (transition != AssignmentStateTransitionResult.Applied) continue;
+                }
+                else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
+                {
+                    var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.NeedsLeaderDecision,
+                        eventId, "WorkerNeedsLeaderDecisionReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message }), time.GetUtcNow(), cancellationToken);
+                    if (transition != AssignmentStateTransitionResult.Applied) continue;
+                }
 
-            var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
-                isTypedHandoff ? payload!.Message : completed.Result.FinalText!, time.GetUtcNow(),
-                isTypedHandoff ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision,
-                isTypedHandoff ? payload!.ValidationSummary : null, eventId, request.TaskRevisionId);
-            if (executions is not null && executionId.HasValue)
-            {
-                await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value,
-                    isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport ? WorkerExecutionState.CompletedPendingReview : WorkerExecutionState.Blocked,
-                    cancellationToken);
+                var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
+                    isTypedHandoff ? payload!.Message : completed.Result.FinalText!, time.GetUtcNow(),
+                    isTypedHandoff ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision,
+                    isTypedHandoff ? payload!.ValidationSummary : null, eventId, request.TaskRevisionId);
+                if (executions is not null && executionId.HasValue)
+                {
+                    await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value,
+                        isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport ? WorkerExecutionState.CompletedPendingReview : WorkerExecutionState.Blocked,
+                        cancellationToken);
+                }
+                await store.AppendHandoffAsync(handoff, cancellationToken);
+                if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && reviews is not null)
+                    await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
+                if (request.OnHandoff is not null)
+                {
+                    try { await request.OnHandoff(handoff, cancellationToken); }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch { }
+                }
             }
-            await store.AppendHandoffAsync(handoff, cancellationToken);
-            if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && reviews is not null)
-                await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
-            if (request.OnHandoff is not null)
-            {
-                try { await request.OnHandoff(handoff, cancellationToken); }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch { }
-            }
+        }
+
+        if (request.WaitForCompletion)
+        {
+            await RunWorkerTurnAsync();
+        }
+        else
+        {
+            _ = RunWorkerTurnAsync().ContinueWith(
+                async completed =>
+                {
+                    _ = completed.Exception;
+                    if (executions is not null && executionId.HasValue)
+                    {
+                        try
+                        {
+                            await executions.UpdateStateAsync(
+                                request.Project.Id,
+                                request.TaskId,
+                                executionId.Value,
+                                WorkerExecutionState.Failed,
+                                CancellationToken.None);
+                        }
+                        catch { }
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default).Unwrap();
         }
         return new WorkerStartResult(true, session, null);
     }

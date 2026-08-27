@@ -24,8 +24,18 @@ public sealed class OpenCodeLiveB1AcceptanceTests
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 AppContext.BaseDirectory),
             OpenCodeRuntimeComposition.CreateLocalAccountSummary().Id);
-        using var folder = new TemporaryDirectory("opencode-live-b1");
-        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var configuredProjectPath = Environment.GetEnvironmentVariable("WORKBENCH_LIVE_PROJECT_PATH");
+        TemporaryDirectory? temporaryFolder = null;
+        var projectPath = configuredProjectPath;
+        if (string.IsNullOrWhiteSpace(projectPath))
+        {
+            temporaryFolder = new TemporaryDirectory("opencode-live-b1");
+            projectPath = temporaryFolder.Path;
+        }
+
+        using (temporaryFolder)
+        {
+            var opened = await context.Services.ProjectOpenService.OpenAsync(projectPath);
         var projectRef = new ProjectRef(opened.Project.Id);
         var principal = context.Services.UserPrincipalProvider.GetCurrent();
         await context.Services.B1ProjectGovernance.CreateGovernedProjectForExistingProjectAsync(projectRef, principal);
@@ -47,7 +57,7 @@ public sealed class OpenCodeLiveB1AcceptanceTests
                 principal,
                 assignment.AssignmentRef,
                 "deepseek/deepseek-v4-flash",
-                folder.Path,
+                projectPath,
                 "Reply with one concise verification result. Do not use tools or modify files.",
                 []));
 
@@ -68,7 +78,7 @@ public sealed class OpenCodeLiveB1AcceptanceTests
                         principal,
                         assignment.AssignmentRef,
                         model.ModelId,
-                        folder.Path,
+                        projectPath,
                         "Continue from the bounded Handoff. Reply with one concise verification result. Do not use tools or modify files.",
                         [],
                         result.Attempt.AttemptRef));
@@ -106,5 +116,6 @@ public sealed class OpenCodeLiveB1AcceptanceTests
         var recovered = await restarted.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
         Assert.Contains(recovered.AuthorityDecisions, value => value.DecisionRef == decision.DecisionRef);
         Assert.Equal(AssignmentDisposition.Accepted, B1Projector.Build(recovered).AcceptedProjectState.RevisionDispositions.Values.Single().Disposition);
+        }
     }
 }

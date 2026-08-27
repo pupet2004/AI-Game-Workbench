@@ -15,6 +15,7 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
     private readonly Dictionary<AgentSessionId, string> _activeTurns = [];
     private readonly Lock _activeTurnsLock = new();
     private readonly Dictionary<AgentApprovalRequestId, CodexPendingApproval> _pendingApprovals = [];
+    private readonly Dictionary<string, CodexPendingQuestion> _pendingQuestions = new(StringComparer.Ordinal);
     private readonly Lock _pendingApprovalsLock = new();
     private int _protocolFailed;
     private int _disposed;
@@ -44,7 +45,9 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         AgentCapability.Stop |
         AgentCapability.Transcript |
         AgentCapability.ParallelSessions |
-        AgentCapability.Approval;
+        AgentCapability.Approval |
+        AgentCapability.Steer |
+        AgentCapability.ImageInput;
 
     internal Task ProtocolCompletion => _client.Completion;
 
@@ -181,6 +184,11 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
             {
                 inbound.Writer.TryWrite(new CodexServerRequestInbound(serverRequest));
             }
+            else if (serverRequest.Method == "item/tool/requestUserInput" &&
+                     BelongsToThread(serverRequest.Params, session.ExternalSessionId!))
+            {
+                inbound.Writer.TryWrite(new CodexServerRequestInbound(serverRequest));
+            }
         }
 
         _client.NotificationReceived += ReceiveNotification;
@@ -194,7 +202,7 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                 new
                 {
                     threadId = session.ExternalSessionId,
-                    input = new[] { new { type = "text", text = request.Text } },
+                    input = CreateInput(request),
                     outputSchema = request.OutputSchema is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(request.OutputSchema),
                     cwd = session.WorkingDirectory,
                     approvalPolicy = "on-request",
@@ -218,6 +226,12 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                         if (approval is not null)
                         {
                             yield return approval;
+                        }
+
+                        var question = MapQuestionRequest(session, turnId, serverRequest.Request);
+                        if (question is not null)
+                        {
+                            yield return question;
                         }
 
                         continue;
@@ -320,6 +334,45 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         }
     }
 
+    public async Task RespondToQuestionAsync(
+        AgentSession session,
+        string requestId,
+        IReadOnlyDictionary<string, string> answers,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSession(session);
+        CodexPendingQuestion pending;
+        lock (_pendingApprovalsLock)
+        {
+            if (!_pendingQuestions.TryGetValue(requestId, out pending!) || pending.SessionId != session.Id)
+            {
+                throw new InvalidOperationException($"Question request '{requestId}' is not pending.");
+            }
+
+            _pendingQuestions.Remove(requestId);
+        }
+
+        try
+        {
+            await _client.SendResponseAsync(
+                pending.ProviderRequestId,
+                new { answers },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            lock (_pendingApprovalsLock)
+            {
+                if (Volatile.Read(ref _protocolFailed) == 0)
+                {
+                    _pendingQuestions.TryAdd(requestId, pending);
+                }
+            }
+
+            throw;
+        }
+    }
+
     public async Task StopAsync(AgentSession session, CancellationToken cancellationToken = default)
     {
         ValidateSession(session);
@@ -337,6 +390,34 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         await RequestAsync(
             "turn/interrupt",
             new { threadId = session.ExternalSessionId, turnId },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SteerAsync(
+        AgentSession session,
+        AgentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSession(session);
+        string? turnId;
+        lock (_activeTurnsLock)
+        {
+            _activeTurns.TryGetValue(session.Id, out turnId);
+        }
+
+        if (turnId is null)
+        {
+            throw new InvalidOperationException("There is no active Codex turn to steer.");
+        }
+
+        await RequestAsync(
+            "turn/steer",
+            new
+            {
+                threadId = session.ExternalSessionId,
+                expectedTurnId = turnId,
+                input = CreateInput(request)
+            },
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -418,14 +499,23 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     private static bool BelongsToThread(JsonElement parameters, string threadId) =>
         parameters.TryGetProperty("threadId", out var eventThreadId) &&
-        string.Equals(eventThreadId.GetString(), threadId, StringComparison.Ordinal);
+            string.Equals(eventThreadId.GetString(), threadId, StringComparison.Ordinal);
+
+    private static object[] CreateInput(AgentRequest request) =>
+        [
+            new { type = "text", text = request.Text },
+            .. request.Inputs.Select(input => input.IsImage
+                ? (object)new { type = "localImage", path = input.Value, detail = "auto" }
+                : new { type = "text", text = $"Attached file: {input.Name ?? Path.GetFileName(input.Value)}\nPath: {input.Value}" })
+        ];
 
     private AgentApprovalRequested? MapApprovalRequest(
         AgentSession session,
         string activeTurnId,
         CodexServerRequest request)
     {
-        if (!request.Params.TryGetProperty("turnId", out var turnId) ||
+        if (!IsSupportedApprovalMethod(request.Method) ||
+            !request.Params.TryGetProperty("turnId", out var turnId) ||
             !string.Equals(turnId.GetString(), activeTurnId, StringComparison.Ordinal))
         {
             return null;
@@ -460,6 +550,56 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                 new AgentApprovalOption("decline", "Decline", "Deny this operation and continue the turn."),
                 new AgentApprovalOption("cancel", "Cancel turn", "Deny this operation and interrupt the turn.")
             ],
+            DateTimeOffset.UtcNow);
+    }
+
+    private AgentQuestionRequested? MapQuestionRequest(
+        AgentSession session,
+        string activeTurnId,
+        CodexServerRequest request)
+    {
+        if (request.Method != "item/tool/requestUserInput" ||
+            !request.Params.TryGetProperty("turnId", out var turnId) ||
+            !string.Equals(turnId.GetString(), activeTurnId, StringComparison.Ordinal) ||
+            !request.Params.TryGetProperty("questions", out var questions) ||
+            questions.ValueKind != JsonValueKind.Array ||
+            questions.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var options = new List<AgentQuestionOption>();
+        var promptParts = new List<string>();
+        foreach (var question in questions.EnumerateArray())
+        {
+            var id = question.TryGetProperty("id", out var idElement) ? idElement.GetString() : null;
+            var prompt = question.TryGetProperty("question", out var promptElement) ? promptElement.GetString() : null;
+            if (!string.IsNullOrWhiteSpace(prompt)) promptParts.Add(prompt!);
+            if (question.TryGetProperty("options", out var optionElements) && optionElements.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var option in optionElements.EnumerateArray())
+                {
+                    var optionId = option.TryGetProperty("id", out var optionIdElement) ? optionIdElement.GetString() : null;
+                    var label = option.TryGetProperty("label", out var labelElement) ? labelElement.GetString() : null;
+                    if (!string.IsNullOrWhiteSpace(optionId) && !string.IsNullOrWhiteSpace(label))
+                    {
+                        options.Add(new AgentQuestionOption($"{id}:{optionId}", label!));
+                    }
+                }
+            }
+        }
+
+        var requestId = $"codex-question-{request.Id.GetRawText()}";
+        lock (_pendingApprovalsLock)
+        {
+            _pendingQuestions[requestId] = new CodexPendingQuestion(session.Id, request.Id.Clone());
+        }
+
+        return new AgentQuestionRequested(
+            requestId,
+            session.Id,
+            string.Join("\n", promptParts),
+            options,
             DateTimeOffset.UtcNow);
     }
 
@@ -510,6 +650,14 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
             {
                 _pendingApprovals.Remove(requestId);
             }
+
+            foreach (var requestId in _pendingQuestions
+                         .Where(pair => pair.Value.SessionId == sessionId)
+                         .Select(pair => pair.Key)
+                         .ToArray())
+            {
+                _pendingQuestions.Remove(requestId);
+            }
         }
     }
 
@@ -519,6 +667,7 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         lock (_pendingApprovalsLock)
         {
             _pendingApprovals.Clear();
+            _pendingQuestions.Clear();
         }
     }
 
@@ -560,4 +709,8 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         JsonElement ProviderRequestId,
         string Method,
         IReadOnlyDictionary<string, string> ProviderOptions);
+
+    private sealed record CodexPendingQuestion(
+        AgentSessionId SessionId,
+        JsonElement ProviderRequestId);
 }

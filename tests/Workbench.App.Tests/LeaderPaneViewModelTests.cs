@@ -248,6 +248,7 @@ public sealed class LeaderPaneViewModelTests
         await pane.SendAsync();
 
         Assert.False(pane.IsBusy);
+        Assert.Null(pane.RuntimeStatus);
     }
 
     [Fact]
@@ -403,6 +404,29 @@ public sealed class LeaderPaneViewModelTests
     }
 
     [Fact]
+    public async Task Steer_routes_text_to_the_active_leader_session()
+    {
+        var (pane, runtime, _) = CreatePane();
+        runtime.EnableSteer = true;
+        runtime.PauseBeforeEvents = true;
+        QueueCompletedTurn(runtime, "done");
+        await pane.InitializeAsync();
+        pane.DraftMessage = "start";
+        var send = pane.SendAsync();
+        await runtime.WaitForSendAsync();
+
+        await pane.SteerAsync("focus on the failing test");
+
+        var steer = Assert.Single(runtime.SteerRequests);
+        Assert.Same(pane.Session, steer.Session);
+        Assert.Equal("focus on the failing test", steer.Request.Text);
+        Assert.Contains(pane.Messages, message => message.Role == LeaderMessageRole.User && message.Text == "focus on the failing test");
+
+        await pane.StopAsync();
+        await send;
+    }
+
+    [Fact]
     public async Task Admission_instruction_is_present_in_the_same_sent_request_as_output_schema()
     {
         var (pane, runtime, _) = CreatePane();
@@ -413,6 +437,7 @@ public sealed class LeaderPaneViewModelTests
         await pane.SendAsync();
 
         var request = Assert.Single(runtime.SentRequests);
+        Assert.Contains("# Workbench Leader", request.Text, StringComparison.Ordinal);
         Assert.Contains("SPARSE DURABLE RATIONALE", request.Text, StringComparison.Ordinal);
         Assert.NotNull(request.OutputSchema);
         Assert.Contains("summary_deltas", request.OutputSchema, StringComparison.Ordinal);

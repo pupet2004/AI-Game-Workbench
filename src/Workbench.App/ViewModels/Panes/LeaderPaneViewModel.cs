@@ -11,6 +11,7 @@ using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
 using Workbench.App.Memory;
 using Workbench.App.Services;
+using Workbench.App.Skills;
 using Workbench.Core.Tasks;
 using Workbench.Core.Workers;
 using Workbench.Project.Git;
@@ -107,6 +108,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public ObservableCollection<LeaderMessageViewModel> Messages => _conversation.Messages;
 
+    public ObservableCollection<LeaderActivityViewModel> Activities => _conversation.Activities;
+
+    public ObservableCollection<LeaderChangedFileViewModel> ChangedFiles => _conversation.ChangedFiles;
+
     internal ProjectSummaryRepository? SummaryRepository => _projectSummaryRepository;
 
     [ObservableProperty]
@@ -144,6 +149,12 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public bool CanRetryRuntime => !IsBusy && !IsRuntimeAvailable;
 
+    public bool IsNativeAgentSurfaceEnabled =>
+        string.Equals(Environment.GetEnvironmentVariable("WORKBENCH_NATIVE_AGENT_SURFACE"), "1", StringComparison.Ordinal) ||
+        string.Equals(Environment.GetEnvironmentVariable("WORKBENCH_NATIVE_AGENT_SURFACE"), "true", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsLegacyTranscriptVisible => !IsNativeAgentSurfaceEnabled;
+
     public bool ShowRuntimeUnavailableOverlay => CanRetryRuntime && Messages.Count == 0;
 
     public bool HasRuntimeStatus => !string.IsNullOrWhiteSpace(RuntimeStatus);
@@ -168,9 +179,21 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public bool CanStop => IsBusy && Session is not null;
 
+    public bool CanSteer => IsBusy && Session is not null &&
+        _runtimeRegistry.GetByAccount(Session.AccountId).Capabilities.HasFlag(AgentCapability.Steer);
+
+    public bool SupportsSteer => Session is not null &&
+        _runtimeRegistry.GetByAccount(Session.AccountId).Capabilities.HasFlag(AgentCapability.Steer);
+
     public AgentApprovalRequested? PendingApproval => _conversation.PendingApproval;
 
+    public AgentQuestionRequested? PendingQuestion => _conversation.PendingQuestion;
+
+    public bool HasPendingQuestion => PendingQuestion is not null;
+
     public bool HasPendingApproval => PendingApproval is not null;
+
+    public bool ShowNativeApproval => HasPendingApproval && !IsNativeAgentSurfaceEnabled;
 
     public bool HasPendingRotationDecision => _conversation.HasPendingRotationDecision;
 
@@ -182,6 +205,29 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         !HasPendingRotationDecision &&
         !_conversation.IsRolloverRunning &&
         _rolloverService is not null;
+
+    public bool IsBrainPickerVisible => _conversation.IsBrainPickerVisible;
+
+    public bool CanChangeBrain =>
+        Session is not null &&
+        AvailableModels.Count > 0 &&
+        !IsBusy &&
+        !HasPendingApproval &&
+        !HasPendingRotationDecision &&
+        !_conversation.IsRolloverRunning &&
+        _rolloverService is not null;
+
+    public LeaderModelOptionViewModel? BrainTargetModel
+    {
+        get => _conversation.BrainTargetModel;
+        set
+        {
+            if (ReferenceEquals(value, _conversation.BrainTargetModel)) return;
+            _conversation.BrainTargetModel = value;
+            OnPropertyChanged();
+            NotifyCommandState();
+        }
+    }
 
     public string? ApprovalError => _conversation.ApprovalError;
 
@@ -274,23 +320,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 await _reconnectRuntime(cancellationToken);
             }
 
-            var available = await _runtimeRegistry.GetAvailableModelsAsync(cancellationToken);
-            AvailableModels.Clear();
-            foreach (var profile in available)
-            {
-                var runtime = _runtimeRegistry.GetByAccount(profile.AccountId);
-                AvailableModels.Add(new LeaderModelOptionViewModel(
-                    profile,
-                    runtime.Provider.DisplayName,
-                    runtime.Account.DisplayName));
-            }
-
-            _conversation.ModelsLoaded = AvailableModels.Count > 0;
-            _conversation.RuntimeAccountAvailable = AvailableModels.Count > 0;
-            if (AvailableModels.Count == 1)
-            {
-                _conversation.SelectedModel = AvailableModels[0];
-            }
+            await LoadAvailableModelsAsync(cancellationToken);
 
             if (AvailableModels.Count == 0)
             {
@@ -313,7 +343,42 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         NotifyAllState();
     }
 
-    public async Task SendAsync(CancellationToken cancellationToken = default)
+    private async Task LoadAvailableModelsAsync(CancellationToken cancellationToken)
+    {
+        var previous = _conversation.SelectedModel;
+        var available = await _runtimeRegistry.GetAvailableModelsAsync(cancellationToken);
+        AvailableModels.Clear();
+        foreach (var profile in available)
+        {
+            var runtime = _runtimeRegistry.GetByAccount(profile.AccountId);
+            AvailableModels.Add(new LeaderModelOptionViewModel(
+                profile,
+                runtime.Provider.DisplayName,
+                runtime.Account.DisplayName));
+        }
+
+        _conversation.ModelsLoaded = AvailableModels.Count > 0;
+        _conversation.RuntimeAccountAvailable = AvailableModels.Count > 0;
+        if (previous is not null)
+        {
+            _conversation.SelectedModel = AvailableModels.FirstOrDefault(option =>
+                option.Profile.AccountId == previous.Profile.AccountId &&
+                string.Equals(option.Profile.Model.ModelId, previous.Profile.Model.ModelId, StringComparison.Ordinal)) ?? previous;
+        }
+        else if (AvailableModels.Count == 1)
+        {
+            _conversation.SelectedModel = AvailableModels[0];
+        }
+
+        _conversation.BrainTargetModel = _conversation.SelectedModel;
+    }
+
+    public Task SendAsync(CancellationToken cancellationToken = default) =>
+        SendAsync([], cancellationToken);
+
+    public async Task SendAsync(
+        IReadOnlyList<AgentInputPart> inputs,
+        CancellationToken cancellationToken = default)
     {
         if (IsBusy || _conversation.IsRolloverRunning)
         {
@@ -360,7 +425,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             }
         }
 
-        await SendCoreAsync(text, cancellationToken);
+        await SendCoreAsync(text, inputs, cancellationToken);
     }
 
     public async Task ContinuePreviousAsync(CancellationToken cancellationToken = default)
@@ -374,7 +439,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         _conversation.HasPendingRotationDecision = false;
         _conversation.RotationMessage = null;
-        await SendCoreAsync(text, cancellationToken);
+        await SendCoreAsync(text, [], cancellationToken);
     }
 
     public async Task StartFreshAsync(CancellationToken cancellationToken = default)
@@ -390,7 +455,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         {
             await ExecuteRolloverAsync("WorkdayBoundary", cancellationToken);
             _conversation.HasPendingRotationDecision = false;
-            await SendCoreAsync(text, cancellationToken);
+            await SendCoreAsync(text, [], cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -425,13 +490,18 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
     }
 
-    private async Task SendCoreAsync(string text, CancellationToken cancellationToken)
+    private async Task SendCoreAsync(
+        string text,
+        IReadOnlyList<AgentInputPart> inputs,
+        CancellationToken cancellationToken)
     {
         var resultId = Guid.NewGuid();
         var selectedModel = SelectedModel
             ?? throw new InvalidOperationException("Select a model before sending a message.");
 
         _conversation.IsBusy = true;
+        _conversation.Activities.Clear();
+        _conversation.ChangedFiles.Clear();
         _conversation.ApprovalError = null;
         MemoryCommandStatus = null;
         NotifyAllState();
@@ -447,7 +517,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 runtimeRequest = await _bootContextBuilder!.BuildAsync(_project, text, cancellationToken);
                 runtimeRequest = new AgentRequest(
                     $"{runtimeRequest.Text}\n\n{LeaderSummaryAdmissionInstruction.Text}",
-                    LeaderResponseSchema.Json);
+                    LeaderResponseSchema.Json,
+                    inputs);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -467,8 +538,13 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         {
             runtimeRequest = new AgentRequest(
                 $"{text}\n\n{LeaderSummaryAdmissionInstruction.Text}",
-                LeaderResponseSchema.Json);
+                LeaderResponseSchema.Json,
+                inputs);
         }
+        runtimeRequest = new AgentRequest(
+            $"{runtimeRequest.Text}\n\n{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Leader)}",
+            runtimeRequest.OutputSchema,
+            runtimeRequest.Inputs);
 
         if (_responseBinder is not null && await _responseBinder.HasSingletonOpenGateAsync(_project.Id, cancellationToken))
         {
@@ -488,7 +564,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         LeaderMessageViewModel? assistant = null;
         var turnCompleted = false;
         var structuredResponseParsed = false;
+        var structuredOutputExpected = _draftProposalBuilder is not null || _projectMemoryApi is not null;
+        var structuredOutputBuffer = new System.Text.StringBuilder();
         IReadOnlyList<SummaryDelta> summaryDeltas = [];
+        var suppressSummaryDeltas = LeaderSummaryAdmissionInstruction.IsReadOnlyRequest(text);
         try
         {
             if (_conversation.SessionNeedsResume &&
@@ -554,9 +633,47 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
                 switch (agentEvent)
                 {
+                    case AgentStatusChanged status:
+                        _conversation.RuntimeStatus = status.Status == AgentSessionStatus.Running
+                            ? "Working"
+                            : status.Status.ToString();
+                        NotifyAllState();
+                        break;
                     case AgentTextDelta delta:
-                        assistant ??= AddAssistantMessage();
-                        assistant.Append(delta.Text);
+                        if (structuredOutputExpected)
+                        {
+                            structuredOutputBuffer.Append(delta.Text);
+                            var buffered = structuredOutputBuffer.ToString();
+                            var first = buffered.TrimStart();
+                            if (first.Length > 0 &&
+                                first[0] is not ('{' or '`'))
+                            {
+                                assistant ??= AddAssistantMessage();
+                                assistant.Append(buffered);
+                                structuredOutputBuffer.Clear();
+                            }
+                        }
+                        else
+                        {
+                            assistant ??= AddAssistantMessage();
+                            assistant.Append(delta.Text);
+                        }
+                        break;
+                    case AgentToolEvent tool:
+                        var currentActivity = _conversation.Activities.LastOrDefault(item => !item.IsComplete);
+                        if (currentActivity is null || !string.Equals(currentActivity.Title, tool.ToolName, StringComparison.Ordinal))
+                        {
+                            currentActivity = new LeaderActivityViewModel(
+                                string.IsNullOrWhiteSpace(tool.ToolName) ? "Agent activity" : tool.ToolName,
+                                tool.Detail);
+                            _conversation.Activities.Add(currentActivity);
+                        }
+                        else
+                        {
+                            currentActivity.Detail = tool.Detail;
+                        }
+                        currentActivity.IsComplete = tool.IsCompleted;
+                        NotifyAllState();
                         break;
                     case AgentApprovalRequested approval:
                         _conversation.PendingApproval = approval;
@@ -564,18 +681,26 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                         RebuildApprovalOptions();
                         NotifyAllState();
                         break;
+                    case AgentQuestionRequested question:
+                        _conversation.PendingQuestion = question;
+                        NotifyAllState();
+                        break;
                     case AgentError:
                         AddErrorMessage(LocalizationService.Current["Dynamic.LeaderRuntimeError"]);
                         break;
                     case AgentTurnCompleted completed:
                         turnCompleted = true;
-                        var finalText = completed.Result.FinalText ?? string.Empty;
-                        if ((_draftProposalBuilder is not null || _projectMemoryApi is not null) &&
+                        var finalText = string.IsNullOrWhiteSpace(completed.Result.FinalText)
+                            ? structuredOutputBuffer.Length > 0
+                                ? structuredOutputBuffer.ToString()
+                                : assistant?.Text ?? string.Empty
+                            : completed.Result.FinalText!;
+                        if (structuredOutputExpected &&
                             LeaderStructuredResponse.TryParse(finalText, _project.Id, out var structured))
                         {
                             structuredResponseParsed = true;
                             finalText = structured.Response;
-                            summaryDeltas = structured.SummaryDeltas;
+                            summaryDeltas = suppressSummaryDeltas ? [] : structured.SummaryDeltas;
                             if (structured.MemoryCommandError is not null)
                             {
                                 MemoryCommandStatus = structured.MemoryCommandError;
@@ -609,12 +734,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                                 }
                             }
                         }
-                        else if ((_draftProposalBuilder is not null || _projectMemoryApi is not null) && !string.IsNullOrWhiteSpace(finalText) && finalText.TrimStart().StartsWith('{'))
+                        else if (structuredOutputExpected &&
+                                 !string.IsNullOrWhiteSpace(finalText) &&
+                                 (finalText.TrimStart().StartsWith('{') || finalText.TrimStart().StartsWith("```", StringComparison.Ordinal)))
                         {
                             finalText = string.Empty;
                             AddErrorMessage(LocalizationService.Current["Dynamic.LeaderResponseInvalid"]);
                         }
-                        if (assistant is null && !string.IsNullOrWhiteSpace(finalText))
+                        if (assistant is null && (structuredResponseParsed || !string.IsNullOrWhiteSpace(finalText)))
                         {
                             assistant = AddAssistantMessage();
                         }
@@ -630,6 +757,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             assistant.IsStreaming = false;
                         }
 
+                        foreach (var activity in _conversation.Activities)
+                        {
+                            activity.IsComplete = true;
+                        }
+
                         if (completed.Result.FinalStatus is AgentSessionStatus.Failed or
                             AgentSessionStatus.Interrupted or
                             AgentSessionStatus.Stopped)
@@ -638,6 +770,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                         }
                         else if (completed.Result.FinalStatus == AgentSessionStatus.Completed)
                         {
+                            await RefreshChangedFilesAsync(cancellationToken);
                             var persistedAssistantText = structuredResponseParsed
                                 ? finalText
                                 : string.IsNullOrWhiteSpace(finalText)
@@ -714,13 +847,82 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 assistant.IsStreaming = false;
             }
 
+            foreach (var activity in _conversation.Activities)
+            {
+                activity.IsComplete = true;
+            }
+
             ClearPendingApproval();
+            _conversation.PendingQuestion = null;
             _conversation.IsBusy = false;
+            // RuntimeStatus is a transient activity indicator; never leave the last turn's
+            // "Working" value visible after the send lifecycle has ended.
+            _conversation.RuntimeStatus = null;
             NotifyAllState();
         }
     }
 
-    private async Task ExecuteRolloverAsync(string reason, CancellationToken cancellationToken)
+    public async Task BeginBrainPickerAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanChangeBrain) return;
+        try
+        {
+            await LoadAvailableModelsAsync(cancellationToken);
+            BrainTargetModel = SelectedModel;
+            _conversation.IsBrainPickerVisible = true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            AddErrorMessage(LocalizationService.Current["Dynamic.BrainSwitchFailed"]);
+        }
+        finally
+        {
+            NotifyAllState();
+        }
+    }
+
+    public void DismissBrainPicker()
+    {
+        _conversation.IsBrainPickerVisible = false;
+        BrainTargetModel = SelectedModel;
+        NotifyAllState();
+    }
+
+    public async Task SwitchBrainAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanChangeBrain || BrainTargetModel is null)
+        {
+            throw new InvalidOperationException(LocalizationService.Current["Dynamic.BrainSwitchUnavailable"]);
+        }
+
+        try
+        {
+            await ExecuteRolloverAsync("Manual", cancellationToken, BrainTargetModel.Profile);
+            _conversation.IsBrainPickerVisible = false;
+            _conversation.BrainTargetModel = SelectedModel;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            AddErrorMessage(LocalizationService.Current["Dynamic.BrainSwitchFailed"]);
+        }
+        finally
+        {
+            NotifyAllState();
+        }
+    }
+
+    private async Task ExecuteRolloverAsync(
+        string reason,
+        CancellationToken cancellationToken,
+        AvailableModelProfile? targetModel = null)
     {
         if (_rolloverService is null || _conversation.Session is null || _conversation.Epoch is null)
         {
@@ -763,9 +965,17 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 reason,
                 policyDecision,
                 _memoryPolicyCoordinator is not null,
+                targetModel,
                 cancellationToken);
             _conversation.Session = result.NewSession;
             _conversation.Epoch = result.NewEpoch;
+            _conversation.SelectedModel = targetModel is null
+                ? _conversation.SelectedModel
+                : AvailableModels.FirstOrDefault(option =>
+                    option.Profile.AccountId == targetModel.AccountId &&
+                    string.Equals(option.Profile.Model.ModelId, targetModel.Model.ModelId, StringComparison.Ordinal)) ??
+                    _conversation.SelectedModel;
+            _conversation.BrainTargetModel = _conversation.SelectedModel;
             _conversation.SessionNeedsResume = false;
             _conversation.RuntimeAccountAvailable = true;
             _conversation.RuntimeStatus = null;
@@ -880,6 +1090,15 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     [RelayCommand]
     private Task StartNewBrain() => StartNewBrainAsync();
 
+    [RelayCommand]
+    private Task OpenBrainPicker() => BeginBrainPickerAsync();
+
+    [RelayCommand]
+    private void CancelBrainPicker() => DismissBrainPicker();
+
+    [RelayCommand]
+    private Task SwitchBrain() => SwitchBrainAsync();
+
     private LeaderMessageViewModel AddAssistantMessage()
     {
         var message = new LeaderMessageViewModel(LeaderMessageRole.Assistant, string.Empty, true);
@@ -925,6 +1144,58 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
         {
             MemoryCommandStatus = LocalizationService.Current["Dynamic.LibraryProposalProcessingFailed"];
+        }
+    }
+
+    public async Task RespondToQuestionAsync(
+        string requestId,
+        IReadOnlyDictionary<string, string> answers,
+        CancellationToken cancellationToken = default)
+    {
+        var question = _conversation.PendingQuestion;
+        var session = _conversation.Session;
+        if (question is null || session is null || !string.Equals(question.RequestId, requestId, StringComparison.Ordinal)) return;
+
+        try
+        {
+            var runtime = _runtimeRegistry.GetByAccount(session.AccountId);
+            await runtime.RespondToQuestionAsync(session, requestId, answers, cancellationToken);
+            _conversation.PendingQuestion = null;
+            NotifyAllState();
+        }
+        catch (Exception)
+        {
+            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnFailed"]);
+            NotifyAllState();
+        }
+    }
+
+    public async Task SteerAsync(string text, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        var session = _conversation.Session;
+        if (session is null || !IsBusy)
+        {
+            return;
+        }
+
+        var runtime = _runtimeRegistry.GetByAccount(session.AccountId);
+        if (!runtime.Capabilities.HasFlag(AgentCapability.Steer))
+        {
+            throw new NotSupportedException("The current Agent runtime does not support steering.");
+        }
+
+        Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.User, text));
+        await _sessionManager.PersistUserMessageAsync(_conversation, text, cancellationToken);
+        NotifyAllState();
+        try
+        {
+            await runtime.SteerAsync(session, new AgentRequest(text), cancellationToken);
+        }
+        catch (Exception)
+        {
+            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnFailed"]);
+            NotifyAllState();
         }
     }
 
@@ -974,6 +1245,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(IsRuntimeAvailable));
         OnPropertyChanged(nameof(CanRetryRuntime));
+        OnPropertyChanged(nameof(IsNativeAgentSurfaceEnabled));
+        OnPropertyChanged(nameof(IsLegacyTranscriptVisible));
         OnPropertyChanged(nameof(ShowRuntimeUnavailableOverlay));
         OnPropertyChanged(nameof(HasRuntimeStatus));
         OnPropertyChanged(nameof(RuntimeStatus));
@@ -982,10 +1255,18 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsModelSelectionEnabled));
         OnPropertyChanged(nameof(CanSend));
         OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanSteer));
+        OnPropertyChanged(nameof(SupportsSteer));
         OnPropertyChanged(nameof(PendingApproval));
         OnPropertyChanged(nameof(HasPendingApproval));
+        OnPropertyChanged(nameof(PendingQuestion));
+        OnPropertyChanged(nameof(HasPendingQuestion));
+        OnPropertyChanged(nameof(ShowNativeApproval));
         OnPropertyChanged(nameof(HasPendingRotationDecision));
         OnPropertyChanged(nameof(CanStartNewBrain));
+        OnPropertyChanged(nameof(IsBrainPickerVisible));
+        OnPropertyChanged(nameof(CanChangeBrain));
+        OnPropertyChanged(nameof(BrainTargetModel));
         OnPropertyChanged(nameof(ApprovalError));
         OnPropertyChanged(nameof(RotationMessage));
         OnPropertyChanged(nameof(HasRotationMessage));
@@ -996,7 +1277,31 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasDraftConfirmation));
         OnPropertyChanged(nameof(CurrentWorkerProfile));
         OnPropertyChanged(nameof(HasMemoryCommandStatus));
+        OnPropertyChanged(nameof(Activities));
+        OnPropertyChanged(nameof(ChangedFiles));
         NotifyCommandState();
+    }
+
+    private async Task RefreshChangedFilesAsync(CancellationToken cancellationToken)
+    {
+        if (_git?.IsRepository != true || string.IsNullOrWhiteSpace(_git.RepositoryRoot)) return;
+        try
+        {
+            var files = await new GitDiffReader().ReadAsync(_git.RepositoryRoot, cancellationToken);
+            ChangedFiles.Clear();
+            foreach (var file in files)
+            {
+                ChangedFiles.Add(new LeaderChangedFileViewModel(file.Path, file.Added, file.Removed, file.Diff));
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Diff presentation is advisory and must not fail the completed turn.
+        }
     }
 
     public async Task ChangeWorkerResourceAsync(WorkerResource resource, CancellationToken cancellationToken = default)
@@ -1019,7 +1324,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         var profile = confirmation.Revision.RecommendedExecutionProfile;
         var request = new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Revision.Id, confirmation.Title,
             profile, confirmation.Goal, null, "Worker",
-            (handoff, token) => _sessionManager.IngestWorkerHandoffAsync(handoff, token));
+            (handoff, token) => _sessionManager.IngestWorkerHandoffAsync(handoff, token),
+            WaitForCompletion: false);
         if (_git is { IsRepository: true, HeadCommit: not null, BranchName: not null } git)
         {
             var executionId = Guid.NewGuid();

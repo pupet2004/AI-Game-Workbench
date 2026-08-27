@@ -33,6 +33,31 @@ public sealed class CodexRuntimeMappingTests
     }
 
     [Fact]
+    public void Codex_final_agent_message_can_close_a_turn_before_turn_completed()
+    {
+        var sessionId = AgentSessionId.New();
+        var payload = JsonDocument.Parse("""{"item":{"type":"agentMessage","phase":"final_answer","text":"done"}}""").RootElement;
+
+        var agentEvent = CodexRuntimeMapper.MapNotification("item/completed", payload, sessionId);
+
+        var completed = Assert.IsType<AgentTurnCompleted>(agentEvent);
+        Assert.Equal(AgentSessionStatus.Completed, completed.Result.FinalStatus);
+        Assert.Equal("done", completed.Result.FinalText);
+    }
+
+    [Fact]
+    public void Codex_turn_completion_accepts_object_status_shape()
+    {
+        var sessionId = AgentSessionId.New();
+        var payload = JsonDocument.Parse("""{"turn":{"status":{"type":"completed"}}}""").RootElement;
+
+        var agentEvent = CodexRuntimeMapper.MapNotification("turn/completed", payload, sessionId, "final text");
+
+        var completed = Assert.IsType<AgentTurnCompleted>(agentEvent);
+        Assert.Equal(AgentSessionStatus.Completed, completed.Result.FinalStatus);
+    }
+
+    [Fact]
     public void Codex_external_thread_id_maps_to_external_session_id()
     {
         var accountId = ProviderAccountId.New();

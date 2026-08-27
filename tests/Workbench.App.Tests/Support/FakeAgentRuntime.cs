@@ -33,11 +33,14 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public ProviderAccountSummary Account { get; }
 
-    public AgentCapability Capabilities { get; } =
+    public bool EnableSteer { get; set; }
+
+    public AgentCapability Capabilities =>
         AgentCapability.PersistentSession |
         AgentCapability.StructuredEvents |
         AgentCapability.Stop |
-        AgentCapability.Approval;
+        AgentCapability.Approval |
+        (EnableSteer ? AgentCapability.Steer : AgentCapability.None);
 
     public IReadOnlyList<ModelProfile> Models { get; }
 
@@ -50,6 +53,7 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
     public List<AgentSession> ResumedSessions { get; } = [];
 
     public List<AgentRequest> SentRequests { get; } = [];
+    public List<(AgentSession Session, AgentRequest Request)> SteerRequests { get; } = [];
     public List<AgentSession> TranscriptRequests { get; } = [];
     public IReadOnlyList<AgentEvent> Transcript { get; set; } = [];
 
@@ -206,6 +210,20 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
         ApprovalDecisions.Add(decision);
         _approvalRelease.TrySetResult();
+        return Task.CompletedTask;
+    }
+
+    public Task SteerAsync(
+        AgentSession session,
+        AgentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!EnableSteer)
+        {
+            return Task.FromException(new NotSupportedException());
+        }
+
+        SteerRequests.Add((session, request));
         return Task.CompletedTask;
     }
 

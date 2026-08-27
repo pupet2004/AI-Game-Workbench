@@ -2,6 +2,7 @@ using Workbench.Core.Tasks;
 using Workbench.Storage.Tasks;
 using Workbench.Storage.Memory;
 using System.Text.Json;
+using System.Text;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -55,10 +56,11 @@ public sealed record LeaderStructuredResponse(
     public static bool TryParse(string? text, Guid projectId, out LeaderStructuredResponse result)
     {
         result = new LeaderStructuredResponse(text ?? string.Empty, null);
-        if (string.IsNullOrWhiteSpace(text) || text.TrimStart()[0] != '{') return false;
+        text = NormalizeStructuredText(text);
+        if (!TryExtractLastEnvelope(text, out var envelopeJson)) return false;
         try
         {
-            using var json = JsonDocument.Parse(text);
+            using var json = JsonDocument.Parse(envelopeJson);
             var root = json.RootElement;
             if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.String) return false;
             LeaderDraftProposal? proposal = null;
@@ -115,6 +117,60 @@ public sealed record LeaderStructuredResponse(
             return true;
         }
         catch (Exception) { return false; }
+    }
+
+    private static bool TryExtractLastEnvelope(string? text, out string envelopeJson)
+    {
+        envelopeJson = string.Empty;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        var utf8 = Encoding.UTF8.GetBytes(text);
+        var reader = new Utf8JsonReader(
+            utf8,
+            isFinalBlock: true,
+            state: new JsonReaderState(new JsonReaderOptions { AllowMultipleValues = true }));
+        string? last = null;
+        try
+        {
+            while (true)
+            {
+                using var document = JsonDocument.ParseValue(ref reader);
+                var root = document.RootElement;
+                if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.String)
+                    return false;
+
+                last = root.GetRawText();
+                if (!reader.Read()) break;
+                if (reader.TokenType != JsonTokenType.StartObject) return false;
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        if (last is null) return false;
+        envelopeJson = last;
+        return true;
+    }
+
+    private static string? NormalizeStructuredText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return text;
+
+        var trimmed = text.Trim();
+        if (!trimmed.StartsWith("```", StringComparison.Ordinal)) return trimmed;
+
+        var firstLineEnd = trimmed.IndexOf('\n');
+        if (firstLineEnd < 0) return null;
+
+        var body = trimmed[(firstLineEnd + 1)..].Trim();
+        if (body.EndsWith("```", StringComparison.Ordinal))
+        {
+            body = body[..^3].TrimEnd();
+        }
+
+        return body;
     }
 
     private static LeaderMemoryCommands ParseMemoryCommands(JsonElement memory)
@@ -346,6 +402,11 @@ public static class LeaderResponseSchema
 
 public static class LeaderSummaryAdmissionInstruction
 {
+    private static readonly string[] ReadOnlyMarkers =
+    [
+        "read-only", "readonly", "audit", "审计", "只读", "查询", "query", "inspect", "检查", "查看", "review current state"
+    ];
+
     public const string Text = """
         WORKBENCH SUMMARY ADMISSION
         A Summary Delta is SPARSE DURABLE RATIONALE, not a routine activity log.
@@ -358,7 +419,13 @@ public static class LeaderSummaryAdmissionInstruction
         Add source_refs only when a natural source locator exists. When none exists, use source_refs = [].
         Do not fabricate a Source, session locator, Git ref, evidence locator, or other provenance.
         Do not copy evidence bodies, transcripts, logs, or diffs into source_refs.
+
+        For a read-only, audit, inspection, or query request, emit summary_deltas = null.
+        Merely re-observing an existing fact is not a Decision or Change. Do not summarize it.
         """;
+
+    public static bool IsReadOnlyRequest(string text) =>
+        ReadOnlyMarkers.Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class LeaderDraftProposalBuilder(Guid projectId, TaskRepository tasks)

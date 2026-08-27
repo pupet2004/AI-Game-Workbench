@@ -254,6 +254,51 @@ public sealed class CodexAgentRuntimeTests
         Assert.True(await moveNext);
     }
 
+    [Fact]
+    public async Task Codex_steer_sends_expected_turn_id_and_text_input()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42");
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+
+        var steerTask = runtime.SteerAsync(session, new AgentRequest("focus on the failing test"));
+        var steer = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        Assert.Equal("turn/steer", steer.GetProperty("method").GetString());
+        Assert.Equal("thread-42", steer.GetProperty("params").GetProperty("threadId").GetString());
+        Assert.Equal("turn-7", steer.GetProperty("params").GetProperty("expectedTurnId").GetString());
+        Assert.Equal("text", steer.GetProperty("params").GetProperty("input")[0].GetProperty("type").GetString());
+        Assert.Equal("focus on the failing test", steer.GetProperty("params").GetProperty("input")[0].GetProperty("text").GetString());
+        await RespondAsync(transport, steer, new { });
+        await steerTask;
+
+        await transport.SendServerLineAsync("""{"method":"turn/completed","params":{"threadId":"thread-42","turn":{"id":"turn-7","items":[],"status":"completed"}}}""");
+        Assert.True(await moveNext);
+    }
+
+    [Fact]
+    public async Task Codex_image_input_maps_to_host_local_image_path()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42");
+        await using var enumerator = runtime.SendAsync(
+            session,
+            new AgentRequest("Describe this image.", inputs: [new AgentInputPart("image", "C:/Temp/image.png", "image.png")]))
+            .GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        Assert.Equal("localImage", turnStart.GetProperty("params").GetProperty("input")[1].GetProperty("type").GetString());
+        Assert.Equal("C:/Temp/image.png", turnStart.GetProperty("params").GetProperty("input")[1].GetProperty("path").GetString());
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+
+        await transport.SendServerLineAsync("""{"method":"turn/completed","params":{"threadId":"thread-42","turn":{"id":"turn-7","items":[],"status":"completed"}}}""");
+        Assert.True(await moveNext);
+    }
+
     private static async Task<(CodexAgentRuntime Runtime, FakeCodexJsonLineTransport Transport)> CreateInitializedRuntimeAsync()
     {
         var transport = new FakeCodexJsonLineTransport();

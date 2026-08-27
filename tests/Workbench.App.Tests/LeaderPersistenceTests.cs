@@ -45,6 +45,26 @@ public sealed class LeaderPersistenceTests
     }
 
     [Fact]
+    public async Task Read_only_audit_does_not_turn_reobserved_facts_into_summary_deltas()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        runtime.QueueTurn(context.Completed(SummaryResponse("Audit result.", "The existing architecture remains unchanged.")));
+        var pane = context.CreatePane(runtime);
+        await pane.InitializeAsync();
+        pane.DraftMessage = "Run a read-only audit of the current architecture.";
+
+        await pane.SendAsync();
+
+        Assert.Contains(pane.Messages, message => message.Text == "Audit result.");
+        Assert.Empty(await context.ReadSummariesAsync(context.ProjectA.Id));
+        var epoch = await context.Epochs.GetCurrentForProjectAsync(context.ProjectA.Id);
+        var assistant = Assert.Single(await context.Messages.GetAllAsync(epoch!.Id), message => message.Role == "assistant");
+        Assert.Null(assistant.ResultId);
+        Assert.Null(assistant.SummaryDeltaPayloadJson);
+    }
+
+    [Fact]
     public async Task Completed_turn_uses_one_result_id_for_all_summary_ordinals()
     {
         await using var context = await PersistentLeaderContext.CreateAsync();

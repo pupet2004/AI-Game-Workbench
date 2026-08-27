@@ -56,6 +56,16 @@ public sealed record AgentApprovalRequested : AgentEvent
 public sealed record AgentToolEvent(
     string ToolName,
     string? Detail,
+    DateTimeOffset OccurredAt,
+    bool IsCompleted = false) : AgentEvent(OccurredAt);
+
+public sealed record AgentQuestionOption(string Id, string Label, string? Description = null);
+
+public sealed record AgentQuestionRequested(
+    string RequestId,
+    AgentSessionId SessionId,
+    string Prompt,
+    IReadOnlyList<AgentQuestionOption> Options,
     DateTimeOffset OccurredAt) : AgentEvent(OccurredAt);
 
 public sealed record AgentError(

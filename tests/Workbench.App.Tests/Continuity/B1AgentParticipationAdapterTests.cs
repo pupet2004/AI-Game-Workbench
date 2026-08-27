@@ -52,6 +52,7 @@ public sealed class B1AgentParticipationAdapterTests
         Assert.Equal(assignment.AssignmentRef, result.Attempt.AssignmentRef);
         Assert.Equal(result.Attempt.AttemptRef, result.SessionBinding.AttemptRef);
         Assert.Equal("The bounded implementation is ready for review.", result.FinalText);
+        Assert.Contains("# Workbench Worker", runtime.SentRequests.Single().Text, StringComparison.Ordinal);
         Assert.Contains("Assignment contract:", runtime.SentRequests.Single().Text, StringComparison.Ordinal);
 
         var after = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);

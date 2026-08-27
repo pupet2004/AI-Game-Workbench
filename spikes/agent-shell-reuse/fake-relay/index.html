@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workbench Agent Shell Reuse Relay</title>
+  <style>
+    :root { color-scheme: dark; font-family: Segoe UI, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #101820; color: #e8eef4; }
+    header { padding: 16px 20px; border-bottom: 1px solid #2b3a47; background: #18242e; }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #9fb2c0; font-size: 12px; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: calc(100vh - 76px); }
+    section { min-width: 0; }
+    #transcript { max-height: 58vh; overflow: auto; padding: 22px; user-select: text; }
+    .message { max-width: 82ch; margin: 0 0 16px; padding: 13px 15px; border: 1px solid #2b3a47; border-radius: 8px; background: #17232d; white-space: pre-wrap; line-height: 1.5; }
+    .message.user { margin-left: auto; background: #20382f; border-color: #35634d; }
+    .label { display: block; margin-bottom: 6px; color: #8ea6b6; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; user-select: none; }
+    .tool { margin: 0 22px 16px; padding: 10px 12px; border-left: 3px solid #d5aa48; background: #272116; color: #e0d0a5; }
+    .approval { margin: 0 22px 16px; padding: 12px; border: 1px solid #b27d31; border-radius: 8px; background: #2a2013; }
+    button, textarea, input { font: inherit; }
+    button { padding: 7px 11px; border: 1px solid #3b5668; border-radius: 6px; color: #e8eef4; background: #243746; cursor: pointer; }
+    button:hover { background: #2d4a5e; }
+    button:disabled { opacity: .45; cursor: default; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 22px 14px; }
+    .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 14px 22px 20px; border-top: 1px solid #2b3a47; }
+    textarea { width: 100%; min-height: 72px; resize: vertical; padding: 10px; border: 1px solid #3b5668; border-radius: 6px; color: #e8eef4; background: #0d141a; }
+    aside { padding: 18px; border-left: 1px solid #2b3a47; background: #141e27; overflow: auto; }
+    .card { margin-bottom: 14px; padding: 12px; border: 1px solid #2b3a47; border-radius: 8px; }
+    h2 { margin: 0 0 10px; font-size: 14px; }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0; font-size: 12px; }
+    dt { color: #8ea6b6; } dd { margin: 0; overflow-wrap: anywhere; }
+    ul { margin: 0; padding: 0; list-style: none; }
+    li { margin: 7px 0; font-size: 12px; }
+    .pass { color: #7bd6a4; } .pending { color: #9fb2c0; }
+    #log { max-height: 180px; overflow: auto; color: #9fb2c0; font: 11px Consolas, monospace; white-space: pre-wrap; }
+    .hint { margin: 0 0 12px; color: #9fb2c0; font-size: 12px; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } aside { border-top: 1px solid #2b3a47; border-left: 0; } #transcript { max-height: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Agent Shell Reuse Relay Contract</h1>
+    <div class="meta"><span id="connection">Connecting...</span><span>Fake Relay only</span><span>Host owns identity, session, and authority</span></div>
+  </header>
+  <main>
+    <section>
+      <div id="transcript" aria-label="Transcript"></div>
+      <div id="tool-root"></div>
+      <div id="approval-root"></div>
+      <div class="actions">
+        <button id="stop" disabled>Stop</button>
+        <button id="steer" disabled>Steer</button>
+        <button id="reload">Reload transcript</button>
+        <label><input id="attachment" type="file"></label>
+        <button id="selection">Run selection check</button>
+      </div>
+      <form id="composer" class="composer">
+        <textarea id="input" placeholder="Send a message to the Fake Agent..."></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+    <aside>
+      <div class="card"><h2>Workbench binding</h2><dl id="binding"></dl></div>
+      <div class="card"><h2>Capability proof</h2><p class="hint">Drag from blank space beside one message across another message to test native DOM selection.</p><ul id="checks"></ul></div>
+      <div class="card"><h2>Relay log</h2><div id="log"></div></div>
+    </aside>
+  </main>
+  <script>
+    const checks = { selection: 'DOM selection across messages', streaming: 'Streaming deltas', approval: 'Approval correlation', stop: 'Stop capability', steer: 'Steer capability', attachment: 'Attachment token', reload: 'Transcript reload', handoff: 'Non-authoritative Handoff' };
+    const state = { sessionId: 'session-shell-spike-01', assignmentId: 'assignment-native-surface', attemptId: 'attempt-01', status: 'idle', transcript: [], approval: null, capabilities: { stop: true, steer: true, attachments: true }, passed: new Set(), events: [] };
+    const $ = (id) => document.getElementById(id);
+    const log = (value) => { state.events.unshift(JSON.stringify(value)); $('log').textContent = state.events.slice(0, 18).join('\n'); };
+    const pass = (key) => { state.passed.add(key); renderChecks(); };
+    const renderChecks = () => { $('checks').innerHTML = Object.entries(checks).map(([key, label]) => '<li class="' + (state.passed.has(key) ? 'pass' : 'pending') + '">' + (state.passed.has(key) ? 'PASS' : 'PENDING') + ' - ' + label + '</li>').join(''); };
+    const renderBinding = () => { $('binding').innerHTML = [['Session', state.sessionId], ['Assignment', state.assignmentId], ['Attempt', state.attemptId], ['Status', state.status], ['Authority', 'Host only']].map(([k, v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>').join(''); }; 
+    const renderTranscript = () => { $('transcript').innerHTML = state.transcript.map((m) => '<article class="message ' + m.role + '"><span class="label">' + m.role + '</span>' + escapeHtml(m.text) + '</article>').join(''); $('transcript').scrollTop = $('transcript').scrollHeight; };
+    const escapeHtml = (value) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const emit = (event) => { log(event); if (event.type === 'host_state') { Object.assign(state, { status: event.status, capabilities: event.capabilities }); renderBinding(); $('stop').disabled = !event.capabilities.stop; $('steer').disabled = !event.capabilities.steer; } if (event.type === 'transcript_reload') { state.transcript = event.transcript; renderTranscript(); pass('reload'); } if (event.type === 'user_message') { state.transcript.push({ role: 'user', text: event.text }); renderTranscript(); } if (event.type === 'assistant_delta') { const last = state.transcript[state.transcript.length - 1]; if (!last || last.role !== 'assistant') state.transcript.push({ role: 'assistant', text: event.delta }); else last.text += event.delta; renderTranscript(); pass('streaming'); } if (event.type === 'tool_started') { $('tool-root').textContent = 'Tool started: ' + event.name; } if (event.type === 'tool_completed') { $('tool-root').textContent = 'Tool completed: ' + event.name; } if (event.type === 'approval_requested') { state.approval = event; $('approval-root').innerHTML = '<div class="approval"><strong>Approval required</strong><p>' + escapeHtml(event.toolName) + ' <code>' + escapeHtml(event.requestId) + '</code></p><button data-approval="allow">Allow</button> <button data-approval="deny">Deny</button></div>'; } if (event.type === 'approval_resolved') { state.approval = null; $('approval-root').textContent = 'Approval ' + event.decision + ': ' + event.requestId; pass('approval'); } if (event.type === 'steer_acknowledged') { state.status = 'running'; renderBinding(); pass('steer'); } if (event.type === 'attachment_received') { pass('attachment'); } if (event.type === 'turn_completed') { state.status = 'idle'; renderBinding(); emit({ type: 'handoff_created', handoffId: 'handoff-01', authorityDecisionCreated: false }); } if (event.type === 'handoff_created') pass('handoff'); };
+    const command = (type, payload = {}) => { log({ direction: 'surface->host', type, ...payload }); if (type === 'ready' || type === 'reload_transcript') { emit({ type: 'host_state', status: state.status, capabilities: state.capabilities }); emit({ type: 'transcript_reload', transcript: state.transcript }); return; } if (type === 'send_message') { emit({ type: 'user_message', text: payload.text }); state.status = 'running'; renderBinding(); emit({ type: 'assistant_delta', delta: 'Relay accepted: ' }); setTimeout(() => emit({ type: 'assistant_delta', delta: 'this is a streamed shell event.\n' }), 160); setTimeout(() => emit({ type: 'tool_started', name: 'fake.inspect' }), 320); setTimeout(() => emit({ type: 'approval_requested', requestId: 'approval-01', toolName: 'fake.write' }), 520); setTimeout(() => { if (!state.approval) emit({ type: 'turn_completed' }); }, 1600); } if (type === 'stop') { state.status = 'idle'; renderBinding(); pass('stop'); emit({ type: 'turn_completed' }); } if (type === 'steer') emit({ type: 'steer_acknowledged', attemptId: state.attemptId }); if (type === 'approval_resolve') { if (!state.approval || state.approval.requestId !== payload.requestId) return; emit({ type: 'approval_resolved', requestId: payload.requestId, decision: payload.decision }); if (payload.decision === 'allow') setTimeout(() => emit({ type: 'turn_completed' }), 180); } if (type === 'attachment_prepare') { emit({ type: 'attachment_received', token: 'attachment-token-01', name: payload.name, size: payload.size }); } };
+    $('composer').addEventListener('submit', (event) => { event.preventDefault(); const text = $('input').value.trim(); if (!text) return; $('input').value = ''; command('send_message', { text }); });
+    $('stop').addEventListener('click', () => command('stop')); $('steer').addEventListener('click', () => command('steer', { text: 'adjust direction' })); $('reload').addEventListener('click', () => command('reload_transcript')); $('selection').addEventListener('click', () => { const range = document.createRange(); range.selectNodeContents($('transcript')); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); pass('selection'); });
+    $('attachment').addEventListener('change', () => { const file = $('attachment').files[0]; if (file) command('attachment_prepare', { name: file.name, size: file.size, type: file.type }); }); $('approval-root').addEventListener('click', (event) => { const button = event.target.closest('[data-approval]'); if (button && state.approval) command('approval_resolve', { requestId: state.approval.requestId, decision: button.dataset.approval === 'allow' ? 'allow' : 'deny' }); });
+    renderChecks(); renderBinding(); command('ready'); $('connection').textContent = 'Fake Relay connected';
+    if (new URLSearchParams(location.search).get('selfTest') === '1') {
+      command('send_message', { text: 'automated shell contract test' });
+      setTimeout(() => command('steer', { text: 'test steer' }), 100);
+      setTimeout(() => command('attachment_prepare', { name: 'fixture.txt', size: 12, type: 'text/plain' }), 200);
+      setTimeout(() => { if (state.approval) command('approval_resolve', { requestId: state.approval.requestId, decision: 'allow' }); }, 900);
+      setTimeout(() => command('reload_transcript'), 1200);
+    }
+  </script>
+</body>
+</html>

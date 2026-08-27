@@ -28,10 +28,23 @@ public interface IAgentRuntime
         AgentRequest request,
         CancellationToken cancellationToken = default);
 
+    Task SteerAsync(
+        AgentSession session,
+        AgentRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException($"Runtime '{RuntimeKind}' does not support steering."));
+
     Task RespondToApprovalAsync(
         AgentSession session,
         AgentApprovalDecision decision,
         CancellationToken cancellationToken = default);
+
+    Task RespondToQuestionAsync(
+        AgentSession session,
+        string requestId,
+        IReadOnlyDictionary<string, string> answers,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException($"Runtime '{RuntimeKind}' does not support user questions."));
 
     Task StopAsync(AgentSession session, CancellationToken cancellationToken = default);
 

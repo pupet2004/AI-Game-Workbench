@@ -13,5 +13,7 @@ public enum AgentCapability
     ParallelSessions = 1 << 6,
     ToolEvents = 1 << 7,
     StructuredOutput = 1 << 8,
-    CostMetrics = 1 << 9
+    CostMetrics = 1 << 9,
+    Steer = 1 << 10,
+    ImageInput = 1 << 11
 }

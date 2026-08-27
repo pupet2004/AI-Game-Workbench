@@ -12,6 +12,17 @@ pwsh -NoLogo -NoProfile -File .\tools\publish-windows.ps1 -Version alpha
 
 The resulting ZIP is in `artifacts\release`. Extract it and run `Workbench.App.exe`; no .NET runtime, Node.js, Codex, OpenCode, or other Agent installation is required for Manual mode. Enable an Agent only when needed in `Settings`, where an optional executable path can override the detected local installation.
 
+## Local Native Surface
+
+To run the development build with the Native Agent Surface enabled, run the helper from any PowerShell directory:
+
+```powershell
+& 'C:\Users\pupet\Documents\ChatGPT\AI Game Workbench\tools\run-native-surface.cmd'
+```
+
+This helper resolves the project path and sets `WORKBENCH_NATIVE_AGENT_SURFACE=1` automatically.
+If Workbench is already open, close the existing window first so the development build can replace its DLLs.
+
 M0 — Empty Office
 Completed
 

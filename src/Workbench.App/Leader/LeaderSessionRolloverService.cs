@@ -40,6 +40,7 @@ public sealed class LeaderSessionRolloverService(
         string rolloverReason,
         LeaderMemoryPolicyDecision? policyDecision = null,
         bool policyManaged = false,
+        AvailableModelProfile? targetModel = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -52,6 +53,10 @@ public sealed class LeaderSessionRolloverService(
         }
 
         var runtime = _runtimeRegistry.GetByAccount(oldSession.AccountId);
+        var targetRuntime = targetModel is null
+            ? runtime
+            : _runtimeRegistry.GetByAccount(targetModel.AccountId);
+        var targetModelId = targetModel?.Model.ModelId ?? oldEpoch.ModelId;
         string? handoff = policyDecision?.BrainHandoff;
         var source = handoff is null ? LeaderHandoffSource.None : LeaderHandoffSource.Semantic;
         if (!policyManaged)
@@ -68,20 +73,20 @@ public sealed class LeaderSessionRolloverService(
             }
         }
 
-        var newSession = await runtime.CreateSessionAsync(
-            new CreateAgentSessionRequest(oldSession.AccountId, oldEpoch.ModelId, oldEpoch.WorkingDirectory),
+        var newSession = await targetRuntime.CreateSessionAsync(
+            new CreateAgentSessionRequest(targetRuntime.Account.Id, targetModelId, oldEpoch.WorkingDirectory),
             cancellationToken);
         if (newSession.Id == oldSession.Id ||
             string.IsNullOrWhiteSpace(newSession.ExternalSessionId) ||
             string.Equals(newSession.ExternalSessionId, oldSession.ExternalSessionId, StringComparison.Ordinal) ||
-            newSession.AccountId != oldSession.AccountId ||
-            newSession.ProviderId != oldSession.ProviderId ||
-            !string.Equals(newSession.ModelId, oldEpoch.ModelId, StringComparison.Ordinal) ||
+            newSession.AccountId != targetRuntime.Account.Id ||
+            newSession.ProviderId != targetRuntime.Provider.Id ||
+            !string.Equals(newSession.ModelId, targetModelId, StringComparison.Ordinal) ||
             !string.Equals(newSession.WorkingDirectory, oldEpoch.WorkingDirectory, StringComparison.Ordinal))
         {
             if (newSession.Id != oldSession.Id)
             {
-                await StopIgnoringFailureAsync(runtime, newSession);
+                await StopIgnoringFailureAsync(targetRuntime, newSession);
             }
             throw new InvalidOperationException(
                 "The runtime did not create a distinct successor session with the inherited provider, account, model, and working directory.");
@@ -91,9 +96,9 @@ public sealed class LeaderSessionRolloverService(
         var newEpoch = new StoredLeaderSessionEpoch(
             Guid.NewGuid(),
             project.Id,
-            oldEpoch.ProviderId,
-            oldEpoch.ProviderAccountId,
-            oldEpoch.ModelId,
+            targetRuntime.Provider.Id.Value,
+            targetRuntime.Account.Id.Value,
+            targetModelId,
             newSession.Id.Value,
             newSession.ExternalSessionId,
             oldEpoch.WorkingDirectory,
@@ -122,7 +127,7 @@ public sealed class LeaderSessionRolloverService(
         {
             try
             {
-                await runtime.StopAsync(newSession, CancellationToken.None);
+                await targetRuntime.StopAsync(newSession, CancellationToken.None);
             }
             catch
             {

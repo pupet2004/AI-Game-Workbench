@@ -1,0 +1,35 @@
+{
+  "version": "0.1-spike",
+  "direction": {
+    "hostToSurface": [
+      "host_state",
+      "transcript_reload",
+      "user_message",
+      "assistant_delta",
+      "tool_started",
+      "tool_completed",
+      "approval_requested",
+      "approval_resolved",
+      "steer_acknowledged",
+      "attachment_received",
+      "turn_completed",
+      "handoff_created"
+    ],
+    "surfaceToHost": [
+      "ready",
+      "send_message",
+      "stop",
+      "steer",
+      "approval_resolve",
+      "attachment_prepare",
+      "reload_transcript"
+    ]
+  },
+  "invariants": {
+    "identityIsHostOwned": true,
+    "approvalRequiresRequestId": true,
+    "attachmentsUseTokens": true,
+    "completionCannotWriteAcceptedState": true,
+    "transcriptReloadComesFromHost": true
+  }
+}

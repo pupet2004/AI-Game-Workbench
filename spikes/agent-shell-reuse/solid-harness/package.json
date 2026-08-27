@@ -1,0 +1,21 @@
+{
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@kobalte/core": "^0.13.11",
+    "dompurify": "^3.4.2",
+    "marked": "^18.0.7",
+    "remend": "^1.3.0",
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.4",
+    "vite": "7.3.5",
+    "vite-plugin-solid": "2.11.10"
+  },
+  "name": "workbench-kilo-shell-solid-harness",
+  "type": "module",
+  "private": true
+}

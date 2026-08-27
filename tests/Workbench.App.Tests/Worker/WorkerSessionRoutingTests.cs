@@ -26,10 +26,27 @@ public sealed class WorkerSessionRoutingTests
         Assert.Equal(fixture.Project.RootPath, fixture.Runtime.CreateRequests[0].WorkingDirectory);
         Assert.Equal(fixture.Profile.ModelProfileId, fixture.Runtime.CreateRequests[0].ModelId);
         Assert.Equal(result.WorkerSession!.Id, fixture.Runtime.SentSessions.Single().Id);
-        Assert.Equal("Leader prompt A", fixture.Runtime.SentRequests.Single().Text);
+        var sent = fixture.Runtime.SentRequests.Single().Text;
+        Assert.StartsWith("Leader prompt A", sent, StringComparison.Ordinal);
+        Assert.Contains("# Workbench Worker", sent, StringComparison.Ordinal);
         var events = await fixture.ListAsync();
         Assert.Contains(events, item => item.Type == "WorkerSessionStarted");
         Assert.Contains(events, item => item.Type == "WorkerToLeaderHandoff" && item.Payload.Contains("Worker result A", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Background_worker_start_returns_after_session_is_ready()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.Runtime.PauseBeforeEvents = true;
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, FinalReport("Worker result"), null), DateTimeOffset.UtcNow));
+
+        var result = await fixture.Router.StartAsync(fixture.NewRequest("Leader prompt", waitForCompletion: false));
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(result.WorkerSession);
+        await fixture.Runtime.WaitForSendAsync();
+        fixture.Runtime.ReleaseSend();
     }
 
     [Fact]
@@ -45,7 +62,9 @@ public sealed class WorkerSessionRoutingTests
         Assert.True(result.Succeeded);
         Assert.Empty(fixture.Runtime.CreateRequests);
         Assert.Equal(worker.Id, fixture.Runtime.SentSessions.Single().Id);
-        Assert.Equal("Leader correction B", fixture.Runtime.SentRequests.Single().Text);
+        var sent = fixture.Runtime.SentRequests.Single().Text;
+        Assert.StartsWith("Leader correction B", sent, StringComparison.Ordinal);
+        Assert.Contains("# Workbench Worker", sent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -87,7 +106,11 @@ public sealed class WorkerSessionRoutingTests
         Assert.True(second.Succeeded);
         Assert.Equal(first.WorkerSession.Id, second.WorkerSession!.Id);
         Assert.Single(fixture.Runtime.CreateRequests);
-        Assert.Equal(["Prompt A", "Correction B"], fixture.Runtime.SentRequests.Select(item => item.Text));
+        var prompts = fixture.Runtime.SentRequests.Select(item => item.Text).ToArray();
+        Assert.Equal(2, prompts.Length);
+        Assert.StartsWith("Prompt A", prompts[0], StringComparison.Ordinal);
+        Assert.StartsWith("Correction B", prompts[1], StringComparison.Ordinal);
+        Assert.All(prompts, prompt => Assert.Contains("# Workbench Worker", prompt, StringComparison.Ordinal));
         var events = await fixture.ListAsync();
         Assert.Equal(2, events.Count(item => item.Type == "WorkerToLeaderHandoff"));
     }
@@ -184,8 +207,8 @@ public sealed class WorkerSessionRoutingTests
         public AgentRuntimeRegistry Registry { get; }
         public Workbench.Storage.Database.WorkbenchDatabase Database => _context.Services.Database;
 
-        public WorkerStartRequest NewRequest(string prompt, AgentSessionId? reuse = null, Func<WorkerHandoff, CancellationToken, Task>? onHandoff = null) =>
-            new(Project, Task.TaskId, Task.CurrentRevisionId, Task.Title, Profile, prompt, reuse, "Worker 1", onHandoff);
+        public WorkerStartRequest NewRequest(string prompt, AgentSessionId? reuse = null, Func<WorkerHandoff, CancellationToken, Task>? onHandoff = null, bool waitForCompletion = true) =>
+            new(Project, Task.TaskId, Task.CurrentRevisionId, Task.Title, Profile, prompt, reuse, "Worker 1", onHandoff, WaitForCompletion: waitForCompletion);
 
         public AgentSession CreateExistingWorker() => new(AgentSessionId.New(), Runtime.Account.Id, Runtime.Provider.Id, "model-a", Project.RootPath, "worker-existing", AgentSessionStatus.Ready, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 

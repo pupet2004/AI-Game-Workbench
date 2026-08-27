@@ -4,6 +4,7 @@ using Workbench.Core.Continuity;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Continuity;
+using Workbench.App.Skills;
 
 namespace Workbench.App.Continuity;
 
@@ -227,6 +228,8 @@ public sealed class B1AgentParticipationAdapter(
     private static string BuildPrompt(string workContract, string? continuationContext, string? prompt)
     {
         var builder = new StringBuilder();
+        builder.AppendLine(WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Worker));
+        builder.AppendLine();
         builder.AppendLine("Execute the bounded Project Assignment below.");
         builder.AppendLine("Your output is a work result for review, not an accepted Project fact.");
         builder.AppendLine();

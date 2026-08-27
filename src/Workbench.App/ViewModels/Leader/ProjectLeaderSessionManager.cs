@@ -266,6 +266,10 @@ internal sealed class LeaderConversationState(Guid projectId)
 
     public ObservableCollection<LeaderMessageViewModel> Messages { get; } = [];
 
+    public ObservableCollection<LeaderActivityViewModel> Activities { get; } = [];
+
+    public ObservableCollection<LeaderChangedFileViewModel> ChangedFiles { get; } = [];
+
     public SemaphoreSlim LoadGate { get; } = new(1, 1);
 
     public LeaderModelOptionViewModel? SelectedModel { get; set; }
@@ -275,6 +279,8 @@ internal sealed class LeaderConversationState(Guid projectId)
     public StoredLeaderSessionEpoch? Epoch { get; set; }
 
     public AgentApprovalRequested? PendingApproval { get; set; }
+
+    public AgentQuestionRequested? PendingQuestion { get; set; }
 
     public bool IsLoaded { get; set; }
 
@@ -289,6 +295,10 @@ internal sealed class LeaderConversationState(Guid projectId)
     public bool IsApprovalResponding { get; set; }
 
     public bool IsRolloverRunning { get; set; }
+
+    public bool IsBrainPickerVisible { get; set; }
+
+    public LeaderModelOptionViewModel? BrainTargetModel { get; set; }
 
     public bool HasPendingRotationDecision { get; set; }
 

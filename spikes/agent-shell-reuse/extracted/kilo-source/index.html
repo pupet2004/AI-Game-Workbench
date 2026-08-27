@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kilo Shell Extraction + Workbench Relay</title>
+  <style>
+    :root { color-scheme: dark; font-family: Segoe UI, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #101820; color: #e7eef4; }
+    header { padding: 16px 20px; border-bottom: 1px solid #2d3b48; background: #18242d; }
+    h1 { margin: 0 0 8px; font-size: 20px; } h2 { margin: 0 0 10px; font-size: 14px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #9eb1c0; font-size: 12px; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: calc(100vh - 76px); }
+    #transcript { max-height: 58vh; overflow: auto; padding: 22px; user-select: text; }
+    .message { max-width: 84ch; margin: 0 0 16px; padding: 13px 15px; border: 1px solid #2d3b48; border-radius: 8px; background: #17232d; white-space: pre-wrap; line-height: 1.5; }
+    .message.user { margin-left: auto; background: #20382f; border-color: #35634d; }
+    .label { display: block; margin-bottom: 6px; color: #8fa6b6; font-size: 11px; text-transform: uppercase; user-select: none; }
+    .part { margin-top: 10px; padding: 8px 10px; border-left: 3px solid #d5aa48; background: #282116; color: #e2d2a5; font-size: 12px; white-space: pre-wrap; }
+    .approval { margin: 0 22px 16px; padding: 12px; border: 1px solid #b27d31; border-radius: 8px; background: #2a2013; }
+    aside { padding: 18px; border-left: 1px solid #2d3b48; background: #141e27; }
+    .card { margin-bottom: 14px; padding: 12px; border: 1px solid #2d3b48; border-radius: 8px; }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0; font-size: 12px; } dt { color: #8fa6b6; } dd { margin: 0; overflow-wrap: anywhere; }
+    .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 14px 22px 20px; border-top: 1px solid #2d3b48; }
+    textarea { width: 100%; min-height: 74px; resize: vertical; padding: 10px; border: 1px solid #3b5668; border-radius: 6px; color: #e7eef4; background: #0d141a; }
+    button, input { font: inherit; } button { padding: 7px 11px; border: 1px solid #3b5668; border-radius: 6px; color: #e7eef4; background: #243746; cursor: pointer; } button:disabled { opacity: .45; cursor: default; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 22px 14px; }
+    .hint { color: #9eb1c0; font-size: 12px; } .pass { color: #7bd6a4; } .pending { color: #9eb1c0; }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; } aside { border-top: 1px solid #2d3b48; border-left: 0; } #transcript { max-height: none; } }
+  </style>
+</head>
+<body>
+  <header><h1>Kilo Shell Extraction + Workbench Relay</h1><div class="meta"><span id="connection">Connecting...</span><span>Bounded Kilo source snapshot</span><span>Relay owns identity and authority</span></div></header>
+  <main>
+    <section>
+      <div id="transcript" aria-label="Transcript"></div>
+      <div id="approval"></div>
+      <div class="actions"><button id="stop" disabled>Stop</button><button id="steer" disabled>Steer</button><button id="reload">Reload</button><label><input id="file" type="file"></label></div>
+      <form id="composer" class="composer"><textarea id="prompt" placeholder="Enter sends; Shift+Enter inserts a newline"></textarea><button id="send" type="submit">Send</button></form>
+    </section>
+    <aside><div class="card"><h2>Host binding</h2><dl id="binding"></dl></div><div class="card"><h2>Extraction checks</h2><ul id="checks"></ul><p class="hint">This page uses the adapter seam, not Kilo's server/provider contexts.</p></div></aside>
+  </main>
+  <script type="module">
+    import { createKiloRelayAdapter } from './relay-adapter.js';
+    const checks = new Set();
+    const names = { send: 'Enter sends / Shift+Enter newline', busy: 'Send disabled while running', approval: 'Approval request id returned', attachment: 'Attachment token returned', reload: 'Host transcript reload', handoff: 'Completion stays non-authoritative' };
+    const relay = { listeners: new Set(), messages: [], send(command) { if (command.type === 'ready' || command.type === 'reload_transcript') { emit({ type: 'host_state', sessionId: 'session-kilo-adapter-01', assignmentId: 'assignment-shell-reuse', attemptId: 'attempt-01', status: 'idle', capabilities: { stop: true, steer: true, attachments: true } }); emit({ type: 'transcript_reload', messages: structuredClone(this.messages) }); return; } if (command.type === 'send_message') { emit({ type: 'user_message', text: command.text }); emit({ type: 'host_state', status: 'running', capabilities: { stop: true, steer: true, attachments: true } }); setTimeout(() => emit({ type: 'assistant_delta', delta: 'Kilo adapter streamed response.\n' }), 120); setTimeout(() => emit({ type: 'tool_started', name: 'fake.inspect' }), 240); setTimeout(() => emit({ type: 'approval_requested', requestId: 'approval-kilo-01', toolName: 'fake.write' }), 420); } if (command.type === 'approval_resolve') { emit({ type: 'approval_resolved', requestId: command.requestId, decision: command.decision }); if (command.decision === 'allow') setTimeout(() => { emit({ type: 'turn_completed' }); emit({ type: 'handoff_created', authorityDecisionCreated: false }); mark('handoff'); }, 120); } if (command.type === 'stop') emit({ type: 'turn_interrupted' }); if (command.type === 'steer') emit({ type: 'steer_acknowledged' }); if (command.type === 'attachment_prepare') emit({ type: 'attachment_received', token: 'attachment-token-kilo-01', name: command.name }); } };
+    const emit = (event) => { const last = relay.messages.at(-1); if (event.type === 'user_message') relay.messages.push({ id: crypto.randomUUID(), role: 'user', text: event.text, parts: [] }); if (event.type === 'assistant_delta') { const assistant = last?.role === 'assistant' ? last : { id: crypto.randomUUID(), role: 'assistant', text: '', parts: [] }; if (assistant !== last) relay.messages.push(assistant); assistant.text += event.delta; } if (event.type === 'tool_started' || event.type === 'tool_completed' || event.type === 'attachment_received') { const assistant = relay.messages.at(-1)?.role === 'assistant' ? relay.messages.at(-1) : { id: crypto.randomUUID(), role: 'assistant', text: '', parts: [] }; if (assistant !== relay.messages.at(-1)) relay.messages.push(assistant); assistant.parts.push(event.type === 'attachment_received' ? { type: 'attachment', token: event.token, name: event.name } : { type: 'tool', name: event.name, status: event.type === 'tool_started' ? 'running' : 'completed' }); } relay.listeners.forEach((listener) => listener(event)); };
+    const adapter = createKiloRelayAdapter({ send: (command) => relay.send(command) });
+    const mark = (key) => { checks.add(key); renderChecks(); };
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const renderChecks = () => { $('checks').innerHTML = Object.entries(names).map(([key, label]) => '<li class="' + (checks.has(key) ? 'pass' : 'pending') + '">' + (checks.has(key) ? 'PASS' : 'PENDING') + ' - ' + label + '</li>').join(''); };
+    const render = (state) => { $('binding').innerHTML = [['Session', state.sessionId], ['Assignment', state.assignmentId], ['Attempt', state.attemptId], ['Status', state.status], ['Authority', 'Host only']].map(([key, value]) => '<dt>' + key + '</dt><dd>' + escapeHtml(value ?? '-') + '</dd>').join(''); $('transcript').innerHTML = state.messages.map((message) => '<article class="message ' + message.role + '"><span class="label">' + message.role + '</span>' + escapeHtml(message.text) + message.parts.map((part) => '<div class="part">' + escapeHtml(part.name ?? part.token ?? part.output ?? part.status) + '</div>').join('') + '</article>').join(''); $('transcript').scrollTop = $('transcript').scrollHeight; $('stop').disabled = !state.capabilities.stop || state.status !== 'running'; $('steer').disabled = !state.capabilities.steer || state.status !== 'running'; $('send').disabled = state.status === 'running'; if (state.status === 'running') mark('busy'); if (state.approval) $('approval').innerHTML = '<div class="approval"><strong>Approval required</strong><p>' + escapeHtml(state.approval.toolName) + ' <code>' + escapeHtml(state.approval.requestId) + '</code></p><button id="allow">Allow</button> <button id="deny">Deny</button></div>'; else $('approval').textContent = ''; };
+    const $ = (id) => document.getElementById(id);
+    relay.listeners.add((event) => adapter.onHostEvent(event)); adapter.onChange(render); adapter.ready(); $('connection').textContent = 'Relay connected'; renderChecks();
+    $('composer').addEventListener('submit', (event) => { event.preventDefault(); const text = $('prompt').value.trim(); if (!text || adapter.state.status === 'running') return; adapter.sendPrompt(text); $('prompt').value = ''; mark('send'); }); $('prompt').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('composer').requestSubmit(); } }); $('stop').addEventListener('click', () => adapter.stop()); $('steer').addEventListener('click', () => adapter.steer('adjust direction')); $('reload').addEventListener('click', () => { adapter.reload(); mark('reload'); }); $('file').addEventListener('change', () => { const file = $('file').files[0]; if (file) { adapter.prepareAttachment(file); mark('attachment'); } }); $('approval').addEventListener('click', (event) => { const button = event.target.closest('button'); if (!button) return; adapter.resolveApproval(button.id === 'allow' ? 'allow' : 'deny'); mark('approval'); });
+    if (new URLSearchParams(location.search).get('selfTest') === '1' && !window.__kiloRelaySelfTestStarted) { window.__kiloRelaySelfTestStarted = true; adapter.sendPrompt('automated adapter test'); mark('send'); setTimeout(() => adapter.steer('test steer'), 100); setTimeout(() => { adapter.prepareAttachment({ name: 'fixture.txt', size: 12, type: 'text/plain' }); mark('attachment'); }, 180); setTimeout(() => { if (adapter.state.approval) { adapter.resolveApproval('allow'); mark('approval'); } }, 850); setTimeout(() => { adapter.reload(); mark('reload'); }, 1100); }
+  </script>
+</body>
+</html>
