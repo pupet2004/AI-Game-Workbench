@@ -12,7 +12,14 @@
             <Setter Property="BorderBrush" Value="#4A4A4A" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="Padding" Value="10,2" />
+            <Setter Property="MinHeight" Value="24" />
+        </Style>
+        <Style Selector="Button.workerCardButton">
+            <Setter Property="Width" Value="42" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Padding" Value="0" />
         </Style>
         <Style Selector="Border.workerCard:pointerover">
             <Setter Property="Background" Value="#2A2A2A" />
@@ -59,12 +66,12 @@
                                 <Grid IsVisible="{Binding IsCompact}" ColumnDefinitions="*,Auto,Auto" Grid.ColumnSpan="3">
                                     <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
                                     <TextBlock Grid.Column="1" Text="{Binding CompactTimeText}" Foreground="#8A8A8A" VerticalAlignment="Center" Margin="8,0" />
-                                    <Button Grid.Column="2" Content="⌃" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="展开任务详情" Padding="7,3" />
+                                    <Button Classes="workerCardButton" Grid.Column="2" Content="⌃" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="展开任务详情" />
                                 </Grid>
                                 <Grid IsVisible="{Binding !IsCompact}" Grid.RowSpan="2" Grid.ColumnSpan="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="4">
                                 <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" />
-                                <Button Grid.Column="1" Grid.RowSpan="2" Content="⌄" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="收缩任务详情" Padding="7,3" />
-                                <Button Grid.Column="2" Grid.RowSpan="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" Padding="7,3" />
+                                <Button Classes="workerCardButton" Grid.Column="1" Grid.RowSpan="2" Content="⌄" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="收缩任务详情" />
+                                <Button Classes="workerCardButton" Grid.Column="2" Grid.RowSpan="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" />
                                 <TextBlock Grid.Row="1" Text="{Binding WorkerLabel}" />
                                 <TextBlock Grid.Row="2" Text="{Binding Profile}" Foreground="#667085" />
                                 <Grid Grid.Row="3" ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid>
