@@ -8,6 +8,8 @@ $ErrorActionPreference = 'Stop'
 # Resolve the repository from this script so the current directory does not matter.
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\Workbench.App\Workbench.App.csproj'
+$runtimeDirectory = Join-Path $repo 'src\Workbench.App\bin\Release\net10.0'
+$publishedExecutable = Join-Path $runtimeDirectory 'Workbench.App.exe'
 
 if (-not (Test-Path -LiteralPath $project)) {
     throw "Workbench project not found: $project"
@@ -28,17 +30,39 @@ if ($running.Count -gt 0) {
 
 $env:WORKBENCH_NATIVE_AGENT_SURFACE = '1'
 
-$arguments = @('run', '--project', $project)
-if ($NoBuild) {
-    $arguments += '--no-build'
-}
-if ($SkipLaunchProfile) {
-    $arguments += '--no-launch-profile'
+if (-not (Test-Path -LiteralPath $publishedExecutable)) {
+    if ($NoBuild) {
+        throw "Native Surface executable not found: $publishedExecutable"
+    }
+
+    New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
+    $publishArguments = @(
+        'publish', $project,
+        '--configuration', 'Release',
+        '--runtime', 'win-x64',
+        '--self-contained', 'true',
+        '--output', $runtimeDirectory,
+        '-p:PublishSingleFile=true',
+        '-p:IncludeNativeLibrariesForSelfExtract=true',
+        '-p:PublishTrimmed=false',
+        '-p:DebugType=None',
+        '-p:DebugSymbols=false'
+    )
+    Push-Location $repo
+    try {
+        & dotnet @publishArguments
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 
-Push-Location $repo
+Push-Location $runtimeDirectory
 try {
-    & dotnet @arguments
+    & $publishedExecutable
     exit $LASTEXITCODE
 }
 finally {
