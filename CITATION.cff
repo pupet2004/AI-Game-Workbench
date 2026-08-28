@@ -1,9 +1,9 @@
 cff-version: 1.2.0
 title: "Workbench: A Project Continuity Layer for Long-Term AI Collaboration"
-message: "If this architecture or whitepaper is useful, please cite the Architecture Preview."
+message: "If this architecture or whitepaper is useful, please cite the current Architecture Preview revision."
 type: software
-version: "0.1.0-preview"
-date-released: 2026-08-27
+version: "0.1.1-preview"
+date-released: 2026-08-28
 authors:
   - name: "pupet"
 abstract: >-

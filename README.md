@@ -79,6 +79,8 @@ Workbench separates information into three lanes:
 
 - [Whitepaper, English](./workbench_paper_en.md)
 - [Whitepaper, Chinese](./workbench_paper_cn.md)
+- [Theoretical foundations, English](./THEORETICAL_FOUNDATIONS.md)
+- [理论基础（中文）](./理论基础.md)
 - [Why Workbench, Chinese](./%E6%88%91%E4%BB%AC%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E5%81%9A%20Workbench.md)
 - [Architecture at a glance](./ARCHITECTURE.md)
 - [Roadmap and release status](./ROADMAP.md)

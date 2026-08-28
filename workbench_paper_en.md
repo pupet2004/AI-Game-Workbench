@@ -1,8 +1,9 @@
 # Workbench: A Project Continuity Layer Architecture for Long-Term AI Collaboration
 
 **Status:** Architecture Preview  
-**Version:** Whitepaper v0.1  
-**Date:** 2026-08-27  
+**Version:** Whitepaper v0.1.1-preview
+**Date:** 2026-08-28
+**First published:** 2026-08-27
 **Author:** pupet  
 **Software status:** Working reference implementation; a Windows-first `v0.1.0-alpha.20260827` candidate exists in the implementation workspace, while broader public product release and usability validation remain in progress.
 
@@ -12,7 +13,7 @@
 
 ## Abstract
 
-When AI agents, models, sessions, and tools change over time, how does a long-term project maintain coherent existence? Current approaches—conversation memory, knowledge bases, and agent frameworks—address fragments of this problem but do not consistently expose or integrate an independent substrate for project identity, decision provenance, and state recovery across changing AI participants. This paper presents Workbench, a project continuity layer that is designed to decouple long-term project existence from the transient nature of AI participants. Workbench contributes: (1) a three-lane information architecture separating Authority, Context, and Execution, designed to prevent AI outputs from automatically becoming project truth; (2) a Claim–Decision–State model governing which proposed changes enter project reality; and (3) a multi-layer compression framework (Session → Handoff → Summary → Library → Accepted State) designed to reduce long-term context re-comprehension costs while preserving traceability. We analyze Workbench's relationship to Event Sourcing, CQRS, Git, ADR, and project management systems, positioning it as a complementary layer rather than a replacement for existing tools. An implementation verifies the architectural kernel with 1,022 passed tests across five modules, establishing that the proposed design constitutes a working system substrate rather than a purely conceptual contribution. We discuss governance cost tradeoffs, known failure modes, and the boundary between project governance and AI safety. Workbench occupies a specific niche: governing project meaning and decision provenance in the face of participant flux.
+When AI agents, models, sessions, and tools change over time, how does a long-term project maintain coherent existence? Recent systems and practices increasingly address parts of this problem, including memory, context management, provenance, and governance, but their emphases and boundaries differ. This paper presents Workbench as a project continuity layer designed to decouple long-term project existence from the transient nature of AI participants. Workbench contributes: (1) a three-lane information architecture separating Authority, Context, and Execution, designed to prevent AI outputs from automatically becoming project truth; (2) a Claim–Decision–State model governing which proposed changes enter project reality; and (3) a set of related context representations—Session, Handoff, Summary, Library, and Accepted State—connected by progressive disclosure rather than a single authority ladder. We analyze Workbench's relationship to Event Sourcing, CQRS, Git, ADR, project-memory systems, and project management systems, positioning it as a complementary layer rather than a replacement for existing tools. An implementation verifies the architectural kernel with 1,022 passed tests across five modules, establishing that the proposed design constitutes a working system substrate rather than a purely conceptual contribution. We discuss governance cost tradeoffs, known failure modes, and the boundary between project governance and AI safety. Workbench occupies a specific niche: governing project meaning and decision provenance in the face of participant flux.
 
 **Keywords:** project continuity, long-term projects, AI agent collaboration, decision governance, architecture design, agent replaceability, information architecture, event sourcing, claim-decision-state model
 
@@ -243,6 +244,8 @@ Recent systems indicate that the problem space is beginning to converge rather t
 
 These systems are important neighbors, not straw targets. They show that project memory, continuity, provenance, and governance are emerging as related concerns. Workbench explores a particular integration centered on a first-class Project World, explicit Authority / Context / Execution separation, a Claim → Decision → Accepted State pipeline, and replaceable participants across software, game, research, writing, and other long-lived project domains. The claim is therefore one of architectural emphasis and combination, not that no related system exists.
 
+For this paper, we use **Continuity Harness** as a descriptive framing for that integration. The harness coordinates three related forms of continuity: Execution Continuity across assignments, attempts, results, and task-local Handoffs; Semantic Continuity across project views and source artifacts; and Authority Continuity across Claims, Authority Decisions, and Accepted Project State. These axes interact, but they are deliberately kept distinct: useful context does not become project truth merely by being recent, compact, or produced by an agent.
+
 ### 3.9 Gap Identification
 
 Table 1 summarizes the gap analysis across existing technologies.
@@ -347,11 +350,11 @@ The historical record supports this concern. In the span of three years (2023–
 
 *Architectural implication:* All agent interactions are mediated through a uniform interface contract (Assignment → Attempt → Claim/Handoff). The internal implementation of the agent is irrelevant to the project continuity layer. Agent adapters handle translation between this contract and agent-specific interfaces.
 
-**Principle 5: Highest-Density-Sufficient Reading.** When a new participant needs to understand the project, the system should provide the *smallest sufficient* information layer. The goal is not to provide more information but to provide exactly enough.
+**Principle 5: Minimum Sufficient Context.** When a new participant needs to understand the project, the system should provide the *smallest sufficient* information view. The goal is not to provide more information but to provide enough information for the current task without silently dropping material constraints.
 
-*Motivation:* Token costs and cognitive load are real constraints. Requiring every new session to re-read the entire project history is wasteful. Providing only a superficial summary risks misunderstanding. The highest-density-sufficient principle optimizes the cost-benefit tradeoff by enabling participants to read the most compressed layer that contains sufficient information for their current task.
+*Motivation:* Context costs and cognitive load are real constraints. Requiring every new session to re-read the entire project history is often wasteful, while a superficial summary risks misunderstanding. Minimum Sufficient Context is a design target and reading protocol: start with a compact project view, then recover more detail when the task requires it. It is not a measured token-saving result.
 
-*Architectural implication:* The system maintains multiple compression layers (Session, Handoff, Summary, Library, Accepted State) and provides a reading protocol that selects the appropriate layer based on task complexity. Simple tasks read the Accepted State; complex tasks traverse down to Decisions and Handoffs; forensic analysis reaches the original Sessions.
+*Architectural implication:* The system maintains multiple semantic views (Session, Handoff, Summary, Library) alongside the authoritative Accepted State. A reading protocol selects the appropriate view based on task complexity. Simple tasks may begin with Accepted State; complex tasks can inspect Decisions and task-local Handoffs; forensic analysis reaches the original Sessions. These views are related, but Handoffs are not projections of Accepted State and contextual artifacts do not acquire authority by being more concise.
 
 ### 4.2 Three-Lane Information Architecture
 
@@ -618,25 +621,25 @@ Workbench's approach is captured in two principles:
 
 ### 5.2 Multi-Layer Compression Model
 
-Workbench implements a five-layer compression model, each layer trading detail for density while maintaining explicit authority relationships:
+Workbench uses five related representations for progressive disclosure. They are not a single authority ladder: Session, Handoff, Summary, and Library support semantic continuity, while Accepted State is the authoritative project state.
 
 ```
-Layer           Role                    Authority    Token Cost   Traceability
-─────────────────────────────────────────────────────────────────────────────────
-Session         Full interaction log    None         Highest      Complete
-Handoff         Task handover packet    None         High         Partial
-Summary         High-density context    None         Medium       References
-Library         Long-term navigation    Projection   Low          Decision-level
-Accepted State  Project reality         Highest      Lowest       Full (via chain)
+Representation  Role                    Authority    Typical use             Traceability
+──────────────────────────────────────────────────────────────────────────────────────────
+Session         Full interaction log    Contextual   Forensic recovery       Complete
+Handoff         Task-local checkpoint   Contextual   Resume an active task   Source-linked
+Summary         Dense project view      Contextual   Fast orientation        References
+Library         Read-only projection    Derived      Long-term navigation     Decision-level
+Accepted State  Project reality         Highest      Govern current work     Full (via chain)
 ─────────────────────────────────────────────────────────────────────────────────
 
-Fig. 4. Multi-layer compression model. Authority and token cost are
-inversely related: the most compressed layers carry the highest authority
-per token but the least detail. Compressed layers never acquire
-authority over their sources.
+Fig. 4. Related context representations and the authority boundary.
+Progressive disclosure concerns how participants read information; it does
+not imply that a more compact representation is more authoritative. Context
+representations never acquire authority over their sources.
 ```
 
-The reading protocol follows a highest-density-sufficient principle:
+The reading protocol follows the Minimum Sufficient Context principle:
 
 ```
 New participant joins project
@@ -668,15 +671,15 @@ Fig. 5. Compression reading protocol. Participants start at the most
 compressed sufficient layer and descend only when needed.
 ```
 
-**Session (Layer 1).** The complete interaction history between a user/agent and the system. Sessions contain everything: explorations, dead ends, corrections, partial analyses, and final outputs. They are the most detailed but least dense layer. Sessions are the authoritative source for *what happened during the interaction* but not for *what was decided*—decisions must be explicitly made via Authority Decisions to enter the project's accepted reality.
+**Session.** The complete interaction history between a user/agent and the system. Sessions contain everything: explorations, dead ends, corrections, partial analyses, and final outputs. They are the most detailed but least dense representation. Sessions are the authoritative source for *what happened during the interaction* but not for *what was decided*—decisions must be explicitly made via Authority Decisions to enter the project's accepted reality.
 
-**Handoff (Layer 2).** A structured packet that captures the relevant outcomes of a session for the next participant. A Handoff includes: the task attempted, the result produced, the key decisions made or pending, unresolved issues, and references to relevant Accepted State elements. Handoffs are the primary mechanism for inter-agent communication and are designed to be self-contained enough for a new agent to pick up work without reading the entire session. A Handoff is a structured design target whose appropriate size depends on task complexity; no empirical compression ratio is claimed here.
+**Handoff.** A task-local continuation checkpoint produced by an Attempt or Session for the next participant. It may include the task boundary, work performed, outputs, unresolved questions, pending Claims, recommended next checks, and references to relevant Accepted State elements. A Handoff is not a copy of conversation history, not a projection of Accepted State, and not an authority record. It is the primary mechanism for resuming work across participant boundaries. Its appropriate size depends on task complexity; no empirical compression ratio or token saving is claimed here.
 
-**Summary (Layer 3).** A high-density representation of the project's current state, recent decisions, and active work. Summaries are generated artifacts—compressed views of the project—and therefore carry no inherent authority. They reference Authority Decisions by ID rather than restating their content as standalone facts. A well-designed Summary allows a new participant to quickly orient without being misled into treating the Summary itself as ground truth. Any token range is an illustrative design target, not an empirical result.
+**Summary.** A high-density representation of the project's current state, recent decisions, and active work. Summaries are generated artifacts—compressed views of the project—and therefore carry no inherent authority. They reference Authority Decisions by ID rather than restating their content as standalone facts. A well-designed Summary allows a new participant to quickly orient without being misled into treating the Summary itself as ground truth. Any token range is an illustrative design target, not an empirical result.
 
-**Library (Layer 4).** The read-only projection of the Accepted Project State, providing timeline views, evolution tracking, and current state summaries. The Library is the most compressed and most navigable layer, designed for quick reference rather than detailed understanding. Library entries should be concise enough for efficient browsing; any token range is an illustrative design target, not an empirical result.
+**Library.** The read-only projection of the Accepted Project State, providing timeline views, evolution tracking, and current state summaries. The Library is a navigable representation designed for quick reference rather than detailed understanding. Library entries should be concise enough for efficient browsing; any token range is an illustrative design target, not an empirical result.
 
-**Accepted State (Layer 5).** The authoritative project reality, derived from the projection of all accepted Authority Decisions. This is the highest-authority, lowest-detail layer. For many routine tasks, reading the Accepted State alone may provide sufficient context to begin work; the appropriate size depends on the project and task. The Accepted State answers "what is currently true?" without requiring the participant to understand the full history of how it became true.
+**Accepted State.** The authoritative project reality, derived from the projection of all accepted Authority Decisions. It is the highest-authority representation, with detail determined by the project and task. For many routine tasks, reading the Accepted State alone may provide sufficient context to begin work. The Accepted State answers "what is currently true?" without requiring the participant to understand the full history of how it became true.
 
 ### 5.3 Governance in Compression
 
@@ -694,7 +697,7 @@ Workbench prevents this failure through two mechanisms:
 
 ### 5.4 Long-Term Cost Analysis
 
-The architectural expectation is qualitative: conventional workflows repeatedly reconstruct project context from conversation excerpts, documents, code summaries, and user explanations, while Workbench lets a participant begin with Accepted State and descend into Decisions, Handoffs, and Sessions only as needed. This may reduce repeated re-comprehension and may improve context quality, but the magnitude of any token or time benefit is an empirical question for future measurement.
+The architectural expectation is qualitative: conventional workflows repeatedly reconstruct project context from conversation excerpts, documents, code summaries, and user explanations, while Workbench lets a participant begin with a compact project view and descend into Decisions, Handoffs, and Sessions only as needed. This may reduce repeated re-comprehension and may improve context quality, but the magnitude of any token or time benefit is an empirical question for future measurement.
 
 Context re-comprehension reduction is a secondary benefit, not the primary design goal. The primary goal is to provide *better* context. An agent that receives a clear statement of the project's accepted decisions and their provenance will produce higher-quality work than an agent that receives a jumble of past conversations, even if the total token count is similar.
 
@@ -1075,11 +1078,11 @@ Cross-project governance extends the project continuity problem to the inter-pro
 
 This paper presents Workbench, an architectural proposal for a project continuity layer for long-term AI collaboration. The core question: when AI participants change over time, the project itself must maintain coherent existence.
 
-Workbench designs three interlocking mechanisms. A three-lane information architecture separates Authority, Context, and Execution lanes, designed to prevent AI outputs from automatically becoming project truth. A Claim–Decision–State model governs which proposed changes enter the Accepted Project State. A multi-layer compression framework reduces re-comprehension costs while preserving traceability.
+Workbench composes three mechanisms around a common authority boundary. A three-lane information architecture separates Authority, Context, and Execution lanes, designed to prevent AI outputs from automatically becoming project truth. A Claim–Decision–State model governs which proposed changes enter the Accepted Project State. Related context representations—Session, Handoff, Summary, and Library—support progressive disclosure while preserving traceability; they do not replace the authority model.
 
 Workbench does not compete with agent frameworks, knowledge bases, or version control. It occupies a complementary layer, governing project meaning and decision provenance. The implementation verifies architectural feasibility, but long-term effectiveness awaits real-world validation. Limitations have been candidly acknowledged: the system is currently single-user, basic Agent integration has been validated but remains non-authoritative, and the compression model awaits empirical verification.
 
-Workbench is presented as an open-source architecture experiment, and its true value awaits validation through community engagement and long-term practice. The research agenda extends from continuity toward accountability through provenance and recoverability—from ensuring that projects survive participant change, to ensuring that every change can be fully explained, traced, and recovered. Future directions include multi-person collaboration, deeper traceability, development tool integration, and community-driven continuous validation.
+Workbench is presented as an open-source architecture experiment. Its value, usability, and long-term effects remain open empirical questions that require community engagement and sustained practice. The research agenda extends from continuity toward accountability through provenance and recoverability—from helping projects survive participant change, to making changes easier to explain, trace, and recover. Future directions include multi-person collaboration, deeper traceability, development tool integration, and community-driven continuous validation.
 
 Agents will change. Tools will change. Participants will change. But the project itself should have the capacity to continue existing—and that is the direction we need to explore and build together.
 
