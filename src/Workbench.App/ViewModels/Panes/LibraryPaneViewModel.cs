@@ -62,7 +62,8 @@ public sealed record LibraryTimeGroupView(
 public sealed record LibrarySummaryEntryView(
     DateTimeOffset OccurredAt,
     SummaryDeltaKind Kind,
-    string Text)
+    string Text,
+    IReadOnlyList<SummarySourceRef> SourceRefs)
 {
     public string KindLabel => Kind switch
     {
@@ -72,6 +73,19 @@ public sealed record LibrarySummaryEntryView(
         SummaryDeltaKind.RejectedPath => LocalizationService.Current["Library.RejectedPath"],
         _ => LocalizationService.Current["Library.Unresolved"]
     };
+
+    public string TimestampText => OccurredAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
+}
+
+public sealed record LibraryTimeEventView(
+    DateTimeOffset OccurredAt,
+    string Category,
+    string Topic,
+    string Text,
+    IReadOnlyList<LibraryMaterialReference> Materials,
+    IReadOnlyList<SummarySourceRef> SummarySources)
+{
+    public string TimestampText => OccurredAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
 }
 
 public sealed record LibraryTimeDayView(
@@ -136,7 +150,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsOverview), nameof(HasOverviewView), nameof(IsCategory), nameof(IsTime), nameof(HasCategoryView), nameof(HasTimeView), nameof(IsProject))]
-    public partial LibrarySection SelectedSection { get; set; } = LibrarySection.Category;
+    public partial LibrarySection SelectedSection { get; set; } = LibrarySection.Overview;
 
     public bool IsOverview => SelectedSection == LibrarySection.Overview;
 
@@ -220,6 +234,15 @@ public partial class LibraryPaneViewModel : ViewModelBase
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasSelectedTimeDay))] public partial LibraryTimeDayView? SelectedTimeDay { get; set; }
     public bool HasSelectedTimeDay => SelectedTimeDay is not null;
     public ObservableCollection<LibraryTimeDayView> TimeDays { get; } = [];
+    public ObservableCollection<int> TimeYears { get; } = [];
+    public ObservableCollection<int> TimeMonths { get; } = [];
+    public ObservableCollection<DateOnly> TimeDaysInMonth { get; } = [];
+    public ObservableCollection<LibraryTimeEventView> TimeEvents { get; } = [];
+    private readonly Dictionary<DateOnly, IReadOnlyList<LibraryTimeEventView>> _timeEventsByDate = [];
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasSelectedTimeYear))] public partial int? SelectedTimeYear { get; set; }
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasSelectedTimeMonth))] public partial int? SelectedTimeMonth { get; set; }
+    public bool HasSelectedTimeYear => SelectedTimeYear is not null;
+    public bool HasSelectedTimeMonth => SelectedTimeMonth is not null;
     public LibraryTimelineDirection TimelineDirection => LibraryTimelineDirection.OldToNew;
 
     public ObservableCollection<ProjectLibraryProposal> PendingLibraryProposals { get; } = [];
@@ -283,6 +306,9 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public async Task ShowCategoryAsync(CancellationToken cancellationToken = default)
     {
         SelectedSection = LibrarySection.Category;
+        SelectedCategory = null;
+        SelectedLibraryObject = null;
+        ObjectTimeline.Clear();
         await LoadLibraryAsync(cancellationToken);
     }
 
@@ -290,12 +316,18 @@ public partial class LibraryPaneViewModel : ViewModelBase
     {
         if (AcceptedStateReadModel is null && _acceptedStateReader is not null)
             await LoadAcceptedStateAsync(cancellationToken);
-        SelectedSection = AcceptedStateReadModel is null ? LibrarySection.Category : LibrarySection.Overview;
+        SelectedSection = LibrarySection.Overview;
     }
 
     public async Task ShowTimeAsync(CancellationToken cancellationToken = default)
     {
         SelectedSection = LibrarySection.Time;
+        SelectedTimeYear = null;
+        SelectedTimeMonth = null;
+        SelectedTimeDay = null;
+        TimeMonths.Clear();
+        TimeDaysInMonth.Clear();
+        TimeEvents.Clear();
         await LoadLibraryAsync(cancellationToken);
     }
 
@@ -353,15 +385,74 @@ public partial class LibraryPaneViewModel : ViewModelBase
         if (SelectedTimeDay?.LocalDate == localDate)
         {
             SelectedTimeDay = null;
+            TimeEvents.Clear();
             return Task.CompletedTask;
         }
 
+        return SelectTimeDayAsync(localDate);
+    }
+
+    public Task SelectTimeYearAsync(int year)
+    {
+        if (SelectedTimeYear == year)
+        {
+            SelectedTimeYear = null;
+            SelectedTimeMonth = null;
+            TimeMonths.Clear();
+            TimeDaysInMonth.Clear();
+            TimeEvents.Clear();
+            return Task.CompletedTask;
+        }
+
+        SelectedTimeYear = year;
+        SelectedTimeMonth = null;
+        TimeMonths.Clear();
+        foreach (var month in TimeDates.Where(value => value.Year == year).Select(value => value.Month).Distinct().OrderByDescending(value => value))
+            TimeMonths.Add(month);
+        TimeDaysInMonth.Clear();
+        TimeEvents.Clear();
+        return Task.CompletedTask;
+    }
+
+    public Task SelectTimeMonthAsync(int month)
+    {
+        if (SelectedTimeYear is null) return Task.CompletedTask;
+        if (SelectedTimeMonth == month)
+        {
+            SelectedTimeMonth = null;
+            TimeDaysInMonth.Clear();
+            TimeEvents.Clear();
+            return Task.CompletedTask;
+        }
+
+        SelectedTimeMonth = month;
+        TimeDaysInMonth.Clear();
+        foreach (var day in TimeDates.Where(value => value.Year == SelectedTimeYear && value.Month == month).OrderByDescending(value => value))
+            TimeDaysInMonth.Add(day);
+        TimeEvents.Clear();
+        return Task.CompletedTask;
+    }
+
+    public Task SelectTimeDayAsync(DateOnly localDate)
+    {
         SelectedTimeDay = TimeDays.FirstOrDefault(value => value.LocalDate == localDate);
+        TimeEvents.Clear();
+        if (_timeEventsByDate.TryGetValue(localDate, out var events))
+            foreach (var item in events.OrderBy(value => value.OccurredAt)) TimeEvents.Add(item);
         return Task.CompletedTask;
     }
 
     [RelayCommand]
     private Task SelectTimeDate(DateOnly localDate) => SelectTimeDateAsync(localDate);
+
+    [RelayCommand]
+    private Task SelectTimeYear(int year) => SelectTimeYearAsync(year);
+
+    [RelayCommand]
+    private Task SelectTimeMonth(int month) => SelectTimeMonthAsync(month);
+
+    [RelayCommand]
+    private Task SelectTimeDay(DateOnly localDate) => SelectTimeDayAsync(localDate);
 
     [RelayCommand]
     private Task SelectLibraryObject(Guid objectId) => SelectLibraryObjectAsync(objectId);
@@ -541,6 +632,13 @@ public partial class LibraryPaneViewModel : ViewModelBase
         }
 
         TimeDays.Clear();
+        TimeYears.Clear();
+        TimeMonths.Clear();
+        TimeDaysInMonth.Clear();
+        TimeEvents.Clear();
+        _timeEventsByDate.Clear();
+        foreach (var year in TimeDates.Select(value => value.Year).Distinct().OrderByDescending(value => value))
+            TimeYears.Add(year);
         foreach (var date in TimeDates)
         {
             var summary = _projectMemoryApi is null
@@ -549,10 +647,22 @@ public partial class LibraryPaneViewModel : ViewModelBase
             var entries = summaryEntries
                 .Where(entry => DateOnly.FromDateTime(entry.OccurredAt.LocalDateTime) == date)
                 .OrderBy(entry => entry.OccurredAt)
-                .Select(entry => new LibrarySummaryEntryView(entry.OccurredAt, entry.Kind, entry.Text))
+                .Select(entry => new LibrarySummaryEntryView(entry.OccurredAt, entry.Kind, entry.Text, entry.SourceRefs))
                 .ToArray();
             var groups = TimeGroups.Where(group => group.LocalDate == date).ToArray();
             TimeDays.Add(new(date, summary, entries, groups));
+
+            var events = new List<LibraryTimeEventView>();
+            foreach (var group in groups)
+            {
+                foreach (var node in group.Nodes)
+                {
+                    var sourceTime = nodes.FirstOrDefault(value => value.Id == node.Id)?.UpdatedAt ?? date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                    events.Add(new(sourceTime, group.Category, group.Topic, node.Content, node.Materials, []));
+                }
+            }
+            events.AddRange(entries.Select(entry => new LibraryTimeEventView(entry.OccurredAt, "Summary", entry.KindLabel, entry.Text, [], entry.SourceRefs)));
+            _timeEventsByDate[date] = events.OrderBy(value => value.OccurredAt).ToArray();
         }
 
         PendingLibraryProposals.Clear();

@@ -146,6 +146,40 @@ public sealed class LibraryCategoryTimeViewTests
     }
 
     [Fact]
+    public async Task Time_browsing_drills_down_year_month_day_and_exposes_dense_events_with_sources()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("library-time-drilldown");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var library = context.Services.ProjectLibraryEvolutionRepository;
+        var objectRef = await library.CreateObjectAsync(opened.Project.Id, "World", "Style", context.Time.GetUtcNow());
+        var day = new DateOnly(2026, 8, 27);
+        await library.AddNodeAsync(
+            opened.Project.Id,
+            objectRef.Id,
+            day,
+            "Changed from medieval knight to medieval pastoral style.",
+            [new("Document", "docs/world.md", "World source")],
+            context.Time.GetUtcNow());
+
+        var pane = new LibraryPaneViewModel(opened, () => Task.CompletedTask, evolutionLibrary: library);
+        await pane.InitializeAsync();
+        await pane.ShowTimeAsync();
+
+        Assert.Contains(2026, pane.TimeYears);
+        await pane.SelectTimeYearAsync(2026);
+        Assert.Contains(8, pane.TimeMonths);
+        await pane.SelectTimeMonthAsync(8);
+        Assert.Contains(day, pane.TimeDaysInMonth);
+        await pane.SelectTimeDayAsync(day);
+
+        var timelineEvent = Assert.Single(pane.TimeEvents);
+        Assert.Equal("World", timelineEvent.Category);
+        Assert.Contains("medieval pastoral", timelineEvent.Text);
+        Assert.Equal("docs/world.md", Assert.Single(timelineEvent.Materials).Reference);
+    }
+
+    [Fact]
     public async Task Selecting_a_category_exposes_only_objects_in_that_category()
     {
         await using var context = await AppTestContext.CreateAsync();

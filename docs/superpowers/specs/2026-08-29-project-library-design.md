@@ -2,7 +2,7 @@
 
 ## Goal
 
-Turn Project Library from a flat document-like list into three explicit browsing axes: category evolution, daily activity, and current project state.
+Turn Project Library from a flat document-like list into four explicit entry points: current overview, category evolution, chronological activity, and project metadata.
 
 ## Scope
 
@@ -10,11 +10,12 @@ The first release reuses the existing Library Object, Timeline Node, Daily Summa
 
 ## Behavior
 
-- Category browsing selects a category, then an object, then shows that object's vertical timeline.
-- Time browsing selects a date, then shows the Daily Summary, decisions/changes for that date, and linked Library nodes.
-- Project browsing shows current Accepted State, project overview, and the existing project metadata.
-- Overview remains the entry point for current state, recent activity, and pending Library proposals.
-- Clicking the selected category, object, or date again clears that selection.
+- Overview shows the current accepted project state and important present-tense statements.
+- Category browsing selects a semantic category, then an object, then shows that object's vertical evolution timeline.
+- Time browsing drills down year → month → day, then shows dense timestamped events for that day.
+- Project browsing shows project metadata; its final information architecture remains intentionally open.
+- Timeline and summary source references are available behind a compact Source expander.
+- Clicking the selected category, object, year, month, or date again clears that selection.
 - Leader-generated taxonomy and Library mutations continue through the existing proposal and user-confirmation flow.
 
 ## Invariants
@@ -27,5 +28,5 @@ The first release reuses the existing Library Object, Timeline Node, Daily Summa
 
 - Clicking a category does not render an undifferentiated document; it exposes its objects and latest update.
 - Clicking an object exposes a chronological vertical timeline.
-- Clicking a date exposes that day's summary and summary entries before linked Library nodes.
+- Clicking a year exposes months; clicking a month exposes days; clicking a day exposes timestamped events with category and object labels.
 - Repeated selection collapses the corresponding detail view.

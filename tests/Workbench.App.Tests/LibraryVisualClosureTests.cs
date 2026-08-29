@@ -8,12 +8,12 @@ namespace Workbench.App.Tests;
 public sealed class LibraryVisualClosureTests
 {
     [Fact]
-    public void Library_without_b1_state_keeps_legacy_category_view()
+    public void Library_without_b1_state_opens_on_overview_view()
     {
         var project = new Workbench.Core.Projects.Project(Guid.NewGuid(), "Project", "C:/Project", Workbench.Core.Projects.ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var pane = new LibraryPaneViewModel(new ProjectOpenResult(project, ProjectLayout.CreateDefault(project.Id), new GitSnapshot(false, false, null, null, null, false, false, null)));
 
-        Assert.True(pane.HasCategoryView);
+        Assert.True(pane.HasOverviewView);
     }
 
     [Fact]
@@ -29,13 +29,15 @@ public sealed class LibraryVisualClosureTests
         Assert.Contains("[Library.Category]", markup, StringComparison.Ordinal);
         Assert.Contains("[Library.Time]", markup, StringComparison.Ordinal);
         Assert.Contains("[Library.Project]", markup, StringComparison.Ordinal);
-        Assert.Contains("Text=\"↑ old → new\"", markup, StringComparison.Ordinal);
         Assert.Contains("<ScrollViewer VerticalScrollBarVisibility=\"Auto\" HorizontalScrollBarVisibility=\"Disabled\">", markup, StringComparison.Ordinal);
         Assert.Contains("SelectCategoryCommand", markup, StringComparison.Ordinal);
         Assert.Contains("SelectedCategoryObjects", markup, StringComparison.Ordinal);
-        Assert.Contains("SelectTimeDateCommand", markup, StringComparison.Ordinal);
         Assert.Contains("SelectedTimeDay.Summary", markup, StringComparison.Ordinal);
-        Assert.Contains("SelectedTimeDay.SummaryEntries", markup, StringComparison.Ordinal);
+        Assert.Contains("TimeEvents", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectTimeYearCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectTimeMonthCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectTimeDayCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("TimestampText", markup, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

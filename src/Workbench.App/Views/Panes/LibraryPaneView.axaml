@@ -36,69 +36,73 @@
             </Border>
             <TextBlock Text="{Binding LibraryProposalStatusMessage}" TextWrapping="Wrap" Foreground="#475467" />
             <StackPanel IsVisible="{Binding IsOverview}" Spacing="8">
-                <TextBlock Text="CURRENT ACCEPTED STATE" FontWeight="SemiBold" />
-                <TextBlock Text="What this Project currently accepts" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding [Library.Overview]}" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="当前项目已经认可的重要内容" Foreground="#667085" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding AcceptedStateStatus}" Foreground="#475467" TextWrapping="Wrap" />
-                <TextBlock IsVisible="{Binding !CurrentAcceptedContributions.Count}" Text="No accepted Project statements have been established yet." TextWrapping="Wrap" />
+                <TextBlock IsVisible="{Binding !CurrentAcceptedContributions.Count}" Text="还没有已接受的项目内容。" TextWrapping="Wrap" />
                 <ItemsControl ItemsSource="{Binding CurrentAcceptedContributions}">
                     <ItemsControl.ItemTemplate><DataTemplate><Border Padding="8" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5"><StackPanel Spacing="3">
                         <TextBlock Text="{Binding Contribution.Statement}" TextWrapping="Wrap" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding Contribution.Scope}" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding Decision.ProjectCommitSequence, StringFormat=Accepted by Decision commit {0}}" Foreground="#475467" />
-                        <TextBlock Text="{Binding Decision.DecisionRef, StringFormat=Decision: {0}}" Foreground="#667085" />
-                        <TextBlock IsVisible="{Binding !LibraryProjections.Count}" Text="No Library Object mapping yet; this remains a Project-level accepted statement." Foreground="#667085" TextWrapping="Wrap" />
-                        <ItemsControl ItemsSource="{Binding LibraryProjections}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Object.Category, StringFormat=Library: {0}}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                        <TextBlock Text="{Binding Contribution.Scope}" TextWrapping="Wrap" Foreground="#667085" />
+                        <TextBlock Text="{Binding Decision.DecisionRef}" Foreground="#667085" />
+                        <ItemsControl ItemsSource="{Binding LibraryProjections}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Object.Category}" Foreground="#667085" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                     </StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <TextBlock Text="PROJECT DECISIONS WITHOUT OBJECT MAPPING" FontWeight="SemiBold" IsVisible="{Binding ProjectLevelDecisions.Count}" />
-                <ItemsControl ItemsSource="{Binding ProjectLevelDecisions}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding Decision.ProjectCommitSequence, StringFormat=Decision commit {0}}" FontWeight="SemiBold" /><TextBlock Text="{Binding Decision.DecisionRef}" Foreground="#667085" /><ItemsControl ItemsSource="{Binding Contributions}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Statement}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
             </StackPanel>
             <StackPanel IsVisible="{Binding IsCategory}" Spacing="8">
-                <TextBlock Text="{Binding [Library.Category]}" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding LibraryCategories.Count, StringFormat=分类：{0}}" />
+                <TextBlock Text="{Binding [Library.Category]}" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="选择分类，再选择对象查看对象演化" Foreground="#667085" TextWrapping="Wrap" />
                 <TextBlock IsVisible="{Binding !LibraryObjects.Count}" Text="{Binding [Library.NoEntries]}" TextWrapping="Wrap" />
                 <ItemsControl ItemsSource="{Binding CategoryGroups}">
                     <ItemsControl.ItemTemplate><DataTemplate>
                         <Button Command="{Binding $parent[UserControl].DataContext.SelectCategoryCommand}" CommandParameter="{Binding Category}" HorizontalContentAlignment="Left">
-                            <StackPanel Spacing="2"><TextBlock Text="{Binding Category}" FontWeight="SemiBold" /><TextBlock Text="{Binding Objects.Count, StringFormat=对象：{0}}" Foreground="#667085" /></StackPanel>
+                            <TextBlock Text="{Binding Category}" FontWeight="SemiBold" />
                         </Button>
                     </DataTemplate></ItemsControl.ItemTemplate>
                 </ItemsControl>
                 <StackPanel IsVisible="{Binding SelectedCategory}" Spacing="6">
-                    <TextBlock Text="{Binding SelectedCategory, StringFormat=分类：{0}}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Library.CategoryObjects]}" Foreground="#667085" />
+                    <TextBlock Text="{Binding SelectedCategory}" FontSize="16" FontWeight="SemiBold" />
                     <ItemsControl ItemsSource="{Binding SelectedCategoryObjects}">
                         <ItemsControl.ItemTemplate><DataTemplate>
                             <Button Command="{Binding $parent[UserControl].DataContext.SelectLibraryObjectCommand}" CommandParameter="{Binding Id}" HorizontalContentAlignment="Left">
-                                <StackPanel Spacing="2"><TextBlock Text="{Binding Topic}" FontWeight="SemiBold" /><TextBlock Text="{Binding CurrentOverview}" TextWrapping="Wrap" Foreground="#667085" /></StackPanel>
+                                <StackPanel Spacing="2"><TextBlock Text="{Binding Topic}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding CurrentOverview}" TextWrapping="Wrap" Foreground="#667085" /></StackPanel>
                             </Button>
                         </DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
-                <StackPanel IsVisible="{Binding SelectedLibraryObject}" Spacing="4">
-                    <TextBlock Text="{Binding SelectedLibraryObject.Category}" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedLibraryObject.Topic}" FontSize="16" />
-                    <TextBlock Text="{Binding [Library.ObjectTimeline]}" FontWeight="SemiBold" /><TextBlock Text="{Binding CurrentOverviewText}" TextWrapping="Wrap" />
-                    <ItemsControl ItemsSource="{Binding ObjectTimeline}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding ContextLabel}" FontWeight="SemiBold" Foreground="#667085" /><TextBlock Text="{Binding LocalDate}" Foreground="#667085" /><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding MaterialKind}" /><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><TextBlock Text="↑ old → new" Foreground="#667085" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <StackPanel IsVisible="{Binding SelectedLibraryObject}" Spacing="6">
+                    <TextBlock Text="{Binding SelectedLibraryObject.Topic}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding CurrentOverviewText}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding [Library.ObjectTimeline]}" FontWeight="SemiBold" />
+                    <ItemsControl ItemsSource="{Binding ObjectTimeline}"><ItemsControl.ItemTemplate><DataTemplate>
+                        <Border Padding="8" BorderBrush="#3A3A3A" BorderThickness="0,0,0,1"><StackPanel Spacing="3">
+                            <TextBlock Text="{Binding LocalDate}" Foreground="#667085" />
+                            <TextBlock Text="{Binding Content}" TextWrapping="Wrap" />
+                            <Expander Header="Source"><ItemsControl ItemsSource="{Binding Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="1"><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" Foreground="#667085" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
+                        </StackPanel></Border>
+                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                 </StackPanel>
             </StackPanel>
             <StackPanel IsVisible="{Binding IsTime}" Spacing="8">
-                <TextBlock Text="{Binding [Library.Time]}" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding [Library.SelectDate]}" TextWrapping="Wrap" Foreground="#667085" />
-                <TextBlock IsVisible="{Binding !TimeDates.Count}" Text="{Binding [Library.NoEntries]}" TextWrapping="Wrap" />
-                <ItemsControl ItemsSource="{Binding TimeDates}">
-                    <ItemsControl.ItemTemplate><DataTemplate>
-                        <Button Command="{Binding $parent[UserControl].DataContext.SelectTimeDateCommand}" CommandParameter="{Binding}" HorizontalContentAlignment="Left"><TextBlock Text="{Binding}" /></Button>
-                    </DataTemplate></ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <TextBlock Text="{Binding [Library.Time]}" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="按年份 → 月份 → 日期查看项目演化" Foreground="#667085" TextWrapping="Wrap" />
+                <TextBlock IsVisible="{Binding !TimeYears.Count}" Text="{Binding [Library.NoEntries]}" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding TimeYears}"><ItemsControl.ItemTemplate><DataTemplate><Button Command="{Binding $parent[UserControl].DataContext.SelectTimeYearCommand}" CommandParameter="{Binding}" HorizontalContentAlignment="Left"><TextBlock Text="{Binding}" FontWeight="SemiBold" /></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <ItemsControl IsVisible="{Binding HasSelectedTimeYear}" ItemsSource="{Binding TimeMonths}"><ItemsControl.ItemTemplate><DataTemplate><Button Command="{Binding $parent[UserControl].DataContext.SelectTimeMonthCommand}" CommandParameter="{Binding}" HorizontalContentAlignment="Left"><TextBlock Text="{Binding StringFormat={}{0}月}" /></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <ItemsControl IsVisible="{Binding HasSelectedTimeMonth}" ItemsSource="{Binding TimeDaysInMonth}"><ItemsControl.ItemTemplate><DataTemplate><Button Command="{Binding $parent[UserControl].DataContext.SelectTimeDayCommand}" CommandParameter="{Binding}" HorizontalContentAlignment="Left"><TextBlock Text="{Binding}" /></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                 <StackPanel IsVisible="{Binding HasSelectedTimeDay}" Spacing="6">
-                    <TextBlock Text="{Binding SelectedTimeDay.LocalDate}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Library.DailySummary]}" FontWeight="SemiBold" />
-                    <TextBlock IsVisible="{Binding !SelectedTimeDay.Summary}" Text="{Binding [Library.NoSummary]}" Foreground="#667085" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding SelectedTimeDay.LocalDate}" FontSize="16" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding SelectedTimeDay.Summary.Content}" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding [Library.SummaryEntries]}" FontWeight="SemiBold" />
-                    <ItemsControl ItemsSource="{Binding SelectedTimeDay.SummaryEntries}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding KindLabel}" FontWeight="SemiBold" Foreground="#667085" /><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                    <TextBlock Text="{Binding [Library.RelatedLibrary]}" FontWeight="SemiBold" />
-                    <ItemsControl ItemsSource="{Binding SelectedTimeDay.Groups}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="2"><TextBlock Text="{Binding Category}" FontWeight="SemiBold" /><TextBlock Text="{Binding Topic}" /><ItemsControl ItemsSource="{Binding Nodes}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Content}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                    <ItemsControl ItemsSource="{Binding TimeEvents}"><ItemsControl.ItemTemplate><DataTemplate>
+                        <Border Padding="6" BorderBrush="#3A3A3A" BorderThickness="0,0,0,1"><StackPanel Spacing="2">
+                            <TextBlock Text="{Binding TimestampText}" Foreground="#667085" FontFamily="Consolas" />
+                            <TextBlock Text="{Binding Category}" Foreground="#667085" />
+                            <TextBlock Text="{Binding Topic}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                            <Expander Header="Source" IsVisible="{Binding Materials.Count}"><ItemsControl ItemsSource="{Binding Materials}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" Foreground="#667085" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
+                            <Expander Header="Source" IsVisible="{Binding SummarySources.Count}"><ItemsControl ItemsSource="{Binding SummarySources}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding SourceLocator}" TextWrapping="Wrap" Foreground="#667085" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
+                        </StackPanel></Border>
+                    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                 </StackPanel>
             </StackPanel>
             <StackPanel IsVisible="{Binding IsProject}" Spacing="8">
