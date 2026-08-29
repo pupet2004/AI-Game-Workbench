@@ -24,6 +24,9 @@ public sealed class MainWindowViewTests
 
         Assert.IsType<ProjectWorldExplorerViewModel>(main.CurrentPage);
         Assert.IsType<ProjectWorldExplorerView>(new ViewLocator().Build(main.CurrentPage));
+
+        await ((ProjectWorldExplorerViewModel)main.CurrentPage).OpenWorkspaceCommand.ExecuteAsync(null);
+        Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
     }
 
     [Fact]

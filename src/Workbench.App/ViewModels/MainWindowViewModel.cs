@@ -125,7 +125,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 _services,
                 result,
                 BackToHomeAsync,
-                assignmentRef => ShowManualWorkAsync(result, assignmentRef));
+                assignmentRef => ShowManualWorkAsync(result, assignmentRef),
+                () => ShowThreeColumnWorkspaceAsync(result));
             CurrentPage = explorer;
             await explorer.InitializeAsync();
             return;
@@ -147,6 +148,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             return;
         }
 
+        await ShowThreeColumnWorkspaceAsync(result);
+    }
+
+    private async Task ShowThreeColumnWorkspaceAsync(ProjectOpenResult result)
+    {
         var workspace = new WorkspaceViewModel(
             result,
             _services.ProjectLayoutRepository,

@@ -41,17 +41,20 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     private readonly ProjectOpenResult _result;
     private readonly Func<Task> _backToHome;
     private readonly Func<AssignmentRef, Task> _beginManualWork;
+    private readonly Func<Task> _openWorkspace;
 
     public ProjectWorldExplorerViewModel(
         AppServices services,
         ProjectOpenResult result,
         Func<Task> backToHome,
-        Func<AssignmentRef, Task>? beginManualWork = null)
+        Func<AssignmentRef, Task>? beginManualWork = null,
+        Func<Task>? openWorkspace = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _result = result ?? throw new ArgumentNullException(nameof(result));
         _backToHome = backToHome ?? throw new ArgumentNullException(nameof(backToHome));
         _beginManualWork = beginManualWork ?? (_ => Task.CompletedTask);
+        _openWorkspace = openWorkspace ?? (() => Task.CompletedTask);
     }
 
     public string ProjectName => _result.Project.Name;
@@ -204,6 +207,9 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
 
     [RelayCommand]
     private Task BackAsync() => _backToHome();
+
+    [RelayCommand]
+    private Task OpenWorkspaceAsync() => _openWorkspace();
 
     [RelayCommand]
     private Task BeginManualWorkAsync(AssignmentRef assignmentRef) => _beginManualWork(assignmentRef);
