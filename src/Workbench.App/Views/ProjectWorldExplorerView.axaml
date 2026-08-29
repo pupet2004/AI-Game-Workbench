@@ -17,7 +17,7 @@
                 </StackPanel>
             </Grid>
             <StackPanel Orientation="Horizontal" Spacing="4">
-                <TextBlock Text="Signed in as:" Opacity="0.75" />
+                <TextBlock Text="{Binding [Explorer.SignedInAs]}" Opacity="0.75" />
                 <TextBlock Text="{Binding UserPrincipal}" Opacity="0.75" />
             </StackPanel>
             <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
@@ -25,7 +25,7 @@
             <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Explorer.Accepted]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding ProjectStateLabel}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding ProjectStateLabel}" IsVisible="{Binding HasAcceptedState}" TextWrapping="Wrap" />
                     <TextBlock IsVisible="{Binding !HasAcceptedState}" Text="{Binding [Explorer.NoAccepted]}" Opacity="0.7" />
                     <ItemsControl ItemsSource="{Binding AcceptedState}">
                         <ItemsControl.ItemTemplate>
@@ -48,17 +48,17 @@
                     IsVisible="{Binding HasAcceptedState}">
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Explorer.LibraryUpdate]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="Publish one accepted project statement to a Library topic. This is an explicit Library record and does not change project authority." TextWrapping="Wrap" Opacity="0.7" />
+                    <TextBlock Text="{Binding [Explorer.LibraryUpdateDescription]}" TextWrapping="Wrap" Opacity="0.7" />
                     <Button Content="{Binding [Explorer.AddToLibrary]}" Command="{Binding ShowLibraryComposerCommand}"
                             IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
                     <StackPanel Spacing="8" IsVisible="{Binding IsLibraryComposerVisible}">
-                        <TextBlock Text="Accepted statement" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding [Explorer.AcceptedStatement]}" FontWeight="SemiBold" />
                         <ComboBox ItemsSource="{Binding LibraryContributions}" SelectedItem="{Binding SelectedLibraryContribution}" />
-                        <TextBlock Text="Category" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding [Explorer.Category]}" FontWeight="SemiBold" />
                         <TextBox Text="{Binding LibraryCategory}" />
-                        <TextBlock Text="Topic" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding [Explorer.Topic]}" FontWeight="SemiBold" />
                         <TextBox Text="{Binding LibraryTopic}" />
-                        <TextBlock Text="Library entry" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding [Explorer.LibraryEntry]}" FontWeight="SemiBold" />
                         <TextBox Text="{Binding LibraryNodeContent}" AcceptsReturn="True" TextWrapping="Wrap" />
                         <Button Content="{Binding [Explorer.UpdateLibrary]}" Command="{Binding ProjectToLibraryCommand}"
                                 IsEnabled="{Binding CanProjectToLibrary}" HorizontalAlignment="Left" />
@@ -70,7 +70,7 @@
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Explorer.Attention]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="A practical checklist for this screen; it does not change the recorded project state." Opacity="0.7" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding [Explorer.AttentionDescription]}" Opacity="0.7" TextWrapping="Wrap" />
                     <ItemsControl ItemsSource="{Binding NeedsAttention}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="vm:AttentionItemView">
@@ -84,7 +84,7 @@
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Explorer.ActiveWork]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="Assignments describe responsibility and effective revision; they do not claim runtime execution." Opacity="0.7" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding [Explorer.ActiveWorkDescription]}" Opacity="0.7" TextWrapping="Wrap" />
                     <TextBlock IsVisible="{Binding !ActiveWork.Count}" Text="{Binding [Explorer.NoAssignments]}" Opacity="0.7" />
                     <ItemsControl ItemsSource="{Binding ActiveWork}">
                         <ItemsControl.ItemTemplate>
@@ -114,7 +114,7 @@
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="6"><TextBlock Text="{Binding [Explorer.Legacy]}" FontSize="18" FontWeight="SemiBold" /><TextBlock Text="{Binding LegacyContextText}" TextWrapping="Wrap" /></StackPanel>
             </Border>
-            <TextBlock Text="Project areas: overview · governance · work · decisions · history · library" Opacity="0.65" />
+            <TextBlock Text="{Binding [Explorer.ProjectAreas]}" Opacity="0.65" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

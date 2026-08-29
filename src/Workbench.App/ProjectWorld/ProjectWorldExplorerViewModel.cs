@@ -108,8 +108,8 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         !string.IsNullOrWhiteSpace(LibraryTopic) &&
         !string.IsNullOrWhiteSpace(LibraryNodeContent);
     public string LegacyContextText => HasLegacyContext
-        ? "Older project context is available separately; it is not part of the current project record."
-        : "No older project context is attached to this project.";
+        ? LocalizationService.Current["Explorer.LegacyAvailable"]
+        : LocalizationService.Current["Explorer.LegacyNone"];
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default) =>
         await ReloadAsync(cancellationToken);
