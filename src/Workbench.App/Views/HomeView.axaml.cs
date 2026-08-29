@@ -20,8 +20,7 @@ public partial class HomeView : UserControl
         if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed ||
             e.Source is not Visual source ||
             (source as Button ?? source.FindAncestorOfType<Button>()) is not { DataContext: RecentProjectItemViewModel project } target ||
-            DataContext is not HomeViewModel home ||
-            !project.IsAvailable)
+            DataContext is not HomeViewModel home)
         {
             return;
         }

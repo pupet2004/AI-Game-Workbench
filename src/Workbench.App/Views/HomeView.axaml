@@ -40,7 +40,6 @@
                     <DataTemplate x:DataType="vm:RecentProjectItemViewModel">
                         <Button Margin="0,4"
                                 Padding="12"
-                                IsEnabled="{Binding IsAvailable}"
                                 Command="{Binding $parent[UserControl].DataContext.OpenRecentProjectCommand}"
                                 CommandParameter="{Binding}">
                             <StackPanel Spacing="3">

@@ -80,6 +80,24 @@ public sealed class HomeViewModelTests
     }
 
     [Fact]
+    public async Task Unavailable_project_can_be_removed_from_workbench_record()
+    {
+        using var folder = new TemporaryDirectory("gone");
+        await using var context = await AppTestContext.CreateAsync();
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        folder.Dispose();
+        var home = context.CreateHome();
+        await home.LoadAsync();
+        var item = Assert.Single(home.RecentProjects);
+
+        home.RequestProjectRemovalCommand.Execute(item);
+        await home.ConfirmProjectRemovalCommand.ExecuteAsync(null);
+
+        Assert.Empty(home.RecentProjects);
+        Assert.Null(await context.Services.ProjectRepository.GetByIdAsync(opened.Project.Id));
+    }
+
+    [Fact]
     public async Task Opening_project_refreshes_recent_list()
     {
         using var folder = new TemporaryDirectory();
