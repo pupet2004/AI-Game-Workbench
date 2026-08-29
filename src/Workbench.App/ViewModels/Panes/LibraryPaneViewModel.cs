@@ -618,7 +618,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         TimeDates.Clear();
         foreach (var date in nodes.Select(node => node.LocalDate)
                      .Concat(dailySummaryMetadata.Select(summary => summary.LocalDate))
-                     .Concat(summaryEntries.Select(entry => DateOnly.FromDateTime(entry.OccurredAt.LocalDateTime)))
+                     .Concat(summaryEntries.Select(entry => DateOnly.FromDateTime(entry.OccurredAt.DateTime)))
                      .Distinct()
                      .OrderByDescending(value => value))
         {
@@ -647,7 +647,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
                 ? null
                 : await _projectMemoryApi.GetDailySummaryAsync(Result.Project.Id, date, cancellationToken);
             var entries = summaryEntries
-                .Where(entry => DateOnly.FromDateTime(entry.OccurredAt.LocalDateTime) == date)
+                .Where(entry => DateOnly.FromDateTime(entry.OccurredAt.DateTime) == date)
                 .OrderBy(entry => entry.OccurredAt)
                 .Select(entry => new LibrarySummaryEntryView(entry.OccurredAt, entry.Kind, entry.Text, entry.SourceRefs))
                 .ToArray();
