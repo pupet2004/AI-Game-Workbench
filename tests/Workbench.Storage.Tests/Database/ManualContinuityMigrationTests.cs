@@ -41,7 +41,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(22L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(24L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(B1Tables, await StringsAsync(connection,
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'b1_%' ORDER BY name;"));
         Assert.Contains("activation_source_claim_id", await StringsAsync(connection,
@@ -115,7 +115,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = fixture.Database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(22L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(24L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(beforeRows, await ReadLegacySnapshotAsync(after));
         Assert.Equal(beforeSchema, await ReadLegacySchemaAsync(after));
         Assert.Equal("ok", await ScalarAsync<string>(after, "PRAGMA quick_check;"));
@@ -141,7 +141,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(22L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(24L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(before, await ReadV11BoundedSnapshotAsync(after));
         Assert.Equal("ok", await ScalarAsync<string>(after, "PRAGMA quick_check;"));
         Assert.Equal(0L, await ScalarAsync<long>(after, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
@@ -473,6 +473,7 @@ public sealed class ManualContinuityMigrationTests
             WHERE type IN ('table','index','trigger','view')
               AND name NOT LIKE 'sqlite_%'
               AND name NOT IN ('project_library_proposals', 'ix_library_proposals_project_status')
+              AND name <> 'ux_worker_active_project'
               AND tbl_name NOT LIKE 'b1\_%' ESCAPE '\'
               AND sql IS NOT NULL
             ORDER BY type,name;

@@ -57,6 +57,10 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
     public List<AgentSession> TranscriptRequests { get; } = [];
     public IReadOnlyList<AgentEvent> Transcript { get; set; } = [];
 
+    public AgentSessionStatus? StatusOverride { get; set; }
+
+    public int GetStatusCallCount { get; private set; }
+
     public List<AgentApprovalDecision> ApprovalDecisions { get; } = [];
 
     public List<AgentSession> StoppedSessions { get; } = [];
@@ -242,8 +246,11 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public Task<AgentSessionStatus> GetStatusAsync(
         AgentSession session,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult(session.Status);
+        CancellationToken cancellationToken = default)
+    {
+        GetStatusCallCount++;
+        return Task.FromResult(StatusOverride ?? session.Status);
+    }
 
     public Task<IReadOnlyList<AgentEvent>> GetTranscriptAsync(AgentSession session, CancellationToken cancellationToken = default)
     {

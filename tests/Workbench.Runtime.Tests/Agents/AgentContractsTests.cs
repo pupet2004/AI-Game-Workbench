@@ -46,6 +46,15 @@ public sealed class AgentContractsTests
         var request = new AgentRequest("Implement the selected change.");
 
         Assert.Equal("Implement the selected change.", request.Text);
+        Assert.Equal(AgentAccessMode.Restricted, request.AccessMode);
+    }
+
+    [Fact]
+    public void Agent_request_can_select_full_runtime_access()
+    {
+        var request = new AgentRequest("Inspect and modify the project.", accessMode: AgentAccessMode.Full);
+
+        Assert.Equal(AgentAccessMode.Full, request.AccessMode);
     }
 
     [Fact]
@@ -57,6 +66,7 @@ public sealed class AgentContractsTests
             "C:/Projects/Game");
 
         Assert.Equal("C:/Projects/Game", request.WorkingDirectory);
+        Assert.Equal(AgentAccessMode.Restricted, request.AccessMode);
     }
 
     [Theory]

@@ -17,6 +17,9 @@ public sealed class LeaderBootContextBuilderTests
         Assert.Contains("draft_proposal", text, StringComparison.Ordinal);
         Assert.Contains("wait for user confirmation", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("do not claim a Worker started, executed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WORKER SCOPE", text, StringComparison.Ordinal);
+        Assert.Contains("runtime-local sub-agents", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Assignment, Attempt, Execution", text, StringComparison.Ordinal);
     }
 
     [Fact]

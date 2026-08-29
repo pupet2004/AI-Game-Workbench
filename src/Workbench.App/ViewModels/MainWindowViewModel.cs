@@ -7,6 +7,10 @@ using Workbench.Project.Opening;
 using Workbench.Storage.Database;
 using Workbench.App.ProjectWorld;
 using Workbench.Core.Continuity;
+using Workbench.App.AgentHost;
+using Workbench.App.Views;
+using Workbench.App.ViewModels.Panes;
+using Workbench.Runtime.Agents;
 
 namespace Workbench.App.ViewModels;
 
@@ -16,6 +20,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     private readonly IFolderPickerService _folderPickerService;
     private readonly ProjectLeaderSessionManager _leaderSessions;
     private readonly LocalizationService _localization;
+    private readonly Dictionary<AgentSessionId, WorkerSurfaceWindow> _workerSurfaceWindows = [];
 
     public MainWindowViewModel(
         AppServices services,
@@ -150,6 +155,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             leaderSessionManager: _leaderSessions,
             runtimeUnavailableDetail: _services.RuntimeUnavailableDetail,
             reconnectRuntime: _services.RetryRuntimeAsync,
+            releaseRuntimeForExternalCli: _services.ReleaseRuntimeForExternalSessionAsync,
+            restoreRuntimeAfterExternalCli: _services.RestoreRuntimeAfterExternalSessionAsync,
             projectSettingsRepository: _services.ProjectSettingsRepository,
             rotationStateService: new LeaderSessionRotationStateService(
                 _services.WorkbenchSettingsRepository,
@@ -169,7 +176,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              projectMemoryApi: _services.ProjectMemoryApi,
              responseBinder: _services.LeaderReviewUserResponseBinder,
              projectSummaryRepository: _services.ProjectSummaryRepository,
-             acceptedStateReader: _services.LibraryAcceptedStateReader);
+            acceptedStateReader: _services.LibraryAcceptedStateReader,
+             agentHost: _services.AgentHost,
+             openHostedSurface: OpenHostedWorkerSurfaceAsync);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);
@@ -189,6 +198,32 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             handoffRef => ShowGuidedDecisionAsync(result, handoffRef));
         CurrentPage = manualWork;
         await manualWork.InitializeAsync();
+    }
+
+    private async Task OpenHostedWorkerSurfaceAsync(WorkerSessionCardViewModel worker)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        if (_workerSurfaceWindows.TryGetValue(worker.Session.Id, out var existing))
+        {
+            if (!existing.IsVisible)
+                existing.Show();
+            existing.Activate();
+            return;
+        }
+
+        var surface = new HostedAgentSurfaceViewModel(_services.AgentHost, worker.Session);
+        var window = new WorkerSurfaceWindow(surface)
+        {
+            Title = $"Worker · {worker.TaskTitle}"
+        };
+        _workerSurfaceWindows[worker.Session.Id] = window;
+        window.Closed += (_, _) =>
+        {
+            _workerSurfaceWindows.Remove(worker.Session.Id);
+            _ = surface.DisposeAsync();
+        };
+        window.Show();
+        await surface.HydrateTranscriptAsync();
     }
 
     private async Task ShowGuidedDecisionAsync(ProjectOpenResult result, HandoffRef handoffRef)
@@ -215,6 +250,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        foreach (var window in _workerSurfaceWindows.Values.ToArray())
+        {
+            window.Close();
+        }
+        _workerSurfaceWindows.Clear();
         if (CurrentPage is WorkspaceViewModel workspace)
         {
             await workspace.FlushLayoutAsync();

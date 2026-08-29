@@ -1,4 +1,5 @@
 using Workbench.App.Tests.Support;
+using Workbench.App.AgentHost;
 using Workbench.App.Leader;
 using Workbench.App.ViewModels.Leader;
 using Workbench.App.ViewModels.Panes;
@@ -353,6 +354,54 @@ public sealed class LeaderPaneViewModelTests
     }
 
     [Fact]
+    public async Task Worker_approval_is_presented_by_leader_and_returned_to_worker_session()
+    {
+        var runtime = new FakeAgentRuntime { PauseAfterApproval = true };
+        var registry = CreateRegistry(runtime);
+        var host = new InProcessAgentHost(registry);
+        var pane = new LeaderPaneViewModel(
+            CreateProject(),
+            registry,
+            new ProjectLeaderSessionManager(),
+            () => Task.CompletedTask,
+            agentHost: host);
+        await pane.InitializeAsync();
+        var worker = await runtime.CreateSessionAsync(new CreateAgentSessionRequest(
+            runtime.Account.Id,
+            runtime.Models[0].ModelId,
+            "C:/Games/Project"));
+        var approval = new AgentApprovalRequested(
+            AgentApprovalRequestId.New(),
+            worker.Id,
+            "Allow Worker operation?",
+            [
+                new AgentApprovalOption("allow-once", "Allow once"),
+                new AgentApprovalOption("decline", "Decline")
+            ],
+            DateTimeOffset.UtcNow);
+        runtime.QueueTurn(approval, Completed());
+
+        var workerTurn = Task.Run(async () =>
+        {
+            await foreach (var _ in host.RunTurnAsync(
+                               worker,
+                               new HostedAgentIntent(AgentIntentSource.Leader, "work")))
+            {
+            }
+        });
+        await runtime.WaitForApprovalAsync();
+        await WaitUntilAsync(() => pane.HasPendingApproval);
+
+        Assert.Equal(worker.Id, pane.PendingApproval?.SessionId);
+        await pane.RespondToApprovalAsync(pane.ApprovalOptions[0]);
+        await workerTurn;
+
+        var decision = Assert.Single(runtime.ApprovalDecisions);
+        Assert.Equal(approval.RequestId, decision.RequestId);
+        Assert.Equal("allow-once", decision.OptionId);
+    }
+
+    [Fact]
     public async Task Failed_approval_response_remains_visible_with_error()
     {
         var (pane, runtime, _) = await StartApprovalTurnAsync();
@@ -551,6 +600,17 @@ public sealed class LeaderPaneViewModelTests
         new(
             new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, text, null),
             DateTimeOffset.UtcNow);
+
+    private static async Task WaitUntilAsync(Func<bool> predicate)
+    {
+        var timeout = DateTimeOffset.UtcNow.AddSeconds(3);
+        while (!predicate())
+        {
+            if (DateTimeOffset.UtcNow >= timeout)
+                throw new TimeoutException("The expected view-model state was not observed.");
+            await Task.Delay(10);
+        }
+    }
 
     private static async Task<(LeaderPaneViewModel Pane, FakeAgentRuntime Runtime, AgentApprovalRequested Approval)> StartApprovalTurnAsync()
     {

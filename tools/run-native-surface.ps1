@@ -15,16 +15,22 @@ if (-not (Test-Path -LiteralPath $project)) {
     throw "Workbench project not found: $project"
 }
 
+$repoPrefix = $repo.TrimEnd('\') + '\'
 $running = @(Get-Process -Name 'Workbench.App' -ErrorAction SilentlyContinue | Where-Object {
     try {
-        $_.Path -and $_.Path.StartsWith((Join-Path $repo 'src\Workbench.App\bin\'), [StringComparison]::OrdinalIgnoreCase)
+        # Native Surface runs from artifacts\local\run-*; Debug runs may
+        # still run from src\Workbench.App\bin. Treat both as this repo so
+        # a hidden tray instance cannot make a rebuild appear ineffective.
+        $_.Path -and $_.Path.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)
     }
     catch {
         $false
     }
 })
 if ($running.Count -gt 0) {
-    Write-Output 'Workbench.App is already running. Close it before starting a rebuilt Native Surface instance.'
+    foreach ($process in $running) {
+        Write-Output ("Workbench.App is already running (PID {0}, started {1}, path {2}). Close it from the tray menu (退出 Workbench) before starting a rebuilt Native Surface instance." -f $process.Id, $process.StartTime, $process.Path)
+    }
     exit 0
 }
 

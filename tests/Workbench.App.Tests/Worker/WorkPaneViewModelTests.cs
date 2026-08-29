@@ -5,6 +5,7 @@ using Workbench.Core.Tasks;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Workers;
+using Workbench.App.AgentHost;
 
 namespace Workbench.App.Tests.Worker;
 
@@ -138,7 +139,67 @@ public sealed class WorkPaneViewModelTests
     }
 
     [Fact]
-    public async Task Card_activation_opens_the_worker_once_with_its_existing_session_identity()
+    public async Task Opening_a_running_codex_worker_is_blocked_to_avoid_single_writer_conflict()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(), runtime.Account.Id, new Workbench.Runtime.Providers.ProviderId("codex"),
+            "gpt-5.6-sol", "C:/Project", "thread-running", AgentSessionStatus.Running,
+            DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(-1));
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Running task", session,
+            ExecutionProfile.Create("codex", runtime.Account.Id.Value.ToString(), "gpt-5.6-sol", "codex-app-server"),
+            "Worker", DateTimeOffset.UtcNow.AddMinutes(-1));
+        var store = new InMemoryWorkerRoutingStore();
+        await store.SaveSessionAsync(record);
+        var launcher = new RecordingInteractiveSessionLauncher();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, registry, launcher);
+        await pane.LoadAsync(record.ProjectId);
+
+        await pane.OpenWorkerAsync(Assert.Single(pane.Workers));
+
+        Assert.Empty(launcher.Opened);
+        Assert.Contains("running in Workbench", pane.OpenError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reconstructing_with_a_live_cli_lease_does_not_claim_ownership_when_runtime_release_fails()
+    {
+        var runtime = new FakeAgentRuntime();
+        var record = Session(Guid.NewGuid(), Guid.NewGuid(), "Attached task", "Worker", AgentSessionStatus.Completed, TimeSpan.Zero)
+            with
+            {
+                Session = new AgentSession(
+                    AgentSessionId.New(), runtime.Account.Id, new Workbench.Runtime.Providers.ProviderId("codex"),
+                    "gpt-5.6-sol", "C:/Project", "thread-existing", AgentSessionStatus.Completed,
+                    DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+                Profile = ExecutionProfile.Create("codex", runtime.Account.Id.Value.ToString(), "gpt-5.6-sol", "codex-app-server")
+            };
+        var store = new InMemoryWorkerRoutingStore();
+        await store.SaveSessionAsync(record);
+        await store.AppendSurfaceLeaseAsync(new WorkerSessionSurfaceLease(
+            record.ProjectId, record.TaskId, record.Session.Id, Guid.NewGuid(),
+            Environment.ProcessId, true, DateTimeOffset.UtcNow, WorkerSessionSurfaceState.CliOwned));
+
+        var pane = new WorkPaneViewModel(
+            () => Task.CompletedTask,
+            store,
+            new AgentRuntimeRegistry(),
+            releaseRuntimeForExternalCli: (_, _) => Task.FromResult(false));
+
+        await pane.LoadAsync(record.ProjectId);
+
+        var card = Assert.Single(pane.Workers);
+        Assert.True(card.IsExternalCliActive);
+        Assert.Equal("需要恢复监管", card.SurfaceStatus);
+        Assert.Contains("无法安全释放", pane.OpenError, StringComparison.Ordinal);
+        var lease = await store.GetActiveSurfaceLeaseAsync(record.ProjectId, record.TaskId, record.Session.Id);
+        Assert.Equal(WorkerSessionSurfaceState.RecoveryRequired, lease?.State);
+    }
+
+    [Fact]
+    public async Task Card_activation_selects_the_worker_without_opening_a_second_process()
     {
         var runtime = new FakeAgentRuntime();
         var session = new AgentSession(
@@ -151,14 +212,15 @@ public sealed class WorkPaneViewModelTests
         var store = new InMemoryWorkerRoutingStore();
         await store.SaveSessionAsync(record);
         var launcher = new RecordingInteractiveSessionLauncher();
-        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, new AgentRuntimeRegistry(), launcher);
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, registry, launcher);
         await pane.LoadAsync(record.ProjectId);
 
-        await pane.ActivateWorkerCardAsync(Assert.Single(pane.Workers));
+        await pane.SelectWorkerAsync(Assert.Single(pane.Workers));
 
-        var opened = Assert.Single(launcher.Opened);
-        Assert.Equal(record.Session.Id, opened.Session.Id);
-        Assert.Equal("thread-card", opened.Session.ExternalSessionId);
+        Assert.Empty(launcher.Opened);
+        Assert.Equal(record.Session.Id, pane.SelectedWorker!.Session.Id);
         Assert.Equal("Interrupted", pane.Workers.Single().Status);
         Assert.Empty(runtime.CreatedSessions);
     }
@@ -282,6 +344,18 @@ public sealed class WorkPaneViewModelTests
     }
 
     [Fact]
+    public void Worker_scrollbar_stays_thin_when_pointer_is_over_it()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var markup = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Workbench.App", "Views", "Panes", "WorkPaneView.axaml"));
+
+        Assert.Contains("<Style Selector=\"ScrollBar\">", markup, StringComparison.Ordinal);
+        Assert.Contains("<Style Selector=\"ScrollBar:pointerover\">", markup, StringComparison.Ordinal);
+        Assert.True(markup.Split("<Setter Property=\"Width\" Value=\"4\" />", StringSplitOptions.None).Length - 1 >= 2);
+        Assert.True(markup.Split("<Setter Property=\"MaxWidth\" Value=\"4\" />", StringSplitOptions.None).Length - 1 >= 2);
+    }
+
+    [Fact]
     public void Waiting_worker_is_not_presented_as_working()
     {
         var runtime = new FakeAgentRuntime();
@@ -327,7 +401,67 @@ public sealed class WorkPaneViewModelTests
     }
 
     [Fact]
-    public void Codex_launcher_starts_a_new_native_terminal_that_resumes_the_existing_thread_in_the_project_directory()
+    public async Task Codex_launcher_does_not_start_cli_when_workbench_cannot_release_runtime()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(), runtime.Account.Id, new Workbench.Runtime.Providers.ProviderId("codex"),
+            "gpt-5.6-sol", "C:/Project", "thread-existing", AgentSessionStatus.Completed,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Task", session,
+            ExecutionProfile.Create("codex", runtime.Account.Id.Value.ToString(), "gpt-5.6-sol", "codex-app-server"),
+            "Worker", DateTimeOffset.UtcNow);
+        var starts = 0;
+        var launcher = new CodexInteractiveSessionLauncher(
+            _ =>
+            {
+                starts++;
+                return null;
+            },
+            (_, _) => Task.FromResult(false));
+
+        var result = await launcher.OpenAsync(record);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("release", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, starts);
+    }
+
+    [Fact]
+    public async Task Codex_launcher_does_not_release_or_start_cli_for_an_active_worker()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(), runtime.Account.Id, new Workbench.Runtime.Providers.ProviderId("codex"),
+            "gpt-5.6-sol", "C:/Project", "thread-running", AgentSessionStatus.Running,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Running task", session,
+            ExecutionProfile.Create("codex", runtime.Account.Id.Value.ToString(), "gpt-5.6-sol", "codex-app-server"),
+            "Worker", DateTimeOffset.UtcNow);
+        var starts = 0;
+        var releases = 0;
+        var launcher = new CodexInteractiveSessionLauncher(
+            _ =>
+            {
+                starts++;
+                return null;
+            },
+            (_, _) =>
+            {
+                releases++;
+                return Task.FromResult(true);
+            });
+
+        var result = await launcher.OpenAsync(record);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("active in Workbench", result.Error, StringComparison.Ordinal);
+        Assert.Equal(0, starts);
+        Assert.Equal(0, releases);
+    }
+
+    [Fact]
+    public void Codex_launcher_starts_a_native_terminal_that_resumes_the_existing_thread_in_the_project_directory()
     {
         var runtime = new FakeAgentRuntime();
         var session = new AgentSession(
@@ -342,8 +476,8 @@ public sealed class WorkPaneViewModelTests
 
         Assert.Equal("wt.exe", startInfo.FileName);
         Assert.Equal(
-            ["-w", "new", "--size", "120,42", "--title", "[Worker] Read smoke context - Codex",
-             "--suppressApplicationTitle", "-d", "C:/Project", "cmd.exe", "/k", "codex", "resume",
+            ["--wait", "-w", "new", "--size", "120,42", "--pos", "24,24", "--title", "[Worker] Read smoke context - Codex",
+             "--suppressApplicationTitle", "-d", "C:/Project", "cmd.exe", "/c", "codex", "resume",
              "thread-existing", "-C", "C:/Project"],
             startInfo.ArgumentList);
     }
@@ -375,12 +509,16 @@ internal sealed class RecordingInteractiveSessionLauncher : IAgentInteractiveSes
 internal sealed class InMemoryWorkerRoutingStore : IWorkerRoutingStore
 {
     private readonly List<WorkerSessionRecord> _sessions = [];
+    private readonly List<WorkerSessionSurfaceLease> _leases = [];
     public List<WorkerRemoval> Removals { get; } = [];
     public Guid ProjectId => _sessions.First().ProjectId;
     public Task SaveSessionAsync(WorkerSessionRecord session, CancellationToken cancellationToken = default) { _sessions.Add(session); return Task.CompletedTask; }
     public Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<WorkerSessionRecord>>(_sessions.Where(item => item.ProjectId == projectId && !Removals.Any(removed => removed.WorkerSessionId == item.Session.Id)).ToArray());
     public Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) => Task.FromResult(_sessions.LastOrDefault(item => item.ProjectId == projectId && item.TaskId == taskId && item.Session.Id == sessionId));
     public Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task AppendSurfaceLeaseAsync(WorkerSessionSurfaceLease lease, CancellationToken cancellationToken = default) { _leases.Add(lease); return Task.CompletedTask; }
+    public Task<WorkerSessionSurfaceLease?> GetActiveSurfaceLeaseAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_leases.Where(item => item.ProjectId == projectId && item.TaskId == taskId && item.WorkerSessionId == sessionId).LastOrDefault(item => item.Active));
     public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) { Removals.Add(removal); return Task.CompletedTask; }
     public Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default)
     {

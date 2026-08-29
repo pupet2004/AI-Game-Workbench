@@ -464,7 +464,10 @@ public sealed class RuntimeCompositionTests
 
         Assert.Contains("CodexRuntimeComposition.ConnectAsync", source, StringComparison.Ordinal);
         Assert.Contains("OpenCodeRuntimeComposition.ConnectAsync", source, StringComparison.Ordinal);
-        Assert.Contains("window.Closing += async", source, StringComparison.Ordinal);
+        Assert.Contains("desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown", source, StringComparison.Ordinal);
+        Assert.Contains("window.Closing +=", source, StringComparison.Ordinal);
+        Assert.Contains("window.Hide()", source, StringComparison.Ordinal);
+        Assert.Contains("TrayIcon.SetIcons", source, StringComparison.Ordinal);
         Assert.Contains("await viewModel.DisposeAsync()", source, StringComparison.Ordinal);
         Assert.Contains("finally", source, StringComparison.Ordinal);
         Assert.DoesNotContain("token", source, StringComparison.OrdinalIgnoreCase);

@@ -7,7 +7,8 @@ public sealed record CreateAgentSessionRequest
     public CreateAgentSessionRequest(
         ProviderAccountId accountId,
         string modelId,
-        string? workingDirectory = null)
+        string? workingDirectory = null,
+        AgentAccessMode accessMode = AgentAccessMode.Restricted)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
         if (workingDirectory is not null)
@@ -18,6 +19,7 @@ public sealed record CreateAgentSessionRequest
         AccountId = accountId;
         ModelId = modelId;
         WorkingDirectory = workingDirectory;
+        AccessMode = accessMode;
     }
 
     public ProviderAccountId AccountId { get; }
@@ -25,4 +27,6 @@ public sealed record CreateAgentSessionRequest
     public string ModelId { get; }
 
     public string? WorkingDirectory { get; }
+
+    public AgentAccessMode AccessMode { get; }
 }

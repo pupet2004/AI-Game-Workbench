@@ -1,6 +1,7 @@
 using System.Text;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Runtime;
+using Workbench.App.AgentHost;
 
 namespace Workbench.App.Leader;
 
@@ -23,6 +24,13 @@ public sealed record LeaderReviewRuntimeResult(
 
 public sealed class LeaderReviewRuntimeAdapter
 {
+    private readonly IAgentHost? _agentHost;
+
+    public LeaderReviewRuntimeAdapter(IAgentHost? agentHost = null)
+    {
+        _agentHost = agentHost;
+    }
+
     public async Task<LeaderReviewRuntimeResult> ReviewAsync(
         LeaderReviewInput input,
         IAgentRuntime runtime,
@@ -35,10 +43,15 @@ public sealed class LeaderReviewRuntimeAdapter
 
         try
         {
-            await foreach (var item in runtime.SendAsync(
-                               leaderSession,
-                               new AgentRequest(LeaderReviewPromptBuilder.Build(input), LeaderReviewResponseSchema.Json),
-                               cancellationToken))
+            var prompt = LeaderReviewPromptBuilder.Build(input);
+            var request = new HostedAgentIntent(
+                AgentIntentSource.Workbench,
+                prompt,
+                OutputSchema: LeaderReviewResponseSchema.Json);
+            var events = _agentHost is not null
+                ? _agentHost.RunTurnAsync(leaderSession, request, cancellationToken)
+                : runtime.SendAsync(leaderSession, new AgentRequest(prompt, LeaderReviewResponseSchema.Json), cancellationToken);
+            await foreach (var item in events)
             {
                 switch (item)
                 {

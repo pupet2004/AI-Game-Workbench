@@ -13,6 +13,8 @@ public interface IAgentRuntime
 
     AgentCapability Capabilities { get; }
 
+    bool HasActiveTurns => false;
+
     Task<IReadOnlyList<ModelProfile>> GetModelsAsync(CancellationToken cancellationToken = default);
 
     Task<AgentSession> CreateSessionAsync(

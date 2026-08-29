@@ -27,7 +27,34 @@ public sealed class LeaderPaneViewTests
         Assert.Contains("$('action').disabled=state.busy&&!canSteer", codeBehind, StringComparison.Ordinal);
         Assert.Contains("e.key==='Enter'&&!e.shiftKey", codeBehind, StringComparison.Ordinal);
         Assert.Contains("command:'steer'", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("id=\"access\"", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("command:'toggle_access_mode'", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("meta.accessMode==='restricted'", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Working · type to steer", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Native_surface_projects_worker_draft_confirmation_and_confirm_command()
+    {
+        var codeBehind = ReadLeaderSurfaceCodeBehind();
+
+        Assert.Contains("draftConfirmation", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("workerResources", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("command:'confirm_draft'", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ConfirmDraftAsync", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("id=\"draft\"", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("确认并启动 Worker", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("regenerate_draft", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("draftFallback", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Native_surface_serializes_commands_for_avalonia_web_message_bridge()
+    {
+        var codeBehind = ReadLeaderSurfaceCodeBehind();
+
+        Assert.Contains("window.invokeCSharpAction(JSON.stringify(m))", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("window.invokeCSharpAction(m)", codeBehind, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -14,6 +14,7 @@ using Workbench.Storage.Memory;
 using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
 using Workbench.App.Memory;
+using Workbench.App.AgentHost;
 
 namespace Workbench.App.ViewModels;
 
@@ -35,6 +36,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         ProjectLeaderSessionManager? leaderSessionManager = null,
         string? runtimeUnavailableDetail = null,
         Func<CancellationToken, Task>? reconnectRuntime = null,
+        Func<Workbench.Runtime.Providers.ProviderAccountId, CancellationToken, Task<bool>>? releaseRuntimeForExternalCli = null,
+        Func<CancellationToken, Task>? restoreRuntimeAfterExternalCli = null,
         ProjectSettingsRepository? projectSettingsRepository = null,
         LeaderSessionRotationStateService? rotationStateService = null,
         LeaderSessionRolloverService? rolloverService = null,
@@ -53,7 +56,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          IProjectMemoryApi? projectMemoryApi = null,
          ILeaderReviewUserResponseBinder? responseBinder = null,
          ProjectSummaryRepository? projectSummaryRepository = null,
-         LibraryAcceptedStateReader? acceptedStateReader = null)
+         LibraryAcceptedStateReader? acceptedStateReader = null,
+         IAgentHost? agentHost = null,
+         Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -65,10 +70,14 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             FocusWorkAsync,
             workerRoutingStore,
             runtimeRegistry,
-            new CodexInteractiveSessionLauncher(),
+            new CodexInteractiveSessionLauncher(releaseRuntimeForExternalCli),
             taskRevisions: taskRevisionRepository,
             workerRouter: workerSessionRouter,
-            project: result.Project);
+            project: result.Project,
+            restoreRuntimeAfterExternalCli: restoreRuntimeAfterExternalCli,
+            releaseRuntimeForExternalCli: releaseRuntimeForExternalCli,
+            agentHost: agentHost,
+            openHostedSurface: openHostedSurface);
         LibraryPane = new LibraryPaneViewModel(
             result,
             FocusLibraryAsync,
@@ -103,7 +112,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             refreshLibraryPane: LibraryPane.LoadLibraryAsync,
             responseBinder: responseBinder,
             git: result.Git,
-            projectSummaryRepository: projectSummaryRepository);
+            projectSummaryRepository: projectSummaryRepository,
+            agentHost: agentHost);
     }
 
     public ProjectOpenResult Result { get; }
@@ -168,6 +178,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await WorkPane.DisposeAsync();
+        await LeaderPane.DisposeAsync();
         await FlushLayoutAsync();
         _saveCancellation?.Dispose();
     }

@@ -231,6 +231,10 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
         builder.AppendLine("When you decide real work should be handed to a Worker, you must propose it through draft_proposal and wait for user confirmation.");
         builder.AppendLine("Before confirmation and a real Worker Session, do not claim a Worker started, executed, or returned results.");
         builder.AppendLine("Do not execute delegated work yourself and describe your result as a Worker result. Ordinary turns must set draft_proposal to null.");
+        builder.AppendLine("WORKER SCOPE: In Workbench, a Worker is a Workbench-managed execution bound to an Assignment and Attempt.");
+        builder.AppendLine("Determine Worker status only from Workbench Assignment, Attempt, Execution, routing, and Handoff state.");
+        builder.AppendLine("Do not infer Workbench Workers from runtime-local sub-agents, helper threads, tool calls, or collaboration participants in your current Agent session.");
+        builder.AppendLine("If no Workbench-managed execution exists, report that there is no active Workbench Worker, even when runtime-local collaborators are present.");
         builder.AppendLine();
         builder.AppendLine("LIBRARY PROPOSAL CONTRACT");
         builder.AppendLine("Library is the project's long-lived factual evolution archive: what is true, implemented, structured, or materially present.");

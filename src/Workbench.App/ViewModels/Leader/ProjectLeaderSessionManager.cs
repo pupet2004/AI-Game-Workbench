@@ -274,6 +274,8 @@ internal sealed class LeaderConversationState(Guid projectId)
 
     public LeaderModelOptionViewModel? SelectedModel { get; set; }
 
+    public AgentAccessMode AccessMode { get; set; } = AgentAccessMode.Full;
+
     public AgentSession? Session { get; set; }
 
     public StoredLeaderSessionEpoch? Epoch { get; set; }

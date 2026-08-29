@@ -93,6 +93,6 @@ public partial class WorkPaneView : UserControl
         }
 
         e.Handled = true;
-        await leftPane.ActivateWorkerCardAsync(leftWorker);
+        await leftPane.SelectWorkerAsync(leftWorker);
     }
 }

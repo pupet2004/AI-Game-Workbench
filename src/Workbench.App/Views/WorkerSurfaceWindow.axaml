@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Workbench.App.AgentHost"
+        x:Class="Workbench.App.Views.WorkerSurfaceWindow"
+        x:DataType="vm:HostedAgentSurfaceViewModel"
+        Width="760"
+        Height="620"
+        MinWidth="520"
+        MinHeight="420"
+        Background="#111111"
+        WindowStartupLocation="CenterScreen">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="18" RowSpacing="12">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel>
+                <TextBlock Text="Worker" FontSize="18" FontWeight="SemiBold" Foreground="#FFFFFF" />
+                <TextBlock Text="{Binding Session.ExternalSessionId, StringFormat=Session: {0}}" Foreground="#8A8A8A" />
+                <TextBlock Text="{Binding StatusText, StringFormat=状态：{0}}" Foreground="#FFFFFF" FontSize="13" FontWeight="SemiBold" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="隐藏窗口" Click="OnCloseClick" HorizontalAlignment="Right" ToolTip.Tip="隐藏窗口，Worker 继续运行" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AllowAutoHide="False">
+            <ItemsControl ItemsSource="{Binding Entries}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HostedSurfaceEntry">
+                        <Border Margin="0,0,0,8" Padding="10" Background="#1A1A1A" CornerRadius="6">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding Label}" Foreground="#8A8A8A" FontSize="11" />
+                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="#FFFFFF" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBox Name="Composer" Text="{Binding DraftText, Mode=TwoWay}" PlaceholderText="输入消息；运行中会作为 steer" AcceptsReturn="True" KeyDown="OnComposerKeyDown" MinHeight="72" TextWrapping="Wrap" />
+            <Button Grid.Column="1" Content="发送 / Steer" Click="OnSendClick" VerticalAlignment="Bottom" />
+            <Button Grid.Column="2" Content="停止任务" Click="OnStopClick" VerticalAlignment="Bottom" ToolTip.Tip="停止 Worker 当前任务" />
+        </Grid>
+    </Grid>
+</Window>

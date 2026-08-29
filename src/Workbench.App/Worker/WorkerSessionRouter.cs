@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Workbench.App.Leader;
 using Workbench.App.Skills;
 using Workbench.Core.Tasks;
@@ -8,6 +9,7 @@ using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Tasks;
 using Workbench.Storage.Workers;
+using Workbench.App.AgentHost;
 
 namespace Workbench.App.Worker;
 
@@ -23,7 +25,8 @@ public sealed record WorkerStartRequest(
     Func<WorkerHandoff, CancellationToken, Task>? OnHandoff = null,
     Guid? ExecutionId = null,
     WorkerExecutionIdentity? ExecutionIdentity = null,
-    bool WaitForCompletion = true);
+    bool WaitForCompletion = true,
+    AgentIntentSource PromptSource = AgentIntentSource.Leader);
 
 public sealed record WorkerStartResult(bool Succeeded, AgentSession? WorkerSession, string? Error);
 
@@ -61,6 +64,28 @@ public sealed record WorkerStatusOverride(
     DateTimeOffset ChangedAt,
     string Reason);
 
+public sealed record WorkerSessionSurfaceLease(
+    Guid ProjectId,
+    Guid TaskId,
+    AgentSessionId WorkerSessionId,
+    Guid ContinuationAttemptId,
+    int? ProcessId,
+    bool Active,
+    DateTimeOffset ChangedAt,
+    WorkerSessionSurfaceState State = WorkerSessionSurfaceState.WorkbenchOwned)
+{
+    public bool IsActive => Active;
+}
+
+public enum WorkerSessionSurfaceState
+{
+    Preparing,
+    CliOwned,
+    Reacquiring,
+    WorkbenchOwned,
+    RecoveryRequired
+}
+
 public interface IWorkerRoutingStore
 {
     Task SaveSessionAsync(WorkerSessionRecord session, CancellationToken cancellationToken = default);
@@ -69,6 +94,8 @@ public interface IWorkerRoutingStore
     Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default);
     Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default);
     Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default);
+    Task AppendSurfaceLeaseAsync(WorkerSessionSurfaceLease lease, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    Task<WorkerSessionSurfaceLease?> GetActiveSurfaceLeaseAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) => Task.FromResult<WorkerSessionSurfaceLease?>(null);
 }
 
 public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
@@ -128,6 +155,21 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
     public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) =>
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), removal.ProjectId, removal.TaskId, null,
             "WorkerRemoved", JsonSerializer.Serialize(removal), removal.RemovedAt), cancellationToken);
+
+    public Task AppendSurfaceLeaseAsync(WorkerSessionSurfaceLease lease, CancellationToken cancellationToken = default) =>
+        _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), lease.ProjectId, lease.TaskId, null,
+            "WorkerSessionSurfaceLease", JsonSerializer.Serialize(lease), lease.ChangedAt), cancellationToken);
+
+    public async Task<WorkerSessionSurfaceLease?> GetActiveSurfaceLeaseAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default)
+    {
+        var events = await _events.ListAsync(projectId, taskId, 200, cancellationToken);
+        var latest = events.Where(item => item.Type == "WorkerSessionSurfaceLease")
+            .Select(item => TryDeserializeSurfaceLease(item))
+            .Where(item => item is not null && item.WorkerSessionId == sessionId)
+            .Select(item => item!)
+            .LastOrDefault();
+        return latest is { Active: true } && latest.IsActive ? latest : null;
+    }
 
     public async Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default)
     {
@@ -258,6 +300,11 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
         try { return JsonSerializer.Deserialize<WorkerStatusOverride>(item.Payload); } catch (JsonException) { return null; }
     }
 
+    private static WorkerSessionSurfaceLease? TryDeserializeSurfaceLease(StoredTaskEvent item)
+    {
+        try { return JsonSerializer.Deserialize<WorkerSessionSurfaceLease>(item.Payload); } catch (JsonException) { return null; }
+    }
+
     private static bool TryReadGuid(JsonElement value, out Guid result)
     {
         if (value.ValueKind == JsonValueKind.String && Guid.TryParse(value.GetString(), out result)) return true;
@@ -330,13 +377,110 @@ public sealed class WorkerSessionRouter(
     TimeProvider time,
     AssignmentReviewStateRepository? assignments = null,
     ILeaderReviewOrchestrator? reviews = null,
-    WorkerExecutionRepository? executions = null)
+    WorkerExecutionRepository? executions = null,
+    IAgentHost? agentHost = null)
 {
+    private readonly IAgentHost _agentHost = agentHost ?? new InProcessAgentHost(runtimes);
+    private readonly ConcurrentDictionary<AgentSessionId, Task> _intentTails = new();
+
+    /// <summary>
+    /// Routes a follow-up direction to an already hosted Worker session.
+    /// Active turns use the provider's steer channel when available; all
+    /// other directions are serialized as continuations behind the current
+    /// turn. The caller never needs to open or own a CLI process.
+    /// </summary>
+    public async Task<WorkerStartResult> SendIntentAsync(
+        Workbench.Core.Projects.Project project,
+        Guid taskId,
+        AgentSessionId workerSessionId,
+        string text,
+        AgentIntentSource source,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        var persisted = await store.GetSessionAsync(project.Id, taskId, workerSessionId, cancellationToken).ConfigureAwait(false);
+        if (persisted is null)
+            return new WorkerStartResult(false, null, "The requested Worker session is not available.");
+
+        var runtime = runtimes.GetByAccount(persisted.Session.AccountId);
+        var snapshot = _agentHost.Attach(persisted.Session);
+        if (snapshot.HasActiveTurn && runtime.Capabilities.HasFlag(AgentCapability.Steer))
+        {
+            try
+            {
+                await _agentHost.SteerAsync(
+                    persisted.Session,
+                    new HostedAgentIntent(source, text),
+                    cancellationToken).ConfigureAwait(false);
+                return new WorkerStartResult(true, persisted.Session, null);
+            }
+            catch (NotSupportedException)
+            {
+                // Some runtimes advertise capabilities optimistically. Fall
+                // through to a serialized continuation instead of dropping
+                // the direction.
+            }
+            catch (InvalidOperationException exception) when (exception.Message.Contains("no active turn", StringComparison.OrdinalIgnoreCase))
+            {
+                // The turn ended between Attach and SteerAsync. Queue the
+                // direction against the same session.
+            }
+        }
+
+        var request = new WorkerStartRequest(
+            project,
+            persisted.TaskId,
+            persisted.TaskRevisionId,
+            persisted.TaskTitle,
+            persisted.Profile,
+            text,
+            persisted.Session.Id,
+            persisted.Label,
+            WaitForCompletion: true,
+            PromptSource: source,
+            ExecutionId: persisted.ExecutionId);
+
+        QueueContinuation(persisted.Session.Id, request);
+        return new WorkerStartResult(true, persisted.Session, null);
+    }
+
+    private void QueueContinuation(AgentSessionId sessionId, WorkerStartRequest request)
+    {
+        while (true)
+        {
+            var prior = _intentTails.GetOrAdd(sessionId, Task.CompletedTask);
+            var next = prior.ContinueWith(
+                    _ => StartAsync(request, CancellationToken.None),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default)
+                .Unwrap();
+            if (_intentTails.TryUpdate(sessionId, next, prior))
+            {
+                _ = next.ContinueWith(
+                    completed => _ = completed.Exception,
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+                return;
+            }
+        }
+    }
+
     public async Task<WorkerStartResult> StartAsync(WorkerStartRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.LeaderPrompt);
-        var runtime = runtimes.GetByAccount(new Workbench.Runtime.Providers.ProviderAccountId(Guid.Parse(request.ExecutionProfile.ProviderAccountId)));
+        IAgentRuntime runtime;
+        try
+        {
+            runtime = runtimes.GetByAccount(new Workbench.Runtime.Providers.ProviderAccountId(Guid.Parse(request.ExecutionProfile.ProviderAccountId)));
+        }
+        catch (Exception exception) when (exception is KeyNotFoundException or FormatException)
+        {
+            return new WorkerStartResult(false, null, "Worker runtime is not connected. Reconnect the Agent runtime and try again.");
+        }
         var created = request.ReuseWorkerSessionId is null;
         var typed = executions is not null && request.ExecutionId.HasValue && request.ExecutionIdentity is not null;
         if (typed && request.ExecutionIdentity!.TaskId != request.TaskId) throw new InvalidOperationException("Execution task mismatch.");
@@ -348,26 +492,33 @@ public sealed class WorkerSessionRouter(
             if (typed)
             {
                 var identity = request.ExecutionIdentity!;
-                await executions!.CreateAsync(new StoredWorkerExecution(
-                    request.ExecutionId!.Value, request.Project.Id, request.TaskId, identity.ExecutionStartRevision,
-                    identity.CurrentAcknowledgedRevision, identity.BaseCommit, identity.TargetBranch, identity.ProviderAccount,
-                    identity.ExecutionProfile, identity.WorkerBranch, identity.WorkerWorktreePath, WorkerExecutionState.RuntimeStarting,
-                    null, null, null, time.GetUtcNow(), time.GetUtcNow()), cancellationToken);
+                try
+                {
+                    await executions!.CreateAsync(new StoredWorkerExecution(
+                        request.ExecutionId!.Value, request.Project.Id, request.TaskId, identity.ExecutionStartRevision,
+                        identity.CurrentAcknowledgedRevision, identity.BaseCommit, identity.TargetBranch, identity.ProviderAccount,
+                        identity.ExecutionProfile, identity.WorkerBranch, identity.WorkerWorktreePath, WorkerExecutionState.RuntimeStarting,
+                        null, null, null, time.GetUtcNow(), time.GetUtcNow()), cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    return new WorkerStartResult(false, null, exception.Message);
+                }
             }
 
             AgentSession? createdSession = null;
             try
             {
-                createdSession = await runtime.CreateSessionAsync(new CreateAgentSessionRequest(runtime.Account.Id, request.ExecutionProfile.ModelProfileId, request.Project.RootPath), cancellationToken);
+                createdSession = await _agentHost.CreateSessionAsync(new CreateAgentSessionRequest(runtime.Account.Id, request.ExecutionProfile.ModelProfileId, request.Project.RootPath), cancellationToken);
                 session = createdSession;
             }
-            catch
+            catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 if (typed)
                 {
                     try { await executions!.UpdateStateAsync(request.Project.Id, request.TaskId, request.ExecutionId!.Value, WorkerExecutionState.Failed, CancellationToken.None); } catch { }
                 }
-                throw;
+                return new WorkerStartResult(false, null, $"The Worker Agent session could not be started: {exception.Message}");
             }
 
             try
@@ -387,7 +538,7 @@ public sealed class WorkerSessionRouter(
                 {
                     try { await executions!.UpdateStateAsync(request.Project.Id, request.TaskId, request.ExecutionId!.Value, WorkerExecutionState.Failed, CancellationToken.None); } catch { }
                 }
-                try { if (createdSession is not null) await runtime.StopAsync(createdSession, CancellationToken.None); } catch { }
+                try { if (createdSession is not null) await _agentHost.StopAsync(createdSession, CancellationToken.None); } catch { }
                 return new WorkerStartResult(false, null, exception.Message);
             }
         }
@@ -398,6 +549,7 @@ public sealed class WorkerSessionRouter(
             if (persisted is null || persisted.Session.AccountId != runtime.Account.Id)
                 return new WorkerStartResult(false, null, "The requested Worker session is not available for this task and account.");
             session = persisted.Session;
+            _agentHost.RegisterSession(session);
             executionId ??= persisted.ExecutionId;
             if (executions is not null && executionId.HasValue)
             {
@@ -411,37 +563,51 @@ public sealed class WorkerSessionRouter(
                 Guid.NewGuid(), "AssignmentReadyToStart", "{}", time.GetUtcNow(), cancellationToken);
             if (ready is not AssignmentStateTransitionResult.Applied and not AssignmentStateTransitionResult.Conflict)
             {
-                await runtime.StopAsync(session, CancellationToken.None);
+                await _agentHost.StopAsync(session, CancellationToken.None);
                 return new WorkerStartResult(false, null, "The Assignment was not ready to start.");
             }
             var started = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.ReadyToStart, TaskLifecycleStatus.Working,
                 Guid.NewGuid(), "WorkerAssignmentStarted", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value }), time.GetUtcNow(), cancellationToken);
             if (started != AssignmentStateTransitionResult.Applied)
             {
-                await runtime.StopAsync(session, CancellationToken.None);
+                await _agentHost.StopAsync(session, CancellationToken.None);
                 return new WorkerStartResult(false, null, "The Assignment was not ready to start.");
             }
         }
 
         async Task RunWorkerTurnAsync()
         {
-            var workerPrompt = $"{request.LeaderPrompt}\n\n{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Worker)}";
+            var workerPrompt = $"{request.LeaderPrompt}\n\n{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Worker)}\n\n" +
+                "Workbench progress reporting: follow the task plan in order. Each time you complete plan step N, " +
+                "write a separate line exactly as `WORKBENCH_STEP_COMPLETED: N`. Do not write this line until that " +
+                "step is actually complete. Continue with the assignment and provide the final report normally.";
             var completionObserved = false;
             try
             {
-                await foreach (var item in runtime.SendAsync(session, new AgentRequest(workerPrompt), cancellationToken))
+                await foreach (var item in _agentHost.RunTurnAsync(
+                                   session,
+                                   new HostedAgentIntent(request.PromptSource, workerPrompt, DisplayText: request.LeaderPrompt),
+                                   cancellationToken))
                 {
                     if (item is not AgentTurnCompleted completed) continue;
                     completionObserved = true;
-                    var finalText = completed.Result.FinalText ?? string.Empty;
+                    var finalText = AgentProgressProtocol.StripControlLines(completed.Result.FinalText);
                     WorkerHandoffPayload? payload = null;
                     var isTypedHandoff = !string.IsNullOrWhiteSpace(finalText) && WorkerHandoffPayloadParser.TryParse(finalText, out payload);
+                    if (!isTypedHandoff &&
+                        completed.Result.FinalStatus == AgentSessionStatus.Completed &&
+                        !string.IsNullOrWhiteSpace(finalText))
+                    {
+                        payload = new WorkerHandoffPayload(WorkerHandoffKind.FinalReport, finalText, null);
+                    }
+                    var isFinalReport = payload?.Kind == WorkerHandoffKind.FinalReport;
                     var eventId = Guid.NewGuid();
                     var canPublishHandoff = true;
-                    if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && assignments is not null)
+                    if (isFinalReport && assignments is not null)
                     {
+                        var finalReport = payload!;
                         var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
-                            eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload.Message, payload.ValidationSummary }), time.GetUtcNow(), cancellationToken);
+                            eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, finalReport.Message, finalReport.ValidationSummary }), time.GetUtcNow(), cancellationToken);
                         canPublishHandoff = transition == AssignmentStateTransitionResult.Applied;
                     }
                     else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
@@ -455,7 +621,7 @@ public sealed class WorkerSessionRouter(
                     {
                         var nextState = completed.Result.FinalStatus switch
                         {
-                            AgentSessionStatus.Completed when isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport => WorkerExecutionState.CompletedPendingReview,
+                            AgentSessionStatus.Completed when isFinalReport => WorkerExecutionState.CompletedPendingReview,
                             AgentSessionStatus.Completed when isTypedHandoff => WorkerExecutionState.Blocked,
                             AgentSessionStatus.Completed => WorkerExecutionState.CompletedPendingReview,
                             AgentSessionStatus.Interrupted or AgentSessionStatus.Stopped => WorkerExecutionState.Interrupted,
@@ -467,11 +633,11 @@ public sealed class WorkerSessionRouter(
 
                     if (!canPublishHandoff || string.IsNullOrWhiteSpace(finalText)) continue;
                     var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
-                        isTypedHandoff ? payload!.Message : finalText, time.GetUtcNow(),
-                        isTypedHandoff ? payload!.Kind : WorkerHandoffKind.NeedsLeaderDecision,
-                        isTypedHandoff ? payload!.ValidationSummary : null, eventId, request.TaskRevisionId);
+                        payload?.Message ?? finalText, time.GetUtcNow(),
+                        payload?.Kind ?? WorkerHandoffKind.NeedsLeaderDecision,
+                        payload?.ValidationSummary, eventId, request.TaskRevisionId);
                     await store.AppendHandoffAsync(handoff, cancellationToken);
-                    if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.FinalReport && reviews is not null)
+                    if (isFinalReport && reviews is not null)
                         await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
                     if (request.OnHandoff is not null)
                     {
@@ -485,12 +651,15 @@ public sealed class WorkerSessionRouter(
             {
                 if (!completionObserved && executions is not null && executionId.HasValue)
                     try { await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, WorkerExecutionState.Interrupted, CancellationToken.None); } catch { }
+                if (!completionObserved)
+                    try { await store.OverrideStatusAsync(new WorkerStatusOverride(request.Project.Id, request.TaskId, session.Id, AgentSessionStatus.Interrupted, time.GetUtcNow(), "Worker turn interrupted before completion"), CancellationToken.None); } catch { }
                 throw;
             }
             catch
             {
                 if (executions is not null && executionId.HasValue)
                     try { await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, WorkerExecutionState.Failed, CancellationToken.None); } catch { }
+                try { await store.OverrideStatusAsync(new WorkerStatusOverride(request.Project.Id, request.TaskId, session.Id, AgentSessionStatus.Failed, time.GetUtcNow(), "Worker turn failed before completion"), CancellationToken.None); } catch { }
                 throw;
             }
             finally

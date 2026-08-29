@@ -75,3 +75,24 @@ public sealed record AgentError(
 public sealed record AgentTurnCompleted(
     AgentResult Result,
     DateTimeOffset OccurredAt) : AgentEvent(OccurredAt);
+
+public sealed record AgentProgressChanged(
+    int CompletedSteps,
+    DateTimeOffset OccurredAt) : AgentEvent(OccurredAt);
+
+public enum AgentPlanStepStatus
+{
+    Pending,
+    InProgress,
+    Completed,
+    Failed
+}
+
+public sealed record AgentPlanStep(
+    string Id,
+    string Text,
+    AgentPlanStepStatus Status);
+
+public sealed record AgentPlanUpdated(
+    IReadOnlyList<AgentPlanStep> Steps,
+    DateTimeOffset OccurredAt) : AgentEvent(OccurredAt);

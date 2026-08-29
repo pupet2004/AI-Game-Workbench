@@ -31,6 +31,11 @@ public sealed class AgentRuntimeRegistry
             $"No runtime is registered for provider account '{accountId}'.");
     }
 
+    public bool TryGetByAccount(ProviderAccountId accountId, out IAgentRuntime? runtime) =>
+        _runtimes.TryGetValue(accountId, out runtime);
+
+    public bool Unregister(ProviderAccountId accountId) => _runtimes.Remove(accountId);
+
     public async Task<IReadOnlyList<AvailableModelProfile>> GetAvailableModelsAsync(
         CancellationToken cancellationToken = default)
     {

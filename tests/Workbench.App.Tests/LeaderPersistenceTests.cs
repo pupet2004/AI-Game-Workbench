@@ -433,7 +433,8 @@ public sealed class LeaderPersistenceTests
 
         Assert.Equal(["question", "offline history"], restored.Messages.Select(message => message.Text));
         Assert.Equal(epochId, restored.SessionEpochId);
-        Assert.Equal("Current Leader session is unavailable.", restored.RuntimeStatus);
+        Assert.Contains(restored.RuntimeStatus,
+            new[] { "Current Leader session is unavailable.", "当前 Leader 会话不可用。" });
         Assert.False(restored.CanSend);
         Assert.True(restored.CanRetryRuntime);
     }

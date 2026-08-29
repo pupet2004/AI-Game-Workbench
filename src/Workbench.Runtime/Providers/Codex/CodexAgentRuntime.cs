@@ -49,6 +49,17 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         AgentCapability.Steer |
         AgentCapability.ImageInput;
 
+    public bool HasActiveTurns
+    {
+        get
+        {
+            lock (_activeTurnsLock)
+            {
+                return _activeTurns.Count > 0;
+            }
+        }
+    }
+
     internal Task ProtocolCompletion => _client.Completion;
 
     public static async Task<CodexAgentRuntime> ConnectAsync(
@@ -130,7 +141,7 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
             {
                 model = request.ModelId,
                 cwd = request.WorkingDirectory,
-                sandbox = "read-only",
+                sandbox = request.AccessMode == AgentAccessMode.Full ? "danger-full-access" : "read-only",
                 approvalPolicy = "on-request"
             },
             cancellationToken).ConfigureAwait(false);
@@ -206,7 +217,9 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
                     outputSchema = request.OutputSchema is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(request.OutputSchema),
                     cwd = session.WorkingDirectory,
                     approvalPolicy = "on-request",
-                    sandboxPolicy = new { type = "readOnly", networkAccess = false }
+                    sandboxPolicy = request.AccessMode == AgentAccessMode.Full
+                        ? new { type = "dangerFullAccess", networkAccess = true }
+                        : new { type = "readOnly", networkAccess = false }
                 },
                 cancellationToken).ConfigureAwait(false);
             var turnId = result.GetProperty("turn").GetProperty("id").GetString()

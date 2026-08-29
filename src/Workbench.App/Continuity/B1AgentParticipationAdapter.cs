@@ -5,6 +5,7 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Continuity;
 using Workbench.App.Skills;
+using Workbench.App.AgentHost;
 
 namespace Workbench.App.Continuity;
 
@@ -36,7 +37,8 @@ public sealed class B1AgentParticipationAdapter(
     B1AuthorityRepository authorityRepository,
     B1NonAuthoritativeCommandService nonAuthoritativeCommands,
     GuidedHandoffComposerService guidedHandoffComposer,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAgentHost? agentHost = null)
 {
     private readonly B1AuthorityRepository _authorityRepository =
         authorityRepository ?? throw new ArgumentNullException(nameof(authorityRepository));
@@ -46,6 +48,7 @@ public sealed class B1AgentParticipationAdapter(
         guidedHandoffComposer ?? throw new ArgumentNullException(nameof(guidedHandoffComposer));
     private readonly TimeProvider _timeProvider =
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    private readonly IAgentHost? _agentHost = agentHost;
 
     public async Task<B1AgentExecutionResult> ExecuteAsync(
         IAgentRuntime runtime,
@@ -56,6 +59,8 @@ public sealed class B1AgentParticipationAdapter(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ModelId);
         ArgumentNullException.ThrowIfNull(request.EvidenceRefs);
+
+        _agentHost?.RegisterRuntime(runtime);
 
         var state = await _authorityRepository.LoadProjectStateAsync(request.ProjectRef, cancellationToken);
         var projection = B1Projector.Build(state);
@@ -68,9 +73,13 @@ public sealed class B1AgentParticipationAdapter(
 
         var attempt = await ResolveAttemptAsync(state, projection, request, revisionRef, cancellationToken);
         var continuationContext = BuildContinuationContext(state, projection, attempt.AttemptRef);
-        var session = await runtime.CreateSessionAsync(
+        var session = await (_agentHost is not null
+            ? _agentHost.CreateSessionAsync(
+                new CreateAgentSessionRequest(runtime.Account.Id, request.ModelId, request.WorkingDirectory),
+                cancellationToken)
+            : runtime.CreateSessionAsync(
             new CreateAgentSessionRequest(runtime.Account.Id, request.ModelId, request.WorkingDirectory),
-            cancellationToken);
+            cancellationToken));
         var externalSession = new ExternalSessionRef(
             $"{runtime.Provider.Id.Value}:session/{session.ExternalSessionId ?? session.Id.Value.ToString("N")}");
         var binding = new SessionBinding(
@@ -88,7 +97,7 @@ public sealed class B1AgentParticipationAdapter(
             expectedBinding,
             cancellationToken);
 
-        var finalText = await ExecuteRuntimeAsync(runtime, session, revision.Contract.WorkContract, continuationContext, request.Prompt, cancellationToken);
+        var finalText = await ExecuteRuntimeAsync(_agentHost, runtime, session, revision.Contract.WorkContract, continuationContext, request.Prompt, cancellationToken);
         var handoff = await _guidedHandoffComposer.RecordAsync(
             attempt.AttemptRef,
             request.AssignmentRef,
@@ -139,6 +148,7 @@ public sealed class B1AgentParticipationAdapter(
     }
 
     private static async Task<string> ExecuteRuntimeAsync(
+        IAgentHost? agentHost,
         IAgentRuntime runtime,
         AgentSession session,
         string workContract,
@@ -149,10 +159,10 @@ public sealed class B1AgentParticipationAdapter(
         var requestText = BuildPrompt(workContract, continuationContext, prompt);
         string? finalText = null;
         var streamedText = new StringBuilder();
-        await foreach (var agentEvent in runtime.SendAsync(
-                           session,
-                           new AgentRequest(requestText),
-                           cancellationToken))
+        var events = agentHost is not null
+            ? agentHost.RunTurnAsync(session, new HostedAgentIntent(AgentIntentSource.Workbench, requestText), cancellationToken)
+            : runtime.SendAsync(session, new AgentRequest(requestText), cancellationToken);
+        await foreach (var agentEvent in events)
         {
             switch (agentEvent)
             {

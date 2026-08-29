@@ -67,6 +67,8 @@ internal static class CodexRuntimeMapper
                 parameters.GetProperty("delta").GetString() ?? string.Empty,
                 occurredAt),
             "turn/started" => new AgentStatusChanged(AgentSessionStatus.Running, occurredAt),
+            "turn/plan/updated" => MapPlanUpdated(parameters, occurredAt),
+            "item/started" when IsNonActivityItem(parameters) => null,
             "item/started" => MapToolEvent(method, parameters, occurredAt),
             "item/completed" when IsFinalAgentMessage(parameters) =>
                 new AgentTurnCompleted(
@@ -76,6 +78,7 @@ internal static class CodexRuntimeMapper
                         GetCompletedAgentMessageText(parameters) ?? finalText,
                         null),
                     occurredAt),
+            "item/completed" when IsNonActivityItem(parameters) => null,
             "item/completed" => MapToolEvent(method, parameters, occurredAt),
             "turn/completed" => MapCompletion(parameters, sessionId, finalText, occurredAt),
             "error" => new AgentError(parameters.GetRawText(), occurredAt),
@@ -170,6 +173,19 @@ internal static class CodexRuntimeMapper
             ? text.GetString()
             : null;
 
+    private static bool IsNonActivityItem(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("item", out var item) ||
+            !item.TryGetProperty("type", out var type))
+        {
+            return false;
+        }
+
+        var value = type.GetString();
+        return string.Equals(value, "userMessage", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "agentMessage", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static AgentToolEvent MapToolEvent(
         string method,
         JsonElement parameters,
@@ -198,4 +214,38 @@ internal static class CodexRuntimeMapper
             occurredAt,
             method == "item/completed");
     }
+
+    private static AgentPlanUpdated MapPlanUpdated(JsonElement parameters, DateTimeOffset occurredAt)
+    {
+        var plan = parameters.TryGetProperty("plan", out var planElement) && planElement.ValueKind == JsonValueKind.Array
+            ? planElement
+            : parameters.TryGetProperty("turn", out var turn) && turn.TryGetProperty("plan", out var turnPlan)
+                ? turnPlan
+                : default;
+        var steps = new List<AgentPlanStep>();
+        if (plan.ValueKind == JsonValueKind.Array)
+        {
+            var index = 0;
+            foreach (var item in plan.EnumerateArray())
+            {
+                var text = ReadString(item, "step") ?? ReadString(item, "text") ?? ReadString(item, "description") ?? $"Step {index + 1}";
+                var id = ReadString(item, "id") ?? $"step-{index + 1}";
+                var status = ReadString(item, "status")?.ToLowerInvariant() switch
+                {
+                    "completed" or "complete" or "done" => AgentPlanStepStatus.Completed,
+                    "inprogress" or "in_progress" or "running" => AgentPlanStepStatus.InProgress,
+                    "failed" or "error" => AgentPlanStepStatus.Failed,
+                    _ => AgentPlanStepStatus.Pending
+                };
+                steps.Add(new AgentPlanStep(id, text, status));
+                index++;
+            }
+        }
+        return new AgentPlanUpdated(steps, occurredAt);
+    }
+
+    private static string? ReadString(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 }

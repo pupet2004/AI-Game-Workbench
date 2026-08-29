@@ -5,6 +5,45 @@
              x:Name="WorkRoot"
              x:DataType="vm:WorkPaneViewModel">
     <UserControl.Styles>
+        <Style Selector="ScrollBar">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="MinWidth" Value="4" />
+            <Setter Property="MaxWidth" Value="4" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#777777" />
+        </Style>
+        <Style Selector="ScrollBar:pointerover">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="MinWidth" Value="4" />
+            <Setter Property="MaxWidth" Value="4" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#777777" />
+        </Style>
+        <Style Selector="ScrollBar:vertical">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="MinWidth" Value="4" />
+            <Setter Property="MaxWidth" Value="4" />
+        </Style>
+        <Style Selector="ScrollBar:vertical:pointerover">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="MinWidth" Value="4" />
+            <Setter Property="MaxWidth" Value="4" />
+        </Style>
+        <Style Selector="ScrollBar:vertical /template/ Thumb">
+            <Setter Property="Background" Value="#777777" />
+            <Setter Property="MinWidth" Value="4" />
+            <Setter Property="Width" Value="4" />
+        </Style>
+        <Style Selector="ScrollBar:vertical:pointerover /template/ Thumb">
+            <Setter Property="Background" Value="#777777" />
+            <Setter Property="MinWidth" Value="4" />
+            <Setter Property="Width" Value="4" />
+        </Style>
+        <Style Selector="ScrollBar:vertical /template/ Thumb:pointerover">
+            <Setter Property="Background" Value="#777777" />
+            <Setter Property="MinWidth" Value="4" />
+            <Setter Property="Width" Value="4" />
+        </Style>
         <Style Selector="Button.workerCardButton">
             <Setter Property="Width" Value="42" />
             <Setter Property="Height" Value="24" />
@@ -23,9 +62,13 @@
         </Style>
     </UserControl.Styles>
     <Border Padding="16,16,16,8" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Top" HorizontalContentAlignment="Stretch">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AllowAutoHide="False" VerticalContentAlignment="Top" HorizontalContentAlignment="Stretch">
         <StackPanel Spacing="0" VerticalAlignment="Top" Margin="0">
-            <Grid Margin="0,0,0,6" ColumnDefinitions="*,Auto"><TextBlock Text="{Binding [Worker.Title]}" FontWeight="SemiBold" /><Button Grid.Column="1" Content="{Binding [Worker.Focus]}" Command="{Binding FocusCommand}" /></Grid>
+            <Grid Margin="0,0,0,6" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                <TextBlock Text="{Binding [Worker.Title]}" FontWeight="SemiBold" />
+                <Button Grid.Column="1" Content="收起全部" Command="{Binding CollapseAllWorkersCommand}" IsEnabled="{Binding CanCollapseAllWorkers}" ToolTip.Tip="收起所有 Worker 卡片" />
+                <Button Grid.Column="2" Content="{Binding [Worker.Focus]}" Command="{Binding FocusCommand}" />
+            </Grid>
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.Empty]}" FontSize="18" />
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.EmptyDescription]}" TextWrapping="Wrap" Foreground="#667085" />
             <TextBlock IsVisible="{Binding OpenError}" Text="{Binding OpenError}" TextWrapping="Wrap" Foreground="#B42318" />
@@ -46,6 +89,9 @@
                     <TextBlock Text="{Binding DetailedWorker.TaskTitle}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding DetailedWorker.WorkerLabel}" />
                     <TextBlock Text="{Binding DetailedWorker.Status}" />
+                    <TextBlock Text="{Binding DetailedWorker.SurfaceStatus}" />
+                    <TextBlock IsVisible="{Binding DetailedWorker.IsExternalCliActive}" Text="{Binding DetailedWorker.ContinuationAttemptId, StringFormat=接管尝试：{0}}" TextWrapping="Wrap" />
+                    <TextBlock IsVisible="{Binding DetailedWorker.IsExternalCliActive}" Text="{Binding DetailedWorker.ExternalCliProcessId, StringFormat=CLI 进程：{0}}" />
                     <Button IsVisible="{Binding DetailedWorker.CanContinue}" Content="继续当前任务" Command="{Binding ContinueWorkerCommand}" CommandParameter="{Binding DetailedWorker}" HorizontalAlignment="Left" />
                     <TextBlock Text="{Binding DetailedWorker.SessionId, StringFormat=Session: {0}}" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding DetailedWorker.ExternalSessionId, StringFormat=External session: {0}}" TextWrapping="Wrap" />
@@ -70,7 +116,7 @@
                                 <Button Classes="workerCardButton" Grid.Column="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" VerticalAlignment="Top" />
                                 <TextBlock Grid.Row="1" Text="{Binding WorkerLabel}" />
                                 <TextBlock Grid.Row="2" Text="{Binding Profile}" Foreground="#667085" />
-                                <Grid Grid.Row="3" ColumnDefinitions="*,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid>
+                                <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding SurfaceStatus}" IsVisible="{Binding IsExternalCliActive}" Foreground="#D0D4DC" Margin="8,0" /><TextBlock Grid.Column="2" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid>
                                 <StackPanel Grid.Row="4" IsVisible="{Binding HasPlan}" Spacing="3">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Text="任务进度" Foreground="#D0D4DC" FontSize="12" />

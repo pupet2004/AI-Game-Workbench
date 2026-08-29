@@ -12,12 +12,14 @@ public sealed class ActiveWorkerTests
     [Theory]
     [InlineData(WorkerExecutionState.Preparing, WorkerExecutionState.Preparing)]
     [InlineData(WorkerExecutionState.Running, WorkerExecutionState.Preparing)]
-    [InlineData(WorkerExecutionState.Interrupted, WorkerExecutionState.Running)]
     [InlineData(WorkerExecutionState.Blocked, WorkerExecutionState.WorkspaceCreating)]
-    public async Task Same_project_cannot_have_two_active_executions(WorkerExecutionState first, WorkerExecutionState second)
+    public async Task Same_project_can_host_multiple_active_worker_executions(WorkerExecutionState first, WorkerExecutionState second)
     {
         await using var f=await Fixture.CreateAsync(); await f.Repository.CreateAsync(f.Execution(first,1));
-        await Assert.ThrowsAsync<SqliteException>(()=>f.Repository.CreateAsync(f.Execution(second,2)));
+        await f.Repository.CreateAsync(f.Execution(second,2));
+
+        var executions = await f.Repository.ListAsync(f.ProjectId);
+        Assert.Equal(2, executions.Count);
     }
 
     [Fact]
@@ -35,21 +37,29 @@ public sealed class ActiveWorkerTests
     }
 
     [Fact]
-    public async Task Transition_into_active_is_database_guarded()
+    public async Task Interrupted_execution_releases_project_slot_for_a_new_attempt()
     {
-        await using var f=await Fixture.CreateAsync(); var active=f.Execution(WorkerExecutionState.Running,1); var completed=f.Execution(WorkerExecutionState.CompletedPendingReview,2); await f.Repository.CreateAsync(active); await f.Repository.CreateAsync(completed);
-        await Assert.ThrowsAsync<SqliteException>(()=>f.Repository.UpdateStateAsync(f.ProjectId,completed.TaskId,completed.ExecutionId,WorkerExecutionState.Preparing));
-        Assert.Equal(WorkerExecutionState.CompletedPendingReview,(await f.Repository.GetAsync(f.ProjectId,completed.ExecutionId))!.State);
+        await using var f = await Fixture.CreateAsync();
+        await f.Repository.CreateAsync(f.Execution(WorkerExecutionState.Interrupted, 1));
+        await f.Repository.CreateAsync(f.Execution(WorkerExecutionState.Preparing, 2));
     }
 
     [Fact]
-    public async Task Concurrent_active_inserts_allow_exactly_one_success()
+    public async Task Terminal_execution_can_transition_back_to_active_while_another_worker_runs()
+    {
+        await using var f=await Fixture.CreateAsync(); var active=f.Execution(WorkerExecutionState.Running,1); var completed=f.Execution(WorkerExecutionState.CompletedPendingReview,2); await f.Repository.CreateAsync(active); await f.Repository.CreateAsync(completed);
+        await f.Repository.UpdateStateAsync(f.ProjectId,completed.TaskId,completed.ExecutionId,WorkerExecutionState.Preparing);
+        Assert.Equal(WorkerExecutionState.Preparing,(await f.Repository.GetAsync(f.ProjectId,completed.ExecutionId))!.State);
+    }
+
+    [Fact]
+    public async Task Concurrent_active_inserts_allow_both_workers()
     {
         for (var i=0;i<10;i++)
         {
             await using var f=await Fixture.CreateAsync(); var a=f.Execution(WorkerExecutionState.Preparing,1); var b=f.Execution(WorkerExecutionState.Preparing,2);
             var results=await Task.WhenAll(TryCreateAsync(f.Database,a),TryCreateAsync(f.Database,b));
-            Assert.Equal(1,results.Count(x=>x));
+            Assert.Equal(2,results.Count(x=>x));
         }
     }
 

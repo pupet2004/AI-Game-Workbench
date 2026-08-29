@@ -13,6 +13,8 @@ The Project World persists independently of any particular agent, model, session
 
 You are a temporary participant working on an Assignment within that world.
 
+The term **Worker** in this Skill refers to this Workbench-managed execution, not to any helper agent, sub-agent, or collaboration thread that your runtime may start internally. Runtime-local collaborators remain implementation details of the current Agent session and must not be reported as separate Workbench Workers unless Workbench explicitly registers them.
+
 ## Your Role
 
 Your Assignment defines the work you have been asked to perform.

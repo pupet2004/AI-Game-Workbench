@@ -16,6 +16,7 @@ using Workbench.Core.Tasks;
 using Workbench.Core.Workers;
 using Workbench.Project.Git;
 using Workbench.Storage.Memory;
+using Workbench.App.AgentHost;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ViewModels.Panes;
@@ -42,6 +43,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly ILeaderReviewUserResponseBinder? _responseBinder;
     private readonly GitSnapshot? _git;
     private readonly ProjectSummaryRepository? _projectSummaryRepository;
+    private readonly IAgentHost _agentHost;
+    private readonly SynchronizationContext? _leaderContext;
+    private CancellationTokenSource? _activeTurnCancellation;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -66,7 +70,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         Func<CancellationToken, Task>? refreshLibraryPane = null,
         ILeaderReviewUserResponseBinder? responseBinder = null,
         GitSnapshot? git = null,
-        ProjectSummaryRepository? projectSummaryRepository = null)
+        ProjectSummaryRepository? projectSummaryRepository = null,
+        IAgentHost? agentHost = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -88,6 +93,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _responseBinder = responseBinder;
         _git = git;
         _projectSummaryRepository = projectSummaryRepository;
+        _agentHost = agentHost ?? new InProcessAgentHost(runtimeRegistry);
+        _leaderContext = SynchronizationContext.Current;
+        _agentHost.EventReceived += OnAgentHostEvent;
         if ((epochRepository is null) != (messageRepository is null))
         {
             throw new ArgumentException("History repositories must be supplied together.");
@@ -166,6 +174,30 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public bool IsModelSelectionLocked => Session is not null;
 
     public bool IsModelSelectionEnabled => IsRuntimeAvailable && !IsModelSelectionLocked && !IsBusy;
+
+    public AgentAccessMode AccessMode => _conversation.AccessMode;
+
+    public string AccessModeLabel => AccessMode == AgentAccessMode.Full
+        ? LocalizationService.Current["Surface.FullAccess"]
+        : LocalizationService.Current["Surface.RestrictedAccess"];
+
+    public string AccessModeDescription => AccessMode == AgentAccessMode.Full
+        ? LocalizationService.Current["Surface.FullAccessDescription"]
+        : LocalizationService.Current["Surface.RestrictedAccessDescription"];
+
+    public bool CanChangeAccessMode => !IsBusy && !HasPendingApproval && !HasPendingQuestion;
+
+    [RelayCommand(CanExecute = nameof(CanChangeAccessMode))]
+    private void ToggleAccessMode()
+    {
+        _conversation.AccessMode = AccessMode == AgentAccessMode.Full
+            ? AgentAccessMode.Restricted
+            : AgentAccessMode.Full;
+        OnPropertyChanged(nameof(AccessMode));
+        OnPropertyChanged(nameof(AccessModeLabel));
+        OnPropertyChanged(nameof(AccessModeDescription));
+        NotifyCommandState();
+    }
 
     public bool CanSend =>
         !IsBusy &&
@@ -518,7 +550,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 runtimeRequest = new AgentRequest(
                     $"{runtimeRequest.Text}\n\n{LeaderSummaryAdmissionInstruction.Text}",
                     LeaderResponseSchema.Json,
-                    inputs);
+                    inputs,
+                    AccessMode);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -539,12 +572,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             runtimeRequest = new AgentRequest(
                 $"{text}\n\n{LeaderSummaryAdmissionInstruction.Text}",
                 LeaderResponseSchema.Json,
-                inputs);
+                inputs,
+                AccessMode);
         }
         runtimeRequest = new AgentRequest(
             $"{runtimeRequest.Text}\n\n{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Leader)}",
             runtimeRequest.OutputSchema,
-            runtimeRequest.Inputs);
+            runtimeRequest.Inputs,
+            AccessMode);
 
         if (_responseBinder is not null && await _responseBinder.HasSingletonOpenGateAsync(_project.Id, cancellationToken))
         {
@@ -568,6 +603,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         var structuredOutputBuffer = new System.Text.StringBuilder();
         IReadOnlyList<SummaryDelta> summaryDeltas = [];
         var suppressSummaryDeltas = LeaderSummaryAdmissionInstruction.IsReadOnlyRequest(text);
+        using var turnCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _activeTurnCancellation = turnCancellation;
+        cancellationToken = turnCancellation.Token;
+        var retainRuntimeStatus = false;
         try
         {
             if (_conversation.SessionNeedsResume &&
@@ -580,11 +619,12 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             var runtime = _runtimeRegistry.GetByAccount(selectedModel.Profile.AccountId);
             if (_conversation.Session is null)
             {
-                var createdSession = await runtime.CreateSessionAsync(
+                var createdSession = await _agentHost.CreateSessionAsync(
                     new CreateAgentSessionRequest(
                         selectedModel.Profile.AccountId,
                         selectedModel.Profile.Model.ModelId,
-                        _project.RootPath),
+                        _project.RootPath,
+                        AccessMode),
                     cancellationToken);
                 try
                 {
@@ -602,13 +642,26 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             }
             else if (_conversation.SessionNeedsResume)
             {
-                _conversation.Session = await runtime.ResumeSessionAsync(
-                    _conversation.Session,
-                    cancellationToken);
-                _conversation.SessionNeedsResume = false;
-                _conversation.RuntimeAccountAvailable = true;
-                _conversation.RuntimeStatus = null;
-                _conversation.RuntimeErrorDetail = null;
+                try
+                {
+                    _conversation.Session = await _agentHost.ResumeSessionAsync(
+                        _conversation.Session,
+                        cancellationToken);
+                    _conversation.SessionNeedsResume = false;
+                    _conversation.RuntimeAccountAvailable = true;
+                    _conversation.RuntimeStatus = null;
+                    _conversation.RuntimeErrorDetail = null;
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    retainRuntimeStatus = true;
+                    _conversation.RuntimeAccountAvailable = false;
+                    _conversation.RuntimeStatus = "Leader 会话无法恢复";
+                    _conversation.RuntimeErrorDetail = exception.Message;
+                    AddErrorMessage($"无法恢复当前 Leader 会话：{exception.Message}");
+                    NotifyAllState();
+                    return;
+                }
             }
 
             var persistedUserMessage = await _sessionManager.PersistUserMessageAsync(_conversation, text, cancellationToken);
@@ -620,9 +673,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             }
             NotifyAllState();
 
-            await foreach (var agentEvent in runtime.SendAsync(
+            await foreach (var agentEvent in _agentHost.RunTurnAsync(
                                _conversation.Session,
-                               runtimeRequest,
+                               new HostedAgentIntent(
+                                   AgentIntentSource.User,
+                                   runtimeRequest.Text,
+                                   runtimeRequest.Inputs,
+                                   runtimeRequest.OutputSchema,
+                                   runtimeRequest.AccessMode),
                                cancellationToken))
             {
                 if (bootPendingDelivery)
@@ -836,9 +894,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         {
             AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnCancelled"]);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnFailed"]);
+            if (IsActiveWriterConflict(exception)) MarkSessionConflict(exception);
+            else AddErrorMessage(LocalizationService.Current["Dynamic.LeaderTurnFailed"]);
         }
         finally
         {
@@ -857,7 +916,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             _conversation.IsBusy = false;
             // RuntimeStatus is a transient activity indicator; never leave the last turn's
             // "Working" value visible after the send lifecycle has ended.
-            _conversation.RuntimeStatus = null;
+            if (!retainRuntimeStatus && !(_conversation.SessionNeedsResume && !_conversation.RuntimeAccountAvailable))
+            {
+                _conversation.RuntimeStatus = null;
+            }
+            if (ReferenceEquals(_activeTurnCancellation, turnCancellation))
+            {
+                _activeTurnCancellation = null;
+            }
             NotifyAllState();
         }
     }
@@ -1003,14 +1069,33 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         try
         {
-            var runtime = _runtimeRegistry.GetByAccount(_conversation.Session.AccountId);
-            await runtime.StopAsync(_conversation.Session, cancellationToken);
+            _activeTurnCancellation?.Cancel();
+            await _agentHost.StopAsync(_conversation.Session, cancellationToken);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            AddErrorMessage(LocalizationService.Current["Dynamic.StopFailed"]);
+            if (IsActiveWriterConflict(exception))
+            {
+                MarkSessionConflict(exception);
+                _conversation.IsBusy = false;
+                NotifyAllState();
+            }
+            else AddErrorMessage(LocalizationService.Current["Dynamic.StopFailed"]);
         }
     }
+
+    private void MarkSessionConflict(Exception exception)
+    {
+        _conversation.SessionNeedsResume = true;
+        _conversation.RuntimeAccountAvailable = false;
+        _conversation.RuntimeStatus = LocalizationService.Current["Dynamic.LeaderSessionConflict"];
+        _conversation.RuntimeErrorDetail = exception.Message;
+        AddErrorMessage(LocalizationService.Current["Dynamic.LeaderSessionConflictDetail"]);
+    }
+
+    private static bool IsActiveWriterConflict(Exception exception) =>
+        exception.Message.Contains("active writer", StringComparison.OrdinalIgnoreCase) ||
+        exception.Message.Contains("thread/resume failed", StringComparison.OrdinalIgnoreCase);
 
     public async Task RespondToApprovalAsync(
         LeaderApprovalOptionViewModel option,
@@ -1018,8 +1103,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         ArgumentNullException.ThrowIfNull(option);
         var approval = _conversation.PendingApproval;
-        var session = _conversation.Session;
-        if (approval is null || session is null || _conversation.IsApprovalResponding)
+        if (approval is null || _conversation.IsApprovalResponding)
         {
             return;
         }
@@ -1034,11 +1118,15 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         NotifyAllState();
         try
         {
-            var runtime = _runtimeRegistry.GetByAccount(session.AccountId);
-            await runtime.RespondToApprovalAsync(
-                session,
-                new AgentApprovalDecision(approval.RequestId, option.Option.Id),
-                cancellationToken);
+            var decision = new AgentApprovalDecision(approval.RequestId, option.Option.Id);
+            if (_conversation.Session?.Id == approval.SessionId)
+            {
+                await _agentHost.RespondToApprovalAsync(_conversation.Session, decision, cancellationToken);
+            }
+            else
+            {
+                await _agentHost.RespondToApprovalAsync(approval.SessionId, decision, cancellationToken);
+            }
             _conversation.PendingApproval = null;
             ApprovalOptions.Clear();
         }
@@ -1158,8 +1246,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         try
         {
-            var runtime = _runtimeRegistry.GetByAccount(session.AccountId);
-            await runtime.RespondToQuestionAsync(session, requestId, answers, cancellationToken);
+            await _agentHost.RespondToQuestionAsync(session, requestId, answers, cancellationToken);
             _conversation.PendingQuestion = null;
             NotifyAllState();
         }
@@ -1190,7 +1277,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         NotifyAllState();
         try
         {
-            await runtime.SteerAsync(session, new AgentRequest(text), cancellationToken);
+            await _agentHost.SteerAsync(
+                session,
+                new HostedAgentIntent(AgentIntentSource.User, text, AccessMode: AccessMode),
+                cancellationToken);
         }
         catch (Exception)
         {
@@ -1204,6 +1294,50 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _conversation.PendingApproval = null;
         _conversation.ApprovalError = null;
         ApprovalOptions.Clear();
+    }
+
+    private void OnAgentHostEvent(object? sender, HostedAgentEvent item)
+    {
+        if (_conversation.Session?.Id == item.SessionId)
+            return;
+
+        switch (item.Event)
+        {
+            case AgentApprovalRequested approval:
+                DispatchToLeader(() =>
+                {
+                    _conversation.PendingApproval = approval;
+                    _conversation.ApprovalError = null;
+                    RebuildApprovalOptions();
+                    _conversation.RuntimeStatus = "Worker 等待 Leader 审批";
+                    NotifyAllState();
+                });
+                break;
+            case AgentTurnCompleted when _conversation.PendingApproval?.SessionId == item.SessionId:
+                DispatchToLeader(() =>
+                {
+                    ClearPendingApproval();
+                    NotifyAllState();
+                });
+                break;
+        }
+    }
+
+    private void DispatchToLeader(Action action)
+    {
+        if (_leaderContext is null || ReferenceEquals(SynchronizationContext.Current, _leaderContext))
+        {
+            action();
+            return;
+        }
+
+        _leaderContext.Post(static state => ((Action)state!).Invoke(), action);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _agentHost.EventReceived -= OnAgentHostEvent;
+        return ValueTask.CompletedTask;
     }
 
     private void SetRuntimeUnavailable(string fallbackDetail)
@@ -1253,6 +1387,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(RuntimeErrorDetail));
         OnPropertyChanged(nameof(IsModelSelectionLocked));
         OnPropertyChanged(nameof(IsModelSelectionEnabled));
+        OnPropertyChanged(nameof(AccessMode));
+        OnPropertyChanged(nameof(AccessModeLabel));
+        OnPropertyChanged(nameof(AccessModeDescription));
+        OnPropertyChanged(nameof(CanChangeAccessMode));
         OnPropertyChanged(nameof(CanSend));
         OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(CanSteer));
@@ -1320,7 +1458,12 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public async Task ConfirmDraftAsync(CancellationToken cancellationToken = default)
     {
         var confirmation = DraftConfirmation ?? throw new InvalidOperationException("No draft confirmation is active.");
-        if (_workerSessionRouter is null) return;
+        if (_workerSessionRouter is null)
+        {
+            AddErrorMessage("Worker 路由服务不可用，任务草案未启动。");
+            NotifyAllState();
+            return;
+        }
         var profile = confirmation.Revision.RecommendedExecutionProfile;
         var request = new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Revision.Id, confirmation.Title,
             profile, confirmation.Goal, null, "Worker",
@@ -1333,15 +1476,67 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId), profile, git.BranchName, _project.RootPath);
             request = request with { ExecutionId = executionId, ExecutionIdentity = identity };
         }
-        var result = await _workerSessionRouter.StartAsync(request, cancellationToken);
+        WorkerStartResult result;
+        try
+        {
+            result = await _workerSessionRouter.StartAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            AddErrorMessage($"无法启动 Worker：{exception.Message}");
+            NotifyAllState();
+            return;
+        }
         if (!result.Succeeded)
         {
-            AddErrorMessage(LocalizationService.Current["Dynamic.WorkerStartFailed"]);
+            AddErrorMessage(result.Error is { Length: > 0 } error
+                ? $"无法启动 Worker：{error}"
+                : LocalizationService.Current["Dynamic.WorkerStartFailed"]);
+            NotifyAllState();
             return;
         }
 
-        if (_refreshWorkPane is not null) await _refreshWorkPane(cancellationToken);
         DraftConfirmation = null;
+        NotifyAllState();
+        if (_refreshWorkPane is not null)
+            await _refreshWorkPane(cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends a follow-up direction from the Leader to an existing Workbench
+    /// Worker session. The Worker Router decides whether this is an in-turn
+    /// steer or a serialized continuation; the Leader never opens a second
+    /// runtime/CLI writer for the session.
+    /// </summary>
+    public async Task SendWorkerIntentAsync(
+        Guid taskId,
+        AgentSessionId workerSessionId,
+        string text,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        if (_workerSessionRouter is null)
+            throw new InvalidOperationException("The Worker routing service is not available.");
+
+        var result = await _workerSessionRouter.SendIntentAsync(
+            _project,
+            taskId,
+            workerSessionId,
+            text,
+            AgentIntentSource.Leader,
+            cancellationToken);
+        if (!result.Succeeded)
+        {
+            AddErrorMessage(result.Error ?? LocalizationService.Current["Dynamic.WorkerStartFailed"]);
+            return;
+        }
+
+        if (_refreshWorkPane is not null)
+            await _refreshWorkPane(cancellationToken);
     }
 
     [RelayCommand]

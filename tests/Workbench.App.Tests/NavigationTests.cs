@@ -93,8 +93,9 @@ public sealed class NavigationTests
 
         Assert.Equal(2, runtime.CreatedSessions.Count);
         Assert.Equal("model-a", runtime.CreatedSessions.Last().ModelId);
-        Assert.StartsWith("Read the smoke context file", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
-        Assert.Contains("# Workbench Worker", runtime.SentRequests.Last().Text, StringComparison.Ordinal);
+        var workerRequest = Assert.Single(runtime.SentRequests,
+            request => request.Text.StartsWith("Read the smoke context file", StringComparison.Ordinal));
+        Assert.Contains("# Workbench Worker", workerRequest.Text, StringComparison.Ordinal);
         var sessions = await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id);
         var session = Assert.Single(sessions);
         Assert.Equal("model-a", session.Profile.ModelProfileId);
@@ -162,12 +163,15 @@ public sealed class NavigationTests
         await workspace.LeaderPane.SendAsync();
         runtime.CreateException = new InvalidOperationException("worker runtime unavailable");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => workspace.LeaderPane.ConfirmDraftAsync());
+        await workspace.LeaderPane.ConfirmDraftAsync();
 
         Assert.True(workspace.LeaderPane.HasDraftConfirmation);
         Assert.NotNull(workspace.LeaderPane.DraftConfirmation);
         Assert.Empty(workspace.WorkPane.Workers);
         Assert.Empty(await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id));
+        Assert.Contains(workspace.LeaderPane.Messages, message =>
+            message.Text.Contains("Worker could not be started", StringComparison.OrdinalIgnoreCase) ||
+            message.Text.Contains("无法启动 Worker", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

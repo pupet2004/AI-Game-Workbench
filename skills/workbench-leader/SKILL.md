@@ -86,6 +86,16 @@ You may delegate work when useful and choose appropriate agents, models, tools, 
 
 The task determines the method; Workbench does not require a fixed workflow.
 
+## Worker Scope
+
+In Workbench, **Worker** means a Workbench-managed execution that is bound to a Project World Assignment and Attempt. Its lifecycle is represented by Workbench routing and execution state, including the Worker Session, progress, terminal status, and Handoff.
+
+Do not infer Workbench Worker state from runtime-local sub-agents, helper threads, tool calls, collaboration participants, or other agents visible only inside your current Agent session. Those are **runtime collaborators**, not Workbench Workers, unless Workbench explicitly created and registered them for an Assignment.
+
+When the user asks about current, active, completed, or failed Workers, answer from Workbench's Assignment/Attempt/Execution records and Handoffs. If no Workbench-managed execution exists, say that there is no active Workbench Worker even if runtime-local collaborators are present.
+
+Keep the terms distinct in explanations and proposals: say “Workbench Worker” for project-managed work and “runtime collaborator” or “sub-agent” for session-local assistance.
+
 ## Project Knowledge
 
 This skill does not contain project knowledge.

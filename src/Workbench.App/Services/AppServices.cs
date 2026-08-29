@@ -17,6 +17,7 @@ using Workbench.App.Continuity;
 using Workbench.Core.Continuity;
 using Workbench.Storage.Continuity;
 using Workbench.App.ProjectWorld;
+using Workbench.App.AgentHost;
 
 namespace Workbench.App.Services;
 
@@ -24,8 +25,10 @@ public sealed class AppServices : IAsyncDisposable
 {
     private readonly IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> _runtimeFactories;
     private readonly HashSet<int> _connectedRuntimeFactories = [];
+    private readonly Dictionary<int, IAgentRuntime> _connectedRuntimeInstances = [];
     private readonly IReadOnlyList<ConfiguredAgentRuntimeFactory> _configuredRuntimeFactories;
     private readonly HashSet<int> _connectedConfiguredRuntimeFactories = [];
+    private readonly Dictionary<int, IAgentRuntime> _connectedConfiguredRuntimeInstances = [];
     private readonly List<IAsyncDisposable> _ownedRuntimes = [];
     private readonly SemaphoreSlim _runtimeConnectionGate = new(1, 1);
     private int _disposeRequested;
@@ -79,6 +82,7 @@ public sealed class AppServices : IAsyncDisposable
         ManualLibraryProjectionService manualLibraryProjection,
         IUserPrincipalProvider userPrincipalProvider,
         AgentRuntimeRegistry runtimeRegistry,
+        IAgentHost agentHost,
         TimeProvider timeProvider,
         IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> runtimeFactories,
         IReadOnlyList<ConfiguredAgentRuntimeFactory> configuredRuntimeFactories)
@@ -131,6 +135,7 @@ public sealed class AppServices : IAsyncDisposable
         ManualLibraryProjection = manualLibraryProjection;
         UserPrincipalProvider = userPrincipalProvider;
         RuntimeRegistry = runtimeRegistry;
+        AgentHost = agentHost;
         TimeProvider = timeProvider;
         _runtimeFactories = runtimeFactories;
         _configuredRuntimeFactories = configuredRuntimeFactories;
@@ -197,6 +202,8 @@ public sealed class AppServices : IAsyncDisposable
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
 
+    public IAgentHost AgentHost { get; }
+
     public TimeProvider TimeProvider { get; }
 
     public string? RuntimeUnavailableDetail { get; private set; }
@@ -227,6 +234,7 @@ public sealed class AppServices : IAsyncDisposable
         var layoutRepository = new ProjectLayoutRepository(database);
         var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
         var effectiveRuntimeRegistry = runtimeRegistry ?? new AgentRuntimeRegistry();
+        var agentHost = new InProcessAgentHost(effectiveRuntimeRegistry);
         var projectLeaders = new ProjectLeaderRepository(database);
         var leaderEpochs = new LeaderSessionEpochRepository(database);
         var leaderMessages = new LeaderMessageRepository(database);
@@ -259,7 +267,7 @@ public sealed class AppServices : IAsyncDisposable
         var leaderUserResponseBinder = new LeaderReviewUserResponseBinder(typedReviewState, taskEvents, effectiveTimeProvider);
         var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
             new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
-            new LeaderReviewRuntimeAdapter(), reviewState, typedReviewState, leaderAuthoritySettings, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
+            new LeaderReviewRuntimeAdapter(agentHost), reviewState, typedReviewState, leaderAuthoritySettings, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
             leaderAutoProceed, leaderAskUserGate);
 
         var workerExecutionRepository = new WorkerExecutionRepository(database);
@@ -301,7 +309,8 @@ public sealed class AppServices : IAsyncDisposable
             b1AuthorityRepository,
             b1NonAuthoritativeCommands,
             guidedHandoffComposer,
-            effectiveTimeProvider);
+            effectiveTimeProvider,
+            agentHost);
         var guidedDecision = new GuidedDecisionService(
             b1AuthorityRepository,
             b1AuthorityEvaluator,
@@ -336,12 +345,13 @@ public sealed class AppServices : IAsyncDisposable
                 effectiveRuntimeRegistry,
                 projectLeaders,
                 leaderMessages,
-                effectiveTimeProvider),
+                effectiveTimeProvider,
+                agentHost),
             new TaskRepository(database),
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost),
             workerRoutingStore,
             workerExecutionRepository,
             leaderReviewOrchestrator,
@@ -366,6 +376,7 @@ public sealed class AppServices : IAsyncDisposable
             manualLibraryProjection,
             userPrincipalProvider,
             effectiveRuntimeRegistry,
+            agentHost,
             effectiveTimeProvider,
             CreateRuntimeFactories(runtimeFactory, additionalRuntimeFactories),
             configuredRuntimeFactories?.ToArray() ?? []);
@@ -418,6 +429,7 @@ public sealed class AppServices : IAsyncDisposable
 
                     RuntimeRegistry.Register(runtime);
                     _connectedRuntimeFactories.Add(index);
+                    _connectedRuntimeInstances[index] = runtime;
                     if (runtime is IAsyncDisposable disposable)
                     {
                         _ownedRuntimes.Add(disposable);
@@ -464,6 +476,7 @@ public sealed class AppServices : IAsyncDisposable
 
                     RuntimeRegistry.Register(runtime);
                     _connectedConfiguredRuntimeFactories.Add(index);
+                    _connectedConfiguredRuntimeInstances[index] = runtime;
                     if (runtime is IAsyncDisposable disposable)
                     {
                         _ownedRuntimes.Add(disposable);
@@ -489,6 +502,53 @@ public sealed class AppServices : IAsyncDisposable
             _runtimeConnectionGate.Release();
         }
     }
+
+    public async Task<bool> ReleaseRuntimeForExternalSessionAsync(
+        Workbench.Runtime.Providers.ProviderAccountId accountId,
+        CancellationToken cancellationToken = default)
+    {
+        await _runtimeConnectionGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!RuntimeRegistry.TryGetByAccount(accountId, out var runtime) || runtime is null)
+            {
+                return false;
+            }
+
+            if (runtime.HasActiveTurns)
+            {
+                return false;
+            }
+
+            RuntimeRegistry.Unregister(accountId);
+            foreach (var pair in _connectedRuntimeInstances.Where(pair => ReferenceEquals(pair.Value, runtime)).ToArray())
+            {
+                _connectedRuntimeInstances.Remove(pair.Key);
+                _connectedRuntimeFactories.Remove(pair.Key);
+            }
+
+            foreach (var pair in _connectedConfiguredRuntimeInstances.Where(pair => ReferenceEquals(pair.Value, runtime)).ToArray())
+            {
+                _connectedConfiguredRuntimeInstances.Remove(pair.Key);
+                _connectedConfiguredRuntimeFactories.Remove(pair.Key);
+            }
+
+            if (runtime is IAsyncDisposable disposable)
+            {
+                _ownedRuntimes.Remove(disposable);
+                await disposable.DisposeAsync();
+            }
+
+            return true;
+        }
+        finally
+        {
+            _runtimeConnectionGate.Release();
+        }
+    }
+
+    public Task RestoreRuntimeAfterExternalSessionAsync(CancellationToken cancellationToken = default) =>
+        RetryRuntimeAsync(cancellationToken);
 
     private static IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>> CreateRuntimeFactories(
         Func<CancellationToken, Task<IAgentRuntime>>? runtimeFactory,
@@ -520,6 +580,10 @@ public sealed class AppServices : IAsyncDisposable
             }
 
             _ownedRuntimes.Clear();
+            _connectedRuntimeInstances.Clear();
+            _connectedConfiguredRuntimeInstances.Clear();
+            _connectedRuntimeFactories.Clear();
+            _connectedConfiguredRuntimeFactories.Clear();
         }
         finally
         {

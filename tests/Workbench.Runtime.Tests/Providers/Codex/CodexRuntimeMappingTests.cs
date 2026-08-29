@@ -19,6 +19,26 @@ public sealed class CodexRuntimeMappingTests
     }
 
     [Fact]
+    public void Codex_plan_update_maps_structured_step_statuses()
+    {
+        var payload = JsonDocument.Parse("""
+            {"plan":[
+              {"id":"inspect","step":"检查项目","status":"completed"},
+              {"id":"change","step":"修改代码","status":"inProgress"},
+              {"id":"test","step":"运行测试","status":"pending"}
+            ]}
+            """).RootElement;
+
+        var mapped = Assert.IsType<AgentPlanUpdated>(CodexRuntimeMapper.MapNotification(
+            "turn/plan/updated", payload, AgentSessionId.New()));
+
+        Assert.Collection(mapped.Steps,
+            step => { Assert.Equal("inspect", step.Id); Assert.Equal(AgentPlanStepStatus.Completed, step.Status); },
+            step => { Assert.Equal("change", step.Id); Assert.Equal(AgentPlanStepStatus.InProgress, step.Status); },
+            step => { Assert.Equal(AgentPlanStepStatus.Pending, step.Status); });
+    }
+
+    [Fact]
     public void Codex_turn_completion_maps_to_generic_status_and_result()
     {
         var sessionId = AgentSessionId.New();

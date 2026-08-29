@@ -5,6 +5,7 @@ using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
 using Workbench.App.Memory;
 using CoreProject = Workbench.Core.Projects.Project;
+using Workbench.App.AgentHost;
 
 namespace Workbench.App.Leader;
 
@@ -25,12 +26,14 @@ public sealed class LeaderSessionRolloverService(
     AgentRuntimeRegistry runtimeRegistry,
     ProjectLeaderRepository leaders,
     LeaderMessageRepository messages,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAgentHost? agentHost = null)
 {
     private readonly AgentRuntimeRegistry _runtimeRegistry = runtimeRegistry ?? throw new ArgumentNullException(nameof(runtimeRegistry));
     private readonly ProjectLeaderRepository _leaders = leaders ?? throw new ArgumentNullException(nameof(leaders));
     private readonly LeaderMessageRepository _messages = messages ?? throw new ArgumentNullException(nameof(messages));
     private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    private readonly IAgentHost? _agentHost = agentHost;
 
     public async Task<LeaderSessionRolloverResult> RolloverAsync(
         CoreProject project,
@@ -61,7 +64,7 @@ public sealed class LeaderSessionRolloverService(
         var source = handoff is null ? LeaderHandoffSource.None : LeaderHandoffSource.Semantic;
         if (!policyManaged)
         {
-            handoff = await TryCreateSemanticHandoffAsync(runtime, oldSession, resumeOldSession, cancellationToken);
+            handoff = await TryCreateSemanticHandoffAsync(_agentHost, runtime, oldSession, resumeOldSession, cancellationToken);
             source = LeaderHandoffSource.Semantic;
             if (handoff is null)
             {
@@ -73,9 +76,9 @@ public sealed class LeaderSessionRolloverService(
             }
         }
 
-        var newSession = await targetRuntime.CreateSessionAsync(
-            new CreateAgentSessionRequest(targetRuntime.Account.Id, targetModelId, oldEpoch.WorkingDirectory),
-            cancellationToken);
+        var newSession = await (_agentHost is not null
+            ? _agentHost.CreateSessionAsync(new CreateAgentSessionRequest(targetRuntime.Account.Id, targetModelId, oldEpoch.WorkingDirectory), cancellationToken)
+            : targetRuntime.CreateSessionAsync(new CreateAgentSessionRequest(targetRuntime.Account.Id, targetModelId, oldEpoch.WorkingDirectory), cancellationToken));
         if (newSession.Id == oldSession.Id ||
             string.IsNullOrWhiteSpace(newSession.ExternalSessionId) ||
             string.Equals(newSession.ExternalSessionId, oldSession.ExternalSessionId, StringComparison.Ordinal) ||
@@ -86,7 +89,7 @@ public sealed class LeaderSessionRolloverService(
         {
             if (newSession.Id != oldSession.Id)
             {
-                await StopIgnoringFailureAsync(targetRuntime, newSession);
+                await StopIgnoringFailureAsync(_agentHost, targetRuntime, newSession);
             }
             throw new InvalidOperationException(
                 "The runtime did not create a distinct successor session with the inherited provider, account, model, and working directory.");
@@ -127,7 +130,7 @@ public sealed class LeaderSessionRolloverService(
         {
             try
             {
-                await targetRuntime.StopAsync(newSession, CancellationToken.None);
+                await StopIgnoringFailureAsync(_agentHost, targetRuntime, newSession);
             }
             catch
             {
@@ -141,6 +144,7 @@ public sealed class LeaderSessionRolloverService(
     }
 
     private static async Task<string?> TryCreateSemanticHandoffAsync(
+        IAgentHost? agentHost,
         Workbench.Runtime.Runtime.IAgentRuntime runtime,
         AgentSession oldSession,
         bool resumeOldSession,
@@ -150,7 +154,7 @@ public sealed class LeaderSessionRolloverService(
         try
         {
             session = resumeOldSession
-                ? await runtime.ResumeSessionAsync(oldSession, cancellationToken)
+                ? await (agentHost is not null ? agentHost.ResumeSessionAsync(oldSession, cancellationToken) : runtime.ResumeSessionAsync(oldSession, cancellationToken))
                 : oldSession;
         }
         catch
@@ -160,20 +164,20 @@ public sealed class LeaderSessionRolloverService(
 
         try
         {
-            await foreach (var agentEvent in runtime.SendAsync(
-                               session,
-                               new AgentRequest(LeaderHandoffBuilder.SemanticPrompt),
-                               cancellationToken))
+            var events = agentHost is not null
+                ? agentHost.RunTurnAsync(session, new HostedAgentIntent(AgentIntentSource.Workbench, LeaderHandoffBuilder.SemanticPrompt), cancellationToken)
+                : runtime.SendAsync(session, new AgentRequest(LeaderHandoffBuilder.SemanticPrompt), cancellationToken);
+            await foreach (var agentEvent in events)
             {
                 if (agentEvent is AgentApprovalRequested)
                 {
-                    await StopIgnoringFailureAsync(runtime, session);
+                    await StopIgnoringFailureAsync(agentHost, runtime, session);
                     return null;
                 }
 
                 if (agentEvent is AgentError or AgentToolEvent)
                 {
-                    await StopIgnoringFailureAsync(runtime, session);
+                    await StopIgnoringFailureAsync(agentHost, runtime, session);
                     return null;
                 }
 
@@ -204,12 +208,14 @@ public sealed class LeaderSessionRolloverService(
     }
 
     private static async Task StopIgnoringFailureAsync(
+        IAgentHost? agentHost,
         Workbench.Runtime.Runtime.IAgentRuntime runtime,
         AgentSession session)
     {
         try
         {
-            await runtime.StopAsync(session, CancellationToken.None);
+            if (agentHost is not null) await agentHost.StopAsync(session, CancellationToken.None);
+            else await runtime.StopAsync(session, CancellationToken.None);
         }
         catch
         {

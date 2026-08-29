@@ -63,6 +63,24 @@ public sealed class CodexAgentRuntimeTests
     }
 
     [Fact]
+    public async Task Full_access_session_maps_to_codex_danger_full_access()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+
+        var sessionTask = runtime.CreateSessionAsync(new CreateAgentSessionRequest(
+            runtime.Account.Id,
+            "server-model",
+            "C:/Projects/Game",
+            AgentAccessMode.Full));
+        var request = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+
+        Assert.Equal("danger-full-access", request.GetProperty("params").GetProperty("sandbox").GetString());
+        await RespondAsync(transport, request, new { thread = new { id = "thread-full" }, model = "server-model" });
+        Assert.Equal("thread-full", (await sessionTask).ExternalSessionId);
+    }
+
+    [Fact]
     public async Task Null_working_directory_is_sent_as_protocol_null_and_preserved()
     {
         var (runtime, transport) = await CreateInitializedRuntimeAsync();

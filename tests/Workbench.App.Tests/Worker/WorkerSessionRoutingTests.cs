@@ -1,5 +1,6 @@
 using Workbench.App.Tests.Support;
 using Workbench.App.Worker;
+using Workbench.App.AgentHost;
 using Workbench.Core.Tasks;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
@@ -167,20 +168,56 @@ public sealed class WorkerSessionRoutingTests
     }
 
     [Fact]
-    public async Task Non_final_report_handoff_keeps_its_only_persisted_message()
+    public async Task Successful_unstructured_completion_falls_back_to_final_report_and_enters_reviewing()
     {
         await using var fixture = await Fixture.CreateAsync();
         var eventRepository = new TaskEventRepository(fixture.Database);
-        var router = new WorkerSessionRouter(fixture.Registry, new TaskEventWorkerRoutingStore(eventRepository), TimeProvider.System);
+        var router = new WorkerSessionRouter(fixture.Registry, new TaskEventWorkerRoutingStore(eventRepository), TimeProvider.System,
+            new AssignmentReviewStateRepository(fixture.Database));
         fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
             "unstructured worker result", null), DateTimeOffset.UtcNow));
 
         Assert.True((await router.StartAsync(fixture.NewRequest("prompt"))).Succeeded);
 
+        var state = (await new AssignmentReviewStateRepository(fixture.Database)
+            .GetRecoveryStateAsync(fixture.Project.Id, fixture.Task.TaskId))!;
+        Assert.Equal(TaskLifecycleStatus.Reviewing, state.Task.Status);
         var events = await eventRepository.ListAsync(fixture.Project.Id, fixture.Task.TaskId, 100);
+        var finalReport = Assert.Single(events, item => item.Type == "WorkerFinalReportReceived");
         var handoff = Assert.Single(events, item => item.Type == "WorkerToLeaderHandoff");
-        Assert.Contains("unstructured worker result", handoff.Payload, StringComparison.Ordinal);
-        Assert.DoesNotContain(events, item => item.Type == "WorkerFinalReportReceived");
+        Assert.Contains("unstructured worker result", finalReport.Payload, StringComparison.Ordinal);
+        Assert.DoesNotContain("unstructured worker result", handoff.Payload, StringComparison.Ordinal);
+        using var handoffJson = JsonDocument.Parse(handoff.Payload);
+        Assert.Equal(finalReport.EventId.ToString(), handoffJson.RootElement.GetProperty("SourceEventId").GetString());
+    }
+
+    [Fact]
+    public async Task Send_intent_uses_the_same_session_steer_channel_for_an_active_leader_follow_up()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.Runtime.EnableSteer = true;
+        fixture.Runtime.PauseBeforeEvents = true;
+        var worker = fixture.CreateExistingWorker() with { Status = AgentSessionStatus.Running };
+        await fixture.Events.SaveSessionAsync(new WorkerSessionRecord(fixture.Project.Id, fixture.Task.TaskId, fixture.Task.Title,
+            worker, fixture.Profile, "Worker 1", DateTimeOffset.UtcNow));
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(worker.Id, AgentSessionStatus.Completed, "done", null), DateTimeOffset.UtcNow));
+        var host = new InProcessAgentHost(fixture.Registry);
+        var router = new WorkerSessionRouter(fixture.Registry,
+            fixture.Events,
+            TimeProvider.System, agentHost: host);
+
+        var activeTurn = ConsumeAsync(host.RunTurnAsync(worker, new HostedAgentIntent(AgentIntentSource.Leader, "initial")));
+        await fixture.Runtime.WaitForSendAsync();
+
+        var result = await router.SendIntentAsync(fixture.Project, fixture.Task.TaskId, worker.Id, "请继续检查", AgentIntentSource.Leader);
+
+        Assert.True(result.Succeeded);
+        var steer = Assert.Single(fixture.Runtime.SteerRequests);
+        Assert.Equal(worker.Id, steer.Session.Id);
+        Assert.Equal("请继续检查", steer.Request.Text);
+        Assert.Equal(AgentRequestSource.Leader, steer.Request.Source);
+        fixture.Runtime.ReleaseSend();
+        await activeTurn;
     }
 
     private sealed class Fixture : IAsyncDisposable
@@ -235,6 +272,13 @@ public sealed class WorkerSessionRoutingTests
     }
 
     private static string FinalReport(string message) => JsonSerializer.Serialize(new { Kind = "FinalReport", Message = message, ValidationSummary = "verified" });
+
+    private static async Task ConsumeAsync(IAsyncEnumerable<AgentEvent> events)
+    {
+        await foreach (var _ in events)
+        {
+        }
+    }
 }
 
 internal sealed class TestTaskEventStore(WorkbenchDatabase database) : IWorkerRoutingStore
