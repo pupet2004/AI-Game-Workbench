@@ -58,11 +58,13 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          ProjectSummaryRepository? projectSummaryRepository = null,
          LibraryAcceptedStateReader? acceptedStateReader = null,
          IAgentHost? agentHost = null,
-         Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null)
+         Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null,
+         Func<Task>? openProjectOverview = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
         _backToProjects = backToProjects;
+        OpenProjectOverview = openProjectOverview ?? (() => Task.CompletedTask);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(350);
         Layout = result.Layout;
@@ -118,6 +120,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     }
 
     public ProjectOpenResult Result { get; }
+
+    internal Func<Task> OpenProjectOverview { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LeaderRatio), nameof(WorkRatio), nameof(LibraryRatio), nameof(LeaderGridLength), nameof(WorkGridLength), nameof(LibraryGridLength))]
@@ -176,6 +180,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
 
     [RelayCommand]
     private Task BackToProjects() => _backToProjects();
+
+    [RelayCommand]
+    private Task OpenProjectOverviewPage() => OpenProjectOverview();
 
     public async ValueTask DisposeAsync()
     {

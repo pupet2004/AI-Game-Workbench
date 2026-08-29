@@ -121,14 +121,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         var entryStatus = await _services.ProjectWorldEntryStatus.GetStatusAsync(result.Project);
         if (entryStatus.Kind == ProjectWorldEntryKind.ProjectWorldReady)
         {
-            var explorer = new ProjectWorldExplorerViewModel(
-                _services,
-                result,
-                BackToHomeAsync,
-                assignmentRef => ShowManualWorkAsync(result, assignmentRef),
-                () => ShowThreeColumnWorkspaceAsync(result));
-            CurrentPage = explorer;
-            await explorer.InitializeAsync();
+            await ShowProjectOverviewAsync(result);
             return;
         }
 
@@ -182,9 +175,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              projectMemoryApi: _services.ProjectMemoryApi,
              responseBinder: _services.LeaderReviewUserResponseBinder,
              projectSummaryRepository: _services.ProjectSummaryRepository,
-            acceptedStateReader: _services.LibraryAcceptedStateReader,
+             acceptedStateReader: _services.LibraryAcceptedStateReader,
              agentHost: _services.AgentHost,
-             openHostedSurface: OpenHostedWorkerSurfaceAsync);
+             openHostedSurface: OpenHostedWorkerSurfaceAsync,
+             openProjectOverview: () => ShowProjectOverviewAsync(result));
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);
@@ -192,6 +186,18 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await _services.LeaderReviewAskUserGate.RecoverAsync(result.Project.Id);
         await workspace.WorkPane.LoadAsync(result.Project.Id);
         await workspace.LibraryPane.InitializeAsync();
+    }
+
+    private async Task ShowProjectOverviewAsync(ProjectOpenResult result)
+    {
+        var explorer = new ProjectWorldExplorerViewModel(
+            _services,
+            result,
+            BackToHomeAsync,
+            assignmentRef => ShowManualWorkAsync(result, assignmentRef),
+            () => ShowThreeColumnWorkspaceAsync(result));
+        CurrentPage = explorer;
+        await explorer.InitializeAsync();
     }
 
     private async Task ShowManualWorkAsync(ProjectOpenResult result, AssignmentRef assignmentRef)
