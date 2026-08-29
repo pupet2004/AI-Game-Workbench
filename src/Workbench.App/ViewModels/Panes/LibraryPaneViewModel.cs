@@ -41,6 +41,7 @@ public sealed record LibraryTimelineNodeView(
     IReadOnlyList<LibraryMaterialReference> Materials,
     LibraryTimelineContextKind ContextKind)
 {
+    public string SourceLabel => LocalizationService.Current["Library.Source"];
     public bool IsLegacyContext => ContextKind == LibraryTimelineContextKind.LegacyContext;
 
     public string ContextLabel => ContextKind switch
@@ -85,6 +86,7 @@ public sealed record LibraryTimeEventView(
     IReadOnlyList<LibraryMaterialReference> Materials,
     IReadOnlyList<SummarySourceRef> SummarySources)
 {
+    public string SourceLabel => LocalizationService.Current["Library.Source"];
     public string TimestampText => OccurredAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
 }
 
