@@ -107,6 +107,68 @@ public sealed class LibraryCategoryTimeViewTests
     }
 
     [Fact]
+    public async Task Selecting_a_date_exposes_daily_summary_decisions_and_related_library_nodes()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("library-day-detail");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var library = context.Services.ProjectLibraryEvolutionRepository;
+        var objectRef = await library.CreateObjectAsync(opened.Project.Id, "Boss", "Phase two", context.Time.GetUtcNow());
+        var day = new DateOnly(2026, 8, 28);
+        var occurredAt = new DateTimeOffset(day.ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+        await library.AddNodeAsync(opened.Project.Id, objectRef.Id, day, "Added a transition attack.", [], context.Time.GetUtcNow());
+        await context.Services.ProjectMemoryApi.UpsertDailySummaryAsync(
+            new(opened.Project.Id, day, "Finished the second phase design.", null, []),
+            context.Time.GetUtcNow());
+        await context.Services.ProjectSummaryRepository.AppendAsync(
+            opened.Project.Id,
+            Guid.NewGuid(),
+            [new(occurredAt, SummaryDeltaKind.Decision, "Keep the transition attack.", [])],
+            context.Time.GetUtcNow());
+
+        var pane = new LibraryPaneViewModel(
+            opened,
+            () => Task.CompletedTask,
+            evolutionLibrary: library,
+            projectMemoryApi: context.Services.ProjectMemoryApi,
+            projectSummaryRepository: context.Services.ProjectSummaryRepository);
+        await pane.InitializeAsync();
+        await pane.ShowTimeAsync();
+        await pane.SelectTimeDateAsync(day);
+
+        Assert.NotNull(pane.SelectedTimeDay);
+        Assert.Equal("Finished the second phase design.", pane.SelectedTimeDay!.Summary!.Content);
+        Assert.Equal([SummaryDeltaKind.Decision], pane.SelectedTimeDay.SummaryEntries.Select(entry => entry.Kind));
+        Assert.Equal(["Added a transition attack."], pane.SelectedTimeDay.Groups.SelectMany(group => group.Nodes).Select(node => node.Content));
+
+        await pane.SelectTimeDateAsync(day);
+        Assert.Null(pane.SelectedTimeDay);
+    }
+
+    [Fact]
+    public async Task Selecting_a_category_exposes_only_objects_in_that_category()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new TemporaryDirectory("library-category-detail");
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var library = context.Services.ProjectLibraryEvolutionRepository;
+        var boss = await library.CreateObjectAsync(opened.Project.Id, "Boss", "Phase two", context.Time.GetUtcNow());
+        var combat = await library.CreateObjectAsync(opened.Project.Id, "Combat", "Damage", context.Time.GetUtcNow());
+
+        var pane = new LibraryPaneViewModel(opened, () => Task.CompletedTask, evolutionLibrary: library);
+        await pane.InitializeAsync();
+        await pane.SelectCategoryAsync("Boss");
+
+        Assert.Equal("Boss", pane.SelectedCategory);
+        Assert.Equal([boss.Id], pane.SelectedCategoryObjects.Select(item => item.Id));
+
+        await pane.SelectCategoryAsync("Boss");
+        Assert.Null(pane.SelectedCategory);
+        Assert.Empty(pane.SelectedCategoryObjects);
+        Assert.Contains(pane.LibraryObjects, item => item.Id == combat.Id);
+    }
+
+    [Fact]
     public async Task Legacy_and_b1_projection_nodes_keep_distinct_context_labels()
     {
         await using var context = await AppTestContext.CreateAsync();
@@ -190,9 +252,9 @@ public sealed class LibraryCategoryTimeViewTests
         var root = FindRepositoryRoot();
         var markup = File.ReadAllText(Path.Combine(root, "src", "Workbench.App", "Views", "Panes", "LibraryPaneView.axaml"));
 
-        Assert.Contains("Project Library · Category", markup, StringComparison.Ordinal);
-        Assert.Contains("Project Library · Time", markup, StringComparison.Ordinal);
-        Assert.Contains("Current Overview", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Category]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.Time]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Library.ObjectTimeline]", markup, StringComparison.Ordinal);
         Assert.Contains("MaterialKind", markup, StringComparison.Ordinal);
         Assert.Contains("Reference", markup, StringComparison.Ordinal);
     }

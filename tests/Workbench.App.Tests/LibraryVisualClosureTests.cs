@@ -31,6 +31,11 @@ public sealed class LibraryVisualClosureTests
         Assert.Contains("[Library.Project]", markup, StringComparison.Ordinal);
         Assert.Contains("Text=\"↑ old → new\"", markup, StringComparison.Ordinal);
         Assert.Contains("<ScrollViewer VerticalScrollBarVisibility=\"Auto\" HorizontalScrollBarVisibility=\"Disabled\">", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectCategoryCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectedCategoryObjects", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectTimeDateCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectedTimeDay.Summary", markup, StringComparison.Ordinal);
+        Assert.Contains("SelectedTimeDay.SummaryEntries", markup, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

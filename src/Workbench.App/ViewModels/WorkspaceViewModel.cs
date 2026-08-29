@@ -86,10 +86,11 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             projectMemoryService,
             memorySynthesisRepository,
             epochRepository,
-            library: projectLibraryRepository,
-            evolutionLibrary: projectLibraryEvolutionRepository,
-            projectMemoryApi: projectMemoryApi,
-            acceptedStateReader: acceptedStateReader);
+             library: projectLibraryRepository,
+             evolutionLibrary: projectLibraryEvolutionRepository,
+             projectMemoryApi: projectMemoryApi,
+             projectSummaryRepository: projectSummaryRepository,
+             acceptedStateReader: acceptedStateReader);
         LeaderPane = new LeaderPaneViewModel(
             result.Project,
             runtimeRegistry ?? new AgentRuntimeRegistry(),

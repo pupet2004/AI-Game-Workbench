@@ -59,6 +59,27 @@ public sealed record LibraryTimeGroupView(
     Guid ObjectId,
     IReadOnlyList<LibraryTimelineNodeView> Nodes);
 
+public sealed record LibrarySummaryEntryView(
+    DateTimeOffset OccurredAt,
+    SummaryDeltaKind Kind,
+    string Text)
+{
+    public string KindLabel => Kind switch
+    {
+        SummaryDeltaKind.Decision => LocalizationService.Current["Library.Decision"],
+        SummaryDeltaKind.Change => LocalizationService.Current["Library.Change"],
+        SummaryDeltaKind.Constraint => LocalizationService.Current["Library.Constraint"],
+        SummaryDeltaKind.RejectedPath => LocalizationService.Current["Library.RejectedPath"],
+        _ => LocalizationService.Current["Library.Unresolved"]
+    };
+}
+
+public sealed record LibraryTimeDayView(
+    DateOnly LocalDate,
+    DailySummaryDocument? Summary,
+    IReadOnlyList<LibrarySummaryEntryView> SummaryEntries,
+    IReadOnlyList<LibraryTimeGroupView> Groups);
+
 public sealed record LibraryCategoryGroupView(
     string Category,
     IReadOnlyList<ProjectLibraryObject> Objects);
@@ -75,6 +96,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly ProjectLibraryRepository? _library;
     private readonly ProjectLibraryEvolutionRepository? _evolutionLibrary;
     private readonly IProjectMemoryApi? _projectMemoryApi;
+    private readonly ProjectSummaryRepository? _projectSummaryRepository;
     private readonly LibraryAcceptedStateReader? _acceptedStateReader;
 
     public LibraryPaneViewModel(
@@ -88,6 +110,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         ProjectLibraryRepository? library = null,
         ProjectLibraryEvolutionRepository? evolutionLibrary = null,
         IProjectMemoryApi? projectMemoryApi = null,
+        ProjectSummaryRepository? projectSummaryRepository = null,
         LibraryAcceptedStateReader? acceptedStateReader = null)
     {
         Result = result;
@@ -100,6 +123,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         _library = library;
         _evolutionLibrary = evolutionLibrary;
         _projectMemoryApi = projectMemoryApi;
+        _projectSummaryRepository = projectSummaryRepository;
         _acceptedStateReader = acceptedStateReader;
     }
 
@@ -188,9 +212,14 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public ObservableCollection<string> LibraryCategories { get; } = [];
     public ObservableCollection<LibraryCategoryGroupView> CategoryGroups { get; } = [];
     public ObservableCollection<ProjectLibraryObject> LibraryObjects { get; } = [];
+    [ObservableProperty] public partial string? SelectedCategory { get; set; }
+    public ObservableCollection<ProjectLibraryObject> SelectedCategoryObjects { get; } = [];
     public ObservableCollection<LibraryTimelineNodeView> ObjectTimeline { get; } = [];
     public ObservableCollection<DateOnly> TimeDates { get; } = [];
     public ObservableCollection<LibraryTimeGroupView> TimeGroups { get; } = [];
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasSelectedTimeDay))] public partial LibraryTimeDayView? SelectedTimeDay { get; set; }
+    public bool HasSelectedTimeDay => SelectedTimeDay is not null;
+    public ObservableCollection<LibraryTimeDayView> TimeDays { get; } = [];
     public LibraryTimelineDirection TimelineDirection => LibraryTimelineDirection.OldToNew;
 
     public ObservableCollection<ProjectLibraryProposal> PendingLibraryProposals { get; } = [];
@@ -290,6 +319,49 @@ public partial class LibraryPaneViewModel : ViewModelBase
             ObjectTimeline.Add(await CreateTimelineNodeViewAsync(node, cancellationToken));
         }
     }
+
+    public Task SelectCategoryAsync(string category)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(category);
+        if (string.Equals(SelectedCategory, category, StringComparison.OrdinalIgnoreCase))
+        {
+            SelectedCategory = null;
+            SelectedCategoryObjects.Clear();
+            return Task.CompletedTask;
+        }
+
+        SelectedCategory = category;
+        SelectedCategoryObjects.Clear();
+        var group = CategoryGroups.FirstOrDefault(value =>
+            string.Equals(value.Category, category, StringComparison.OrdinalIgnoreCase));
+        if (group is not null)
+        {
+            foreach (var item in group.Objects)
+                SelectedCategoryObjects.Add(item);
+        }
+
+        SelectedLibraryObject = null;
+        ObjectTimeline.Clear();
+        return Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private Task SelectCategory(string category) => SelectCategoryAsync(category);
+
+    public Task SelectTimeDateAsync(DateOnly localDate)
+    {
+        if (SelectedTimeDay?.LocalDate == localDate)
+        {
+            SelectedTimeDay = null;
+            return Task.CompletedTask;
+        }
+
+        SelectedTimeDay = TimeDays.FirstOrDefault(value => value.LocalDate == localDate);
+        return Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private Task SelectTimeDate(DateOnly localDate) => SelectTimeDateAsync(localDate);
 
     [RelayCommand]
     private Task SelectLibraryObject(Guid objectId) => SelectLibraryObjectAsync(objectId);
@@ -433,6 +505,12 @@ public partial class LibraryPaneViewModel : ViewModelBase
         var nodes = await _evolutionLibrary!.BrowseNodesByDateAsync(Result.Project.Id, cancellationToken: cancellationToken);
         var objects = (await _evolutionLibrary.ListObjectsAsync(Result.Project.Id, cancellationToken))
             .ToDictionary(value => value.Id);
+        var dailySummaryMetadata = _projectMemoryApi is null
+            ? []
+            : await _projectMemoryApi.ListDailySummaryMetadataAsync(Result.Project.Id, cancellationToken: cancellationToken);
+        var summaryEntries = _projectSummaryRepository is null
+            ? []
+            : await _projectSummaryRepository.QueryAsync(new SummaryQuery(Result.Project.Id, 200), cancellationToken);
 
         LibraryCategories.Clear();
         foreach (var category in objects.Values.Select(value => value.Category).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase)) LibraryCategories.Add(category);
@@ -445,7 +523,14 @@ public partial class LibraryPaneViewModel : ViewModelBase
         }
 
         TimeDates.Clear();
-        foreach (var date in nodes.Select(node => node.LocalDate).Distinct()) TimeDates.Add(date);
+        foreach (var date in nodes.Select(node => node.LocalDate)
+                     .Concat(dailySummaryMetadata.Select(summary => summary.LocalDate))
+                     .Concat(summaryEntries.Select(entry => DateOnly.FromDateTime(entry.OccurredAt.LocalDateTime)))
+                     .Distinct()
+                     .OrderByDescending(value => value))
+        {
+            TimeDates.Add(date);
+        }
         TimeGroups.Clear();
         foreach (var group in nodes.GroupBy(node => (node.LocalDate, node.ObjectId)))
         {
@@ -453,6 +538,21 @@ public partial class LibraryPaneViewModel : ViewModelBase
             var views = new List<LibraryTimelineNodeView>();
             foreach (var node in group) views.Add(await CreateTimelineNodeViewAsync(node, cancellationToken));
             TimeGroups.Add(new(group.Key.LocalDate, libraryObject.Category, libraryObject.Topic, libraryObject.Id, views));
+        }
+
+        TimeDays.Clear();
+        foreach (var date in TimeDates)
+        {
+            var summary = _projectMemoryApi is null
+                ? null
+                : await _projectMemoryApi.GetDailySummaryAsync(Result.Project.Id, date, cancellationToken);
+            var entries = summaryEntries
+                .Where(entry => DateOnly.FromDateTime(entry.OccurredAt.LocalDateTime) == date)
+                .OrderBy(entry => entry.OccurredAt)
+                .Select(entry => new LibrarySummaryEntryView(entry.OccurredAt, entry.Kind, entry.Text))
+                .ToArray();
+            var groups = TimeGroups.Where(group => group.LocalDate == date).ToArray();
+            TimeDays.Add(new(date, summary, entries, groups));
         }
 
         PendingLibraryProposals.Clear();
