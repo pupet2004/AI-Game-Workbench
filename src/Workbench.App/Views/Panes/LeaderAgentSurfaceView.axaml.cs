@@ -301,7 +301,12 @@ public partial class LeaderAgentSurfaceView : UserControl
             {
                 requestId = _pane.PendingApproval.RequestId.ToString(),
                 description = _pane.PendingApproval.Summary,
-                options = _pane.PendingApproval.Options.Select(option => new { id = option.Id, label = option.Label, description = option.Description }).ToArray()
+                options = _pane.ApprovalOptions.Select(option => new
+                {
+                    id = option.Option.Id,
+                    label = option.Label,
+                    description = option.Description
+                }).ToArray()
             };
         var draft = _pane.DraftConfirmation is null
             ? null

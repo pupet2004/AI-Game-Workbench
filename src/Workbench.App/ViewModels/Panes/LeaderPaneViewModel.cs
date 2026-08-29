@@ -1439,7 +1439,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             ChangedFiles.Clear();
             foreach (var file in files)
             {
-                ChangedFiles.Add(new LeaderChangedFileViewModel(file.Path, file.Added, file.Removed, file.Diff));
+                var projectPath = GetProjectRelativePath(_git.RepositoryRoot, file.Path);
+                if (projectPath is not null)
+                {
+                    ChangedFiles.Add(new LeaderChangedFileViewModel(projectPath, file.Added, file.Removed, file.Diff));
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1449,6 +1453,33 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         catch
         {
             // Diff presentation is advisory and must not fail the completed turn.
+        }
+    }
+
+    private string? GetProjectRelativePath(string repositoryRoot, string gitPath)
+    {
+        try
+        {
+            var projectRoot = Path.GetFullPath(_project.RootPath);
+            var absoluteFilePath = Path.GetFullPath(gitPath, Path.GetFullPath(repositoryRoot));
+            var relativePath = Path.GetRelativePath(projectRoot, absoluteFilePath);
+            if (Path.IsPathFullyQualified(relativePath) ||
+                relativePath.Equals("..", StringComparison.Ordinal) ||
+                relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+                relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return relativePath;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
         }
     }
 

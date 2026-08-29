@@ -7,6 +7,7 @@ using Workbench.Core.Projects;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Providers;
 using Workbench.Runtime.Registry;
+using Workbench.Project.Git;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.Tests;
@@ -312,11 +313,13 @@ public sealed class LeaderPaneViewModelTests
     }
 
     [Fact]
-    public async Task Approval_options_are_rendered_from_runtime_request()
+    public async Task Approval_option_identity_and_order_are_rendered_from_runtime_request()
     {
         var (pane, runtime, approval) = await StartApprovalTurnAsync();
 
-        Assert.Equal(approval.Options.Select(option => option.Label), pane.ApprovalOptions.Select(option => option.Label));
+        Assert.Equal(
+            approval.Options.Select(option => option.Id),
+            pane.ApprovalOptions.Select(option => option.Option.Id));
         runtime.ReleaseApproval();
     }
 
@@ -544,6 +547,44 @@ public sealed class LeaderPaneViewModelTests
     }
 
     [Fact]
+    public async Task Changed_files_only_include_files_inside_the_current_project_root()
+    {
+        using var repository = new TemporaryDirectory("repository");
+        var projectRoot = Path.Combine(repository.Path, "current-project");
+        var siblingRoot = Path.Combine(repository.Path, "other-project");
+        Directory.CreateDirectory(projectRoot);
+        Directory.CreateDirectory(siblingRoot);
+        var projectFile = Path.Combine(projectRoot, "README.md");
+        var siblingFile = Path.Combine(siblingRoot, "probe.txt");
+        await File.WriteAllTextAsync(projectFile, "before\n");
+        await File.WriteAllTextAsync(siblingFile, "before\n");
+        RunGit(repository.Path, "init");
+        RunGit(repository.Path, "config", "user.email", "workbench-tests@example.invalid");
+        RunGit(repository.Path, "config", "user.name", "Workbench Tests");
+        RunGit(repository.Path, "add", ".");
+        RunGit(repository.Path, "commit", "-m", "baseline");
+        await File.WriteAllTextAsync(projectFile, "after\n");
+        await File.WriteAllTextAsync(siblingFile, "after\n");
+
+        var runtime = new FakeAgentRuntime();
+        var project = CreateProject(projectRoot) with { GitRoot = repository.Path };
+        var pane = new LeaderPaneViewModel(
+            project,
+            CreateRegistry(runtime),
+            new ProjectLeaderSessionManager(),
+            () => Task.CompletedTask,
+            git: new GitSnapshot(true, true, repository.Path, null, "main", false, true, null));
+        QueueCompletedTurn(runtime, "done");
+        await pane.InitializeAsync();
+        pane.DraftMessage = "Inspect the project.";
+
+        await pane.SendAsync();
+
+        var changed = Assert.Single(pane.ChangedFiles);
+        Assert.Equal("README.md", changed.Path.Replace('\\', '/'));
+    }
+
+    [Fact]
     public async Task Boot_generated_text_and_summary_instruction_share_same_request()
     {
         var runtime = new FakeAgentRuntime();
@@ -593,6 +634,32 @@ public sealed class LeaderPaneViewModelTests
 
     private static CoreProject CreateProject(string rootPath = "C:/Games/Project") =>
         new(Guid.NewGuid(), "Project", rootPath, ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+    private static void RunGit(string workingDirectory, params string[] arguments)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start git.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(
+            process.ExitCode == 0,
+            $"git {string.Join(' ', arguments)} failed.\n{standardOutput}\n{standardError}");
+    }
 
     private static void QueueCompletedTurn(FakeAgentRuntime runtime, string text) =>
         runtime.QueueTurn(new AgentTextDelta(text, DateTimeOffset.UtcNow), Completed(text));
