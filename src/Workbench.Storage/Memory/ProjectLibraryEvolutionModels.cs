@@ -18,6 +18,7 @@ public sealed record ProjectLibraryTimelineNode(
     DateOnly LocalDate,
     string Content,
     int Revision,
+    DateTimeOffset OccurredAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -38,6 +39,7 @@ public sealed record ProjectLibraryTimelineNodeMetadata(
     string Topic,
     DateOnly LocalDate,
     int Revision,
+    DateTimeOffset OccurredAt,
     DateTimeOffset CreatedAt,
     int Utf8Bytes);
 
@@ -95,7 +97,8 @@ public sealed record ProjectLibraryProposalDraft(
     Guid? AcceptedContributionId = null,
     Guid? SourceClaimId = null,
     Guid? SourceHandoffId = null,
-    string? SummaryRef = null);
+    string? SummaryRef = null,
+    DateTimeOffset? OccurredAt = null);
 
 public sealed record LibraryProposalEdit(
     string NodeContent,

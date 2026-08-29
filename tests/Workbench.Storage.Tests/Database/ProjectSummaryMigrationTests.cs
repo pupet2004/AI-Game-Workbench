@@ -26,7 +26,7 @@ public sealed class ProjectSummaryMigrationTests
 
         await using var connection = fixture.Database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(24L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+            Assert.Equal(25L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(
             ["project_summary_entries", "project_summary_source_refs"],
             await StringsAsync(connection, "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'project_summary_%' ORDER BY name;"));
@@ -45,7 +45,7 @@ public sealed class ProjectSummaryMigrationTests
         await fixture.Database.InitializeAsync();
         await using var connection = fixture.Database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(24L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+            Assert.Equal(25L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
 
         await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(connection, "INSERT INTO project_summary_entries(entry_id,project_id,occurred_at,created_at,kind,text,result_id,delta_ordinal) VALUES($entry,$project,$at,$at,'Decision','text',$result,0);", ("$entry", Guid.NewGuid()), ("$project", Guid.NewGuid()), ("$at", V18Fixture.At), ("$result", Guid.NewGuid())));
 
@@ -67,7 +67,7 @@ public sealed class ProjectSummaryMigrationTests
         await fixture.Database.InitializeAsync();
         await using var connection = fixture.Database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(24L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+            Assert.Equal(25L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
 
         await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(connection, "INSERT INTO project_summary_entries(entry_id,project_id,occurred_at,created_at,kind,text,result_id,delta_ordinal) VALUES($entry,$project,$at,$at,$kind,$text,$result,$ordinal);", ("$entry", Guid.NewGuid()), ("$project", fixture.ProjectId), ("$at", V18Fixture.At), ("$kind", kind), ("$text", text), ("$result", Guid.NewGuid()), ("$ordinal", ordinal)));
     }
@@ -82,7 +82,7 @@ public sealed class ProjectSummaryMigrationTests
         await fixture.Database.InitializeAsync();
         await using var connection = fixture.Database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(24L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+            Assert.Equal(25L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         var entryId = Guid.NewGuid();
         await ExecuteAsync(connection, "INSERT INTO project_summary_entries(entry_id,project_id,occurred_at,created_at,kind,text,result_id,delta_ordinal) VALUES($entry,$project,$at,$at,'Decision','text',$result,0);", ("$entry", entryId), ("$project", fixture.ProjectId), ("$at", V18Fixture.At), ("$result", Guid.NewGuid()));
 
@@ -96,7 +96,7 @@ public sealed class ProjectSummaryMigrationTests
         await fixture.Database.InitializeAsync();
         await using var connection = fixture.Database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(24L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+            Assert.Equal(25L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
 
         Assert.Equal(
             ["result_id", "summary_delta_payload_json", "summary_persisted_at"],
@@ -143,7 +143,7 @@ public sealed class ProjectSummaryMigrationTests
 
         await using var connection = fixture.Database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(24L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+            Assert.Equal(25L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         var command = connection.CreateCommand();
         command.CommandText = "SELECT id,epoch_id,sequence,role,text,created_at,result_id,summary_delta_payload_json,summary_persisted_at FROM leader_messages;";
         await using var reader = await command.ExecuteReaderAsync();

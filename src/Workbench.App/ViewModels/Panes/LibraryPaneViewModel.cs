@@ -37,11 +37,13 @@ public sealed record LibraryTimelineNodeView(
     Guid Id,
     Guid ObjectId,
     DateOnly LocalDate,
+    DateTimeOffset OccurredAt,
     string Content,
     IReadOnlyList<LibraryMaterialReference> Materials,
     LibraryTimelineContextKind ContextKind)
 {
     public string SourceLabel => LocalizationService.Current["Library.Source"];
+    public string TimestampText => OccurredAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
     public bool IsLegacyContext => ContextKind == LibraryTimelineContextKind.LegacyContext;
 
     public string ContextLabel => ContextKind switch
@@ -659,8 +661,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
             {
                 foreach (var node in group.Nodes)
                 {
-                    var sourceTime = nodes.FirstOrDefault(value => value.Id == node.Id)?.UpdatedAt ?? date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-                    events.Add(new(sourceTime, group.Category, group.Topic, node.Content, node.Materials, []));
+                    events.Add(new(node.OccurredAt, group.Category, group.Topic, node.Content, node.Materials, []));
                 }
             }
             events.AddRange(entries.Select(entry => new LibraryTimeEventView(entry.OccurredAt, "Summary", entry.KindLabel, entry.Text, [], entry.SourceRefs)));
@@ -763,6 +764,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
             node.Id,
             node.ObjectId,
             node.LocalDate,
+            node.OccurredAt,
             node.Content,
             materials,
             ClassifyTimelineContext(materials));

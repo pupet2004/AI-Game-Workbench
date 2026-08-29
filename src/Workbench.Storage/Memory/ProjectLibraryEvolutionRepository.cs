@@ -136,7 +136,8 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         string content,
         IReadOnlyList<LibraryMaterialReferenceDraft> references,
         DateTimeOffset createdAt,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateTimeOffset? occurredAt = null)
     {
         ValidateGuid(projectId, nameof(projectId));
         ValidateGuid(objectId, nameof(objectId));
@@ -156,20 +157,22 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
 
             var insert = connection.CreateCommand();
             insert.Transaction = transaction;
+            var effectiveOccurredAt = occurredAt ?? createdAt;
             insert.CommandText = """
                 INSERT INTO project_library_timeline_nodes (
-                    id, object_id, local_date, content, revision, created_at, updated_at)
-                VALUES ($id, $objectId, $localDate, $content, 1, $createdAt, $createdAt);
+                    id, object_id, local_date, content, revision, occurred_at, created_at, updated_at)
+                VALUES ($id, $objectId, $localDate, $content, 1, $occurredAt, $createdAt, $createdAt);
                 """;
             insert.Parameters.AddWithValue("$id", nodeId.ToString());
             insert.Parameters.AddWithValue("$objectId", objectId.ToString());
             insert.Parameters.AddWithValue("$localDate", Format(localDate));
             insert.Parameters.AddWithValue("$content", normalizedContent);
+            insert.Parameters.AddWithValue("$occurredAt", Format(effectiveOccurredAt));
             insert.Parameters.AddWithValue("$createdAt", Format(createdAt));
             await insert.ExecuteNonQueryAsync(cancellationToken);
             await InsertReferencesAsync(connection, transaction, nodeId, normalizedReferences, createdAt, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new ProjectLibraryTimelineNode(nodeId, objectId, localDate, normalizedContent, 1, createdAt, createdAt);
+            return new ProjectLibraryTimelineNode(nodeId, objectId, localDate, normalizedContent, 1, effectiveOccurredAt, createdAt, createdAt);
         }
         catch
         {
@@ -475,7 +478,7 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT node.id,node.object_id,object.project_id,object.category,object.topic,
-                   node.local_date,node.revision,node.created_at,
+                   node.local_date,node.revision,node.occurred_at,node.created_at,
                    length(CAST(node.content AS BLOB))
             FROM project_library_timeline_nodes node
             JOIN project_library_objects object ON object.id=node.object_id
@@ -496,7 +499,8 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
                 DateOnly.ParseExact(reader.GetString(5), "yyyy-MM-dd", CultureInfo.InvariantCulture),
                 reader.GetInt32(6),
                 ParseTimestamp(reader.GetString(7)),
-                reader.GetInt32(8)));
+                ParseTimestamp(reader.GetString(8)),
+                reader.GetInt32(9)));
         }
         return items;
     }
@@ -585,13 +589,14 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
             insertNode.Transaction = transaction;
             insertNode.CommandText = """
                 INSERT INTO project_library_timeline_nodes (
-                    id,object_id,local_date,content,revision,created_at,updated_at)
-                VALUES ($id,$objectId,$localDate,$content,1,$createdAt,$createdAt);
+                    id,object_id,local_date,content,revision,occurred_at,created_at,updated_at)
+                VALUES ($id,$objectId,$localDate,$content,1,$occurredAt,$createdAt,$createdAt);
                 """;
             insertNode.Parameters.AddWithValue("$id", nodeId.ToString());
             insertNode.Parameters.AddWithValue("$objectId", libraryObject.Id.ToString());
             insertNode.Parameters.AddWithValue("$localDate", Format(draft.LocalDate));
             insertNode.Parameters.AddWithValue("$content", draft.NodeContent);
+            insertNode.Parameters.AddWithValue("$occurredAt", Format(draft.OccurredAt ?? draft.CreatedAt));
             insertNode.Parameters.AddWithValue("$createdAt", Format(appliedAt));
             await insertNode.ExecuteNonQueryAsync(cancellationToken);
             await InsertReferencesAsync(connection, transaction, nodeId, draft.Materials, appliedAt, cancellationToken);
@@ -617,11 +622,12 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
             updateNode.Transaction = transaction;
             updateNode.CommandText = """
                 UPDATE project_library_timeline_nodes
-                SET content=$content,revision=revision+1,updated_at=$updatedAt
+                SET content=$content,revision=revision+1,occurred_at=$occurredAt,updated_at=$updatedAt
                 WHERE id=$nodeId AND revision=$expectedRevision;
                 """;
             updateNode.Parameters.AddWithValue("$content", draft.NodeContent);
             updateNode.Parameters.AddWithValue("$updatedAt", Format(appliedAt));
+            updateNode.Parameters.AddWithValue("$occurredAt", Format(draft.OccurredAt ?? node.OccurredAt));
             updateNode.Parameters.AddWithValue("$nodeId", node.Id.ToString());
             updateNode.Parameters.AddWithValue("$expectedRevision", draft.ExpectedNodeRevision!.Value);
             if (await updateNode.ExecuteNonQueryAsync(cancellationToken) != 1)
@@ -693,7 +699,8 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
             Topic = topic,
             NodeContent = content,
             CurrentOverview = overview,
-            Materials = materials
+            Materials = materials,
+            OccurredAt = draft.OccurredAt ?? draft.CreatedAt
         };
     }
 
@@ -709,7 +716,7 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
     }
 
     private const string ObjectSelect = "SELECT id,project_id,category,topic,category_key,topic_key,current_overview,overview_revision,created_at,updated_at FROM project_library_objects";
-    private const string NodeSelect = "SELECT node.id,node.object_id,node.local_date,node.content,node.revision,node.created_at,node.updated_at FROM project_library_timeline_nodes node";
+    private const string NodeSelect = "SELECT node.id,node.object_id,node.local_date,node.content,node.revision,node.occurred_at,node.created_at,node.updated_at FROM project_library_timeline_nodes node";
 
     private static async Task<LegacyCoverageEntry?> ReadLegacyEntryAsync(
         SqliteConnection connection,
@@ -992,8 +999,9 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         DateOnly.ParseExact(reader.GetString(2), "yyyy-MM-dd", CultureInfo.InvariantCulture),
         reader.GetString(3),
         reader.GetInt32(4),
-        ParseTimestamp(reader.GetString(5)),
-        ParseTimestamp(reader.GetString(6)));
+        ParseTimestamp(string.IsNullOrWhiteSpace(reader.GetString(5)) ? reader.GetString(6) : reader.GetString(5)),
+        ParseTimestamp(reader.GetString(6)),
+        ParseTimestamp(reader.GetString(7)));
 
     private static IReadOnlyList<LibraryMaterialReferenceDraft> NormalizeReferences(
         IReadOnlyList<LibraryMaterialReferenceDraft> references)

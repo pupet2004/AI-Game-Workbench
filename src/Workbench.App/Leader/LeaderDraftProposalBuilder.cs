@@ -36,7 +36,8 @@ public sealed record LeaderLibraryProposalCommand(
     DateOnly LocalDate,
     string NodeContent,
     string? CurrentOverview,
-    IReadOnlyList<LibraryMaterialReferenceDraft> Materials);
+    IReadOnlyList<LibraryMaterialReferenceDraft> Materials,
+    DateTimeOffset? OccurredAt);
 
 public sealed record LeaderMemoryCommands(LeaderLibraryProposalCommand? LibraryProposal);
 
@@ -202,7 +203,8 @@ public sealed record LeaderStructuredResponse(
             DateOnly.ParseExact(RequiredString(library, "local_date"), "yyyy-MM-dd", CultureInfo.InvariantCulture),
             RequiredString(library, "node_content"),
             OptionalString(library, "current_overview"),
-            materials));
+            materials,
+            OptionalDateTimeOffset(library, "occurred_at")));
     }
 
     private static IReadOnlyList<SummaryDelta> ParseSummaryDeltas(JsonElement summary)
@@ -277,6 +279,15 @@ public sealed record LeaderStructuredResponse(
             JsonValueKind.Number when item.TryGetInt32(out var number) => number,
             _ => throw new JsonException()
         };
+    }
+
+    private static DateTimeOffset? OptionalDateTimeOffset(JsonElement value, string property)
+    {
+        if (!value.TryGetProperty(property, out var item) || item.ValueKind == JsonValueKind.Null)
+            return null;
+        if (item.ValueKind != JsonValueKind.String || !DateTimeOffset.TryParse(item.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+            throw new JsonException();
+        return parsed;
     }
 }
 
@@ -354,7 +365,8 @@ public static class LeaderResponseSchema
                                   "label": { "type": ["string", "null"] }
                                 }
                               }
-                            }
+                            },
+                            "occurred_at": { "type": ["string", "null"] }
                           }
                         },
                         { "type": "null" }

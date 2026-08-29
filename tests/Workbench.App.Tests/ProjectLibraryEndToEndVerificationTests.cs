@@ -66,6 +66,7 @@ public sealed class ProjectLibraryEndToEndVerificationTests
                         local_date = fixture.Item3.ToString("yyyy-MM-dd"),
                         node_content = fixture.Item4,
                         current_overview = fixture.Item4,
+                        occurred_at = fixture.Item5,
                         materials = new[] { new { kind = "ScenarioNote", reference = $"world://{fixture.Item3:yyyy-MM-dd}/{fixture.Item1.ToLowerInvariant()}", label = "历史世界观笔记" } }
                     }
                 },
@@ -83,6 +84,7 @@ public sealed class ProjectLibraryEndToEndVerificationTests
 
             Assert.True(LeaderStructuredResponse.TryParse(envelope, id, out var structured));
             var command = structured.MemoryCommands!.LibraryProposal!;
+            var appliedAt = new DateTimeOffset(2026, 8, 29, 1, 0, 0, TimeSpan.Zero);
             var proposal = await context.Services.ProjectMemoryApi.CreateLibraryProposalAsync(
                 new ProjectLibraryProposalDraft(
                     Guid.NewGuid(),
@@ -99,7 +101,8 @@ public sealed class ProjectLibraryEndToEndVerificationTests
                     command.NodeContent,
                     command.CurrentOverview,
                     command.Materials,
-                    DateTimeOffset.Parse(fixture.Item5)));
+                    appliedAt,
+                    OccurredAt: command.OccurredAt));
 
             if (await testContext.Services.ProjectMemoryApi.GetDailySummaryAsync(id, fixture.Item3) is null)
             {
@@ -147,6 +150,6 @@ public sealed class ProjectLibraryEndToEndVerificationTests
         var summaryEvent = Assert.Single(pane.TimeEvents, value => value.Category == "Summary");
         Assert.Equal("verification://2026-08-22T16:45:00+00:00", Assert.Single(summaryEvent.SummarySources).SourceLocator);
         Assert.Equal(new DateTimeOffset(2026, 8, 22, 16, 45, 0, TimeSpan.Zero), summaryEvent.OccurredAt);
-        Assert.NotEqual(summaryEvent.OccurredAt, eventOnLastDay.OccurredAt);
+        Assert.Equal(summaryEvent.OccurredAt, eventOnLastDay.OccurredAt);
     }
 }

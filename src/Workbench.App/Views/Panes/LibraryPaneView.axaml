@@ -76,7 +76,7 @@
                     <TextBlock Text="{Binding [Library.ObjectTimeline]}" FontWeight="SemiBold" />
                     <ItemsControl ItemsSource="{Binding ObjectTimeline}"><ItemsControl.ItemTemplate><DataTemplate>
                         <Border Padding="8" BorderBrush="#3A3A3A" BorderThickness="0,0,0,1"><StackPanel Spacing="3">
-                            <TextBlock Text="{Binding LocalDate}" Foreground="#667085" />
+                            <TextBlock Text="{Binding TimestampText}" Foreground="#667085" FontFamily="Consolas" />
                             <TextBlock Text="{Binding Content}" TextWrapping="Wrap" />
                             <Expander Header="{Binding SourceLabel}"><ItemsControl ItemsSource="{Binding Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="1"><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" Foreground="#667085" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
                         </StackPanel></Border>

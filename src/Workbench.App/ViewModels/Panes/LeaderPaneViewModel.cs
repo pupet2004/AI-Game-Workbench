@@ -1230,7 +1230,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 command.NodeContent,
                 command.CurrentOverview,
                 command.Materials,
-                _timeProvider.GetUtcNow());
+                _timeProvider.GetUtcNow(),
+                OccurredAt: command.OccurredAt);
             await _projectMemoryApi.CreateLibraryProposalAsync(draft, cancellationToken);
             MemoryCommandStatus = LocalizationService.Current["Dynamic.LibraryProposalReady"];
             if (_refreshLibraryPane is not null) await _refreshLibraryPane(cancellationToken);

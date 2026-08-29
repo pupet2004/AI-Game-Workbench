@@ -34,7 +34,7 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(24L, await command.ExecuteScalarAsync());
+        Assert.Equal(25L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public sealed class WorkbenchDatabaseTests
         await database.InitializeAsync();
 
         var firstSnapshot = await ReadV11ContinuitySnapshotAsync(database);
-        Assert.Equal(24L, firstSnapshot.UserVersion);
+        Assert.Equal(25L, firstSnapshot.UserVersion);
         Assert.Equal("Migration Project", firstSnapshot.ProjectName);
         Assert.Equal("00000000-0000-0000-0000-000000000102", firstSnapshot.TaskId);
         Assert.Equal("00000000-0000-0000-0000-000000000103", firstSnapshot.CurrentRevisionId);
