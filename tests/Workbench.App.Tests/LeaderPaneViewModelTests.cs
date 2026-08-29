@@ -399,6 +399,7 @@ public sealed class LeaderPaneViewModelTests
         var decision = Assert.Single(runtime.ApprovalDecisions);
         Assert.Equal(approval.RequestId, decision.RequestId);
         Assert.Equal("allow-once", decision.OptionId);
+        Assert.Equal(string.Empty, pane.RuntimeStatus);
     }
 
     [Fact]

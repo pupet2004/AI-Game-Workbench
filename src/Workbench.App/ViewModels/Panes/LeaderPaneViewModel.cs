@@ -46,6 +46,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly IAgentHost _agentHost;
     private readonly SynchronizationContext? _leaderContext;
     private CancellationTokenSource? _activeTurnCancellation;
+    private AgentSessionId? _workerApprovalSessionId;
     private bool _initialAnchorRequested;
 
     public LeaderPaneViewModel(
@@ -1127,6 +1128,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             {
                 await _agentHost.RespondToApprovalAsync(approval.SessionId, decision, cancellationToken);
             }
+            if (_workerApprovalSessionId == approval.SessionId)
+            {
+                _workerApprovalSessionId = null;
+                _conversation.RuntimeStatus = string.Empty;
+            }
             _conversation.PendingApproval = null;
             ApprovalOptions.Clear();
         }
@@ -1308,15 +1314,19 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 {
                     _conversation.PendingApproval = approval;
                     _conversation.ApprovalError = null;
+                    _workerApprovalSessionId = approval.SessionId;
                     RebuildApprovalOptions();
                     _conversation.RuntimeStatus = "Worker 等待 Leader 审批";
                     NotifyAllState();
                 });
                 break;
-            case AgentTurnCompleted when _conversation.PendingApproval?.SessionId == item.SessionId:
+            case AgentTurnCompleted when _workerApprovalSessionId == item.SessionId:
                 DispatchToLeader(() =>
                 {
-                    ClearPendingApproval();
+                    if (_conversation.PendingApproval?.SessionId == item.SessionId)
+                        ClearPendingApproval();
+                    _workerApprovalSessionId = null;
+                    _conversation.RuntimeStatus = string.Empty;
                     NotifyAllState();
                 });
                 break;
