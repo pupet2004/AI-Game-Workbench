@@ -19,15 +19,23 @@ public class ViewLocator : IDataTemplate
         if (param is null)
             return null;
         
-        var name = param.GetType().FullName!.Replace("ViewModel", "View", StringComparison.Ordinal);
-        var type = Type.GetType(name);
+        var viewModelType = param.GetType();
+        var viewName = viewModelType.Name.Replace("ViewModel", "View", StringComparison.Ordinal);
+        var names = new[]
+        {
+            viewModelType.FullName!.Replace("ViewModel", "View", StringComparison.Ordinal),
+            $"Workbench.App.Views.{viewName}"
+        };
+        var type = names
+            .Select(name => viewModelType.Assembly.GetType(name) ?? Type.GetType(name))
+            .FirstOrDefault(value => value is not null);
 
         if (type != null)
         {
             return (Control)Activator.CreateInstance(type)!;
         }
         
-        return new TextBlock { Text = "Not Found: " + name };
+        return new TextBlock { Text = "Not Found: " + names[0] };
     }
 
     public bool Match(object? data)

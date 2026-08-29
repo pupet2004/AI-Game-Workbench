@@ -23,6 +23,7 @@ public sealed class MainWindowViewTests
         await setup.ConfirmInitializationCommand.ExecuteAsync(null);
 
         Assert.IsType<ProjectWorldExplorerViewModel>(main.CurrentPage);
+        Assert.IsType<ProjectWorldExplorerView>(new ViewLocator().Build(main.CurrentPage));
     }
 
     [Fact]
