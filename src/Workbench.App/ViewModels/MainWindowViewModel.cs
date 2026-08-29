@@ -96,11 +96,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         var setup = new ProjectWorldSetupViewModel(
             _services,
             result,
-            new ProjectWorldEntryStatus(
+                new ProjectWorldEntryStatus(
                 new ProjectRef(result.Project.Id),
                 ProjectWorldEntryKind.UnmanagedProjectUnavailable,
                 false,
-                "New project setup required"),
+                _localization["ProjectSetup.Required"]),
             BackToHomeAsync,
             ShowWorkspace);
         CurrentPage = setup;

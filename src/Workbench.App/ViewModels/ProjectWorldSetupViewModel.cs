@@ -28,6 +28,9 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
         _backToHome = backToHome ?? throw new ArgumentNullException(nameof(backToHome));
         _openWorkspace = openWorkspace ?? throw new ArgumentNullException(nameof(openWorkspace));
         UserPrincipal = _services.UserPrincipalProvider.GetCurrent().Value;
+        ResponsibilityObligation = LocalizationService.Current["ProjectSetup.DefaultResponsibility"];
+        ResponsibilityExpectedOutcome = LocalizationService.Current["ProjectSetup.DefaultExpected"];
+        InitialAssignment = LocalizationService.Current["ProjectSetup.DefaultAssignment"];
         IsGovernanceEstablished = status.Kind == ProjectWorldEntryKind.ProjectWorldReady;
     }
 
