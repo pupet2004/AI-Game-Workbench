@@ -383,6 +383,47 @@ public sealed class WorkerSessionRouter(
     private readonly IAgentHost _agentHost = agentHost ?? new InProcessAgentHost(runtimes);
     private readonly ConcurrentDictionary<AgentSessionId, Task> _intentTails = new();
 
+    public async Task<int> ReconcileCompletedAssignmentsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (assignments is null || executions is null)
+            return 0;
+
+        var completedByTask = (await executions.ListAsync(projectId, cancellationToken))
+            .Where(item => item.State == WorkerExecutionState.CompletedPendingReview)
+            .GroupBy(item => item.TaskId)
+            .Select(group => group.OrderByDescending(item => item.UpdatedAt).First())
+            .ToArray();
+        var repaired = 0;
+        foreach (var execution in completedByTask)
+        {
+            var state = await assignments.GetRecoveryStateAsync(projectId, execution.TaskId, cancellationToken);
+            if (state?.Task.Status != TaskLifecycleStatus.Working)
+                continue;
+
+            var transition = await assignments.TryTransitionAsync(
+                projectId,
+                execution.TaskId,
+                TaskLifecycleStatus.Working,
+                TaskLifecycleStatus.Reviewing,
+                Guid.NewGuid(),
+                "WorkerFinalReportReceived",
+                JsonSerializer.Serialize(new
+                {
+                    execution.ExecutionId,
+                    execution.AgentSessionId,
+                    RecoveredFromCompletedExecution = true
+                }),
+                time.GetUtcNow(),
+                cancellationToken);
+            if (transition == AssignmentStateTransitionResult.Applied)
+                repaired++;
+        }
+
+        return repaired;
+    }
+
     /// <summary>
     /// Routes a follow-up direction to an already hosted Worker session.
     /// Active turns use the provider's steer channel when available; all

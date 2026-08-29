@@ -2,6 +2,7 @@ using Workbench.App.Tests.Support;
 using Workbench.App.Worker;
 using Workbench.App.AgentHost;
 using Workbench.Core.Tasks;
+using Workbench.Core.Workers;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Tasks;
@@ -189,6 +190,56 @@ public sealed class WorkerSessionRoutingTests
         Assert.DoesNotContain("unstructured worker result", handoff.Payload, StringComparison.Ordinal);
         using var handoffJson = JsonDocument.Parse(handoff.Payload);
         Assert.Equal(finalReport.EventId.ToString(), handoffJson.RootElement.GetProperty("SourceEventId").GetString());
+    }
+
+    [Fact]
+    public async Task Loading_completed_execution_repairs_historical_working_assignment_to_reviewing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var assignments = new AssignmentReviewStateRepository(fixture.Database);
+        Assert.Equal(AssignmentStateTransitionResult.Applied, await assignments.TryTransitionAsync(
+            fixture.Project.Id, fixture.Task.TaskId, TaskLifecycleStatus.Draft, TaskLifecycleStatus.ReadyToStart,
+            Guid.NewGuid(), "AssignmentReadyToStart", "{}", DateTimeOffset.UtcNow));
+        Assert.Equal(AssignmentStateTransitionResult.Applied, await assignments.TryTransitionAsync(
+            fixture.Project.Id, fixture.Task.TaskId, TaskLifecycleStatus.ReadyToStart, TaskLifecycleStatus.Working,
+            Guid.NewGuid(), "WorkerAssignmentStarted", "{}", DateTimeOffset.UtcNow));
+        var executions = new WorkerExecutionRepository(fixture.Database);
+        var revision = new TaskRevisionReference(fixture.Task.TaskId, fixture.Task.CurrentRevisionId, 1);
+        var executionId = Guid.NewGuid();
+        var workerSessionId = AgentSessionId.New();
+        await executions.CreateAsync(new StoredWorkerExecution(
+            executionId,
+            fixture.Project.Id,
+            fixture.Task.TaskId,
+            revision,
+            revision,
+            "base",
+            "main",
+            ProviderAccountBinding.Create(fixture.Profile.ProviderId, fixture.Profile.ProviderAccountId),
+            fixture.Profile,
+            "worker/recovered",
+            fixture.Project.RootPath,
+            WorkerExecutionState.CompletedPendingReview,
+            workerSessionId.Value.ToString(),
+            "external",
+            fixture.Project.RootPath,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow));
+        var events = new TaskEventRepository(fixture.Database);
+        var router = new WorkerSessionRouter(
+            fixture.Registry,
+            new TaskEventWorkerRoutingStore(events, executions),
+            TimeProvider.System,
+            assignments,
+            executions: executions);
+
+        var repaired = await router.ReconcileCompletedAssignmentsAsync(fixture.Project.Id);
+
+        Assert.Equal(1, repaired);
+        var state = (await assignments.GetRecoveryStateAsync(fixture.Project.Id, fixture.Task.TaskId))!;
+        Assert.Equal(TaskLifecycleStatus.Reviewing, state.Task.Status);
+        var recovery = Assert.Single(state.Events, item => item.Type == "WorkerFinalReportReceived");
+        Assert.Contains(executionId.ToString(), recovery.Payload, StringComparison.Ordinal);
     }
 
     [Fact]

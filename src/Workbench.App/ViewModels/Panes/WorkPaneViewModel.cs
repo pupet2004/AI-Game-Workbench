@@ -44,6 +44,8 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
     public async Task LoadAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         Workers.Clear(); if (_store is null) return;
+        if (_workerRouter is not null)
+            await _workerRouter.ReconcileCompletedAssignmentsAsync(projectId, cancellationToken);
         var sessions = await _store.ListSessionsAsync(projectId, cancellationToken);
         foreach (var session in sessions.OrderBy(item => Rank(item.Session.Status)).ThenByDescending(item => item.LastActiveAt))
         {
