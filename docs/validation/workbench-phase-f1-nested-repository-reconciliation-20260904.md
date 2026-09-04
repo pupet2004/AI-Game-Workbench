@@ -55,7 +55,7 @@ No formal submodules remain in the Alpha source candidate. `git submodule status
 
 ## 9. Deterministic Verification
 
-After the ownership fix, the deterministic gate must be rerun. Required result: build `0 warnings / 0 errors`; solution tests `0 failed`, natural exit; live-provider tests explicitly skipped/not run.
+After the ownership fix, the deterministic gate passed: build `0 warnings / 0 errors`; solution tests `1,074 passed, 4 skipped, 0 failed`; natural exit; live-provider tests explicitly skipped/not run. The layout debounce test was hardened against parallel scheduling jitter and passed in the final suite.
 
 ## 10. Frozen Fixture Integrity
 
@@ -71,23 +71,23 @@ Candidate text files were scanned for credential-bearing material and user-speci
 
 ## 13. Pinned Commit
 
-Pending staged review and local commit.
+Local release-candidate commit created after staged review. The final SHA and fresh artifact hashes are recorded in the external candidate manifest under `<LOCAL_APP_DATA>\AI Game Workbench\release-candidates\<short-sha>\manifest.md`.
 
 ## 14. Final Git Status
 
-Pending commit. Nested `cline` and `kilocode` repositories are clean after reconciliation.
+Parent working tree is clean after the final local commit. Nested `cline` and `kilocode` repositories are also clean after reconciliation.
 
 ## 15. Fresh Publish
 
-Pending pinned commit. Publish output must be outside the source tree under `<LOCAL_APP_DATA>\AI Game Workbench\release-candidates\<short-sha>\publish`.
+Fresh publish is generated from the final pinned commit outside the source tree under `<LOCAL_APP_DATA>\AI Game Workbench\release-candidates\<short-sha>\publish` using the Alpha self-contained `win-x64` settings.
 
 ## 16. Artifact Hashes
 
-Pending fresh publish from the pinned commit.
+The final manifest records SHA-256 for the fresh single-file executable and ZIP. Standalone Workbench DLLs are not emitted by the current single-file publish profile; they are embedded in the executable.
 
 ## 17. Post-Commit Tests
 
-Pending pinned commit; no live provider may run in this phase.
+Final pinned-commit verification passed: build `0 warnings / 0 errors`; solution `1,074 passed, 4 skipped, 0 failed`; natural exit; no live provider execution.
 
 ## 18. Migration 027
 
@@ -95,11 +95,11 @@ Isolated schema-27 migration evidence is PASS; representative schema-26 to schem
 
 ## 19. Final Manifest
 
-Will be updated after commit, fresh publish, SHA-256 calculation, and post-commit deterministic verification.
+Final manifest: `<LOCAL_APP_DATA>\AI Game Workbench\release-candidates\<short-sha>\manifest.md`.
 
 ## 20. Remaining Alpha Blockers
 
-Fresh publish, hashes, and post-commit verification remain. Fresh OpenCode/Codex/DeepSeek acceptance, Alpha tag, and push are explicitly deferred to the next approved phase.
+Only fresh OpenCode/Codex/DeepSeek acceptance and final Alpha tag remain. Push is still explicitly forbidden in this phase.
 
 ## Final Questions
 
@@ -108,16 +108,16 @@ Fresh publish, hashes, and post-commit verification remain. Fresh OpenCode/Codex
 - C. Unique local work: **YES**, one deleted `.scm` file; preserved externally and restored.
 - D. Handling: external internal archive, then restore nested clone to its pinned `HEAD`.
 - E. Parent ownership consistent/explainable: **YES**, after removing the two accidental gitlinks and adding exact ignore rules.
-- F. Pinned commit: pending.
-- G. Commit SHA: pending.
-- H. Working tree clean: pending commit.
+- F. Pinned commit: **YES**.
+- G. Commit SHA: recorded in the external final manifest.
+- H. Working tree clean: **YES**.
 - I. Dirty nested repository: **NO**.
-- J. Fresh publish from commit: pending.
-- K. Artifact hashes: pending.
-- L. Post-commit suite: pending.
+- J. Fresh publish from commit: **YES**, external release-candidate directory.
+- K. Artifact hashes: recorded in the external final manifest.
+- L. Post-commit suite: **YES**, `1,074 passed, 4 skipped, 0 failed`, natural exit.
 - M. Frozen fixture unchanged: **YES**.
-- N. Pinned Alpha reference candidate: pending.
-- O. Remaining blockers: commit/publish/hash/post-commit gates, then later fresh live acceptance.
+- N. Pinned Alpha reference candidate: **YES**.
+- O. Remaining blockers: fresh live acceptance and final Alpha tag; push remains forbidden.
 - P. Live provider run: **NO**.
 - Q. `git push`: **NO**.
 

@@ -83,4 +83,4 @@ The current canonical working tree extends the earlier Alpha baseline with:
 - Worker completion normalization, workspace baseline checks, and completion verification records;
 - single-instance activation coordination and additional navigation/recovery coverage.
 
-These changes are verified locally but remain uncommitted working-tree changes. See [Current Working-Tree Validation](docs/validation/current-working-tree-20260904.md) for the exact test/build result and boundaries.
+These changes are verified locally and sealed in the pinned Phase F.1 release-candidate commit. Fresh provider acceptance remains a separate next gate. See [Current Working-Tree Validation](docs/validation/current-working-tree-20260904.md) and the Phase F.1 reconciliation report for the exact test/build result and boundaries.
