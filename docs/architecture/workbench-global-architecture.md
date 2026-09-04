@@ -12,6 +12,8 @@ This document re-expresses the whole Workbench architecture after R5-B1 moved th
 
 This is an architectural record, not a new specification, implementation plan, migration decision, retirement authorization, or R6 proposal. It does not change the [R5-B1 Baseline](./r5-b1-baseline.md). When this document describes current code, it is descriptive. When it states an invariant, the sealed R5 Boundary and R5-B1 documents remain authoritative.
 
+The 2026-08-23 sections below describe the sealed R5-B1 baseline. Since that baseline, the current working tree has added a provider-neutral B1 Agent participation adapter, an OpenCode runtime path, and B1 Project Library projections. Those additions are recorded as current working-tree deltas until committed and versioned.
+
 The governing product statement is:
 
 > **Workbench is not an agent system with memory. It is a project world system where agents participate temporarily.**
@@ -76,8 +78,8 @@ The architecture is therefore organized around three different questions:
 │    Legacy Leader / Worker orchestration                              │
 │    provider and project adapters                                     │
 │                                                                      │
-│  Architectural slot, not an R5-B1 implementation claim              │
-│    future Agent participation adapter                                │
+│  Current working-tree B1 participation                             │
+│    provider-neutral Agent adapter (non-authoritative)                │
 └──────────────────────────────────────────────────────────────────────┘
                    ▲                              │
                    │ result / event / locator     │ delegated work
@@ -194,9 +196,9 @@ Workbench.Project -> Workbench.Storage
 | `Workbench.Core/Projects` and `Workbench.Storage/Projects` | Durable Project identity and supporting persistence | **ACTIVE FOUNDATION.** Project identity predates B1 and remains durable. B1 governance is established separately rather than inferred by `ProjectRepository.UpsertAsync`. |
 | `Workbench.Project/Opening` and `Detection` | Application/project-locator adapter | **ACTIVE.** Opens and classifies a filesystem project; despite the assembly name, this is not the Project World Kernel. |
 | `Workbench.Project/Git` | Read-only external locator/provenance adapter | **ACTIVE ADAPTER.** Repository root, HEAD, branch, and dirty-state inspection do not make Workbench the owner of Git execution. |
-| `Workbench.Runtime` | Execution Environment and Provider adapter | **ACTIVE, REPLACEABLE, MIXED CONTRACT.** Codex is the only production runtime. `IAgentRuntime` includes useful connection operations plus optional discovery, status, capability, and transcript surfaces; it is broader than a minimal participation gateway. |
+| `Workbench.Runtime` | Execution Environment and Provider adapter | **ACTIVE, REPLACEABLE, MIXED CONTRACT.** Codex remains the primary runtime path; the current working tree also contains an OpenCode runtime used through the B1 participation adapter. Broader provider coverage remains unvalidated. `IAgentRuntime` includes useful connection operations plus optional discovery, status, capability, and transcript surfaces; it is broader than a minimal participation gateway. |
 | `Workbench.App/Services/AppServices` | Composition root | **ACTIVE COEXISTENCE ROOT.** Composes B1 services beside Legacy Leader, Worker, Memory, Library, review, and Runtime services. Composition does not make those worlds semantically equivalent. |
-| `Workbench.App/ViewModels` and `Views` | Presentation/Application | **LEGACY-CENTERED CURRENT UI.** B1 services are composed, but no direct B1 ViewModel or AXAML consumer was observed on the sealed master. Zero-Session Manual continuity is certified at the service boundary, not yet exposed as a designed Manual UI. |
+| `Workbench.App/ViewModels` and `Views` | Presentation/Application | **MIXED CURRENT UI.** The current working tree consumes B1 accepted-state and Library projections, while the full designed B1 Manual/Agent experience remains transitional. Legacy Leader/Worker surfaces continue to coexist. |
 | `Workbench.Core/Leaders`, `Tasks`, `Workers`, `Memory` | Legacy and mixed domain/application-era models | **TRANSITIONAL.** Assembly membership does not promote these types into B1 authority semantics. Useful identity, contract, and provenance fragments coexist with execution-era assumptions. |
 | `Workbench.App/Leader`, `Worker`, `Memory` | Legacy participation, orchestration, compatibility, and delegated leakage | **TRANSITIONAL / MIXED.** Contains valid routing and UI use cases, plus Agent-centric review, rollover, execution, transcript, and compatibility behavior. |
 | `Workbench.Storage/Leaders`, `Tasks`, `Workers`, `Reviews`, most `Memory`, and `Migrations001-019` | Legacy persistence and compatibility history | **READABLE / ACTIVE COMPATIBILITY.** These surfaces are not B1 persistence merely because they share the database or Project IDs. Applied migrations remain history. |
@@ -246,7 +248,7 @@ Assignment + Attempt + LogicalActor
   -> AuthorityDecision, if valid
 ```
 
-The first and last parts exist in B1; Codex execution infrastructure also exists. A provider-neutral B1 Agent participation adapter joining them is an architectural slot, not a feature claimed by this reconciliation.
+The sealed R5-B1 baseline contained the first and last parts plus Codex execution infrastructure, but not the joining adapter. The current working tree now implements `B1AgentParticipationAdapter` and an OpenCode runtime path. The adapter records Attempt, SessionBinding, Claim/Handoff output, and still has no direct AuthorityDecision write path.
 
 ### 6.4 Legacy crossing
 
@@ -314,8 +316,8 @@ The assembly primarily detects, opens, and inspects filesystem/Git projects. It 
 - WorkerExecution and WorkerSessionRouter;
 - review, AutoProceed, and user-gate authority semantics;
 - Legacy Memory, Synthesis, Daily Summary, and Library product surfaces;
-- current UI composition and the absence of a designed B1 Manual/Agent experience;
-- the broad `IAgentRuntime` contract and current Codex-only execution path.
+- current UI composition: B1 Library/accepted-state projections exist, while the full designed B1 Manual/Agent experience remains transitional;
+- the broad `IAgentRuntime` contract and the current Codex-primary/OpenCode-participation execution paths.
 
 “Transitional” does not mean unused, deprecated, or authorized for removal. Prior Call/Data Audit evidence showed that several old structures still carry live recovery, compatibility, and user-data responsibilities.
 

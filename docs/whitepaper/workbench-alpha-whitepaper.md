@@ -5,6 +5,8 @@
 Version `v0.1.0-alpha.20260827`  
 Recorded 2026-08-27
 
+> Historical Alpha whitepaper snapshot. Current implementation status must be read from the canonical repository's [Current Working-Tree Validation](../validation/current-working-tree-20260904.md), not inferred from this dated document.
+
 ## Abstract
 
 AI work often outlives the model, provider, session, and interface that started it. AI Game Workbench explores a small answer to that problem: make the Project World durable, make Agent participation bounded, and keep accepted meaning separate from conversation output.

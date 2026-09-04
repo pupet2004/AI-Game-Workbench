@@ -16,7 +16,9 @@ Codex / OpenCode / other Agents
                    Sources / Evidence
 ```
 
-Current release track: **Alpha** (`v0.1.0-alpha.20260827`). The real WEIQI3 cross-Agent acceptance path has been exercised locally: Leader -> Worker -> Handoff -> Decision -> Agent replacement -> project recovery.
+Current release track: **Alpha** (`v0.1.0-alpha.20260827`, historical release snapshot). The real WEIQI3 cross-Agent acceptance path has been exercised locally through a dedicated gated integration run; the default full-suite test count does not imply live-provider execution.
+
+The canonical source is this repository. See [Canonical Source and Documentation Export Policy](docs/CANONICAL_SOURCE.md) and the [Current Working-Tree Validation](docs/validation/current-working-tree-20260904.md) record for the current local state.
 
 ## Documentation
 
@@ -25,6 +27,7 @@ Current release track: **Alpha** (`v0.1.0-alpha.20260827`). The real WEIQI3 cros
 - [WEIQI3 demo script](docs/demo/weiqi3-cross-agent-demo.md)
 - [Alpha known limitations](docs/alpha-known-limitations.md)
 - [Release record](docs/releases/v0.1.0-alpha.20260827.md)
+- [Current working-tree validation](docs/validation/current-working-tree-20260904.md)
 
 ## Windows Alpha Package
 
@@ -71,5 +74,13 @@ Completed
 M1.5B — Session-Derived Memory Intelligence
 Completed
 
-Current:
-M1.5C — Memory-Aware Leader Boot
+## Current Working-Tree Milestone — 2026-09-04
+
+The current canonical working tree extends the earlier Alpha baseline with:
+
+- provider-neutral B1 Agent participation and an OpenCode participation path;
+- B1 accepted-state and Project Library overview/category/time projections;
+- Worker completion normalization, workspace baseline checks, and completion verification records;
+- single-instance activation coordination and additional navigation/recovery coverage.
+
+These changes are verified locally but remain uncommitted working-tree changes. See [Current Working-Tree Validation](docs/validation/current-working-tree-20260904.md) for the exact test/build result and boundaries.

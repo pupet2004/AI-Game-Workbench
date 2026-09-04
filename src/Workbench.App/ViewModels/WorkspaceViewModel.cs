@@ -8,6 +8,7 @@ using Workbench.Project.Opening;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
+using Workbench.Storage.Workers;
 using Workbench.App.Leader;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
@@ -58,6 +59,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          ProjectSummaryRepository? projectSummaryRepository = null,
          LibraryAcceptedStateReader? acceptedStateReader = null,
          IAgentHost? agentHost = null,
+         WorkerExecutionRepository? workerExecutionRepository = null,
          Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null,
          Func<Task>? openProjectOverview = null)
     {
@@ -116,7 +118,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             responseBinder: responseBinder,
             git: result.Git,
             projectSummaryRepository: projectSummaryRepository,
-            agentHost: agentHost);
+            agentHost: agentHost,
+            workerExecutionRepository: workerExecutionRepository);
     }
 
     public ProjectOpenResult Result { get; }

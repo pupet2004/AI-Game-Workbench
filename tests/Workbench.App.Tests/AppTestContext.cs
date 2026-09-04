@@ -97,7 +97,8 @@ internal sealed class AppTestContext : IAsyncDisposable
             workerRoutingStore: Services.WorkerRoutingStore,
             projectLibraryRepository: Services.ProjectLibraryRepository,
             projectLibraryEvolutionRepository: Services.ProjectLibraryEvolutionRepository,
-            projectMemoryApi: Services.ProjectMemoryApi);
+            projectMemoryApi: Services.ProjectMemoryApi,
+            workerExecutionRepository: Services.WorkerExecutionRepository);
 
     public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
     {

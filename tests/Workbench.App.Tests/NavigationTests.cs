@@ -94,8 +94,14 @@ public sealed class NavigationTests
         Assert.Equal(2, runtime.CreatedSessions.Count);
         Assert.Equal("model-a", runtime.CreatedSessions.Last().ModelId);
         var workerRequest = Assert.Single(runtime.SentRequests,
-            request => request.Text.StartsWith("Read the smoke context file", StringComparison.Ordinal));
+            request => request.Text.StartsWith("WORKBENCH WORKER TASK CONTRACT", StringComparison.Ordinal));
         Assert.Contains("# Workbench Worker", workerRequest.Text, StringComparison.Ordinal);
+        Assert.Contains("TASK GOAL", workerRequest.Text, StringComparison.Ordinal);
+        Assert.Contains("Read the smoke context file", workerRequest.Text, StringComparison.Ordinal);
+        Assert.Contains("IN SCOPE", workerRequest.Text, StringComparison.Ordinal);
+        Assert.Contains("OUT OF SCOPE", workerRequest.Text, StringComparison.Ordinal);
+        Assert.Contains("ACCEPTANCE CRITERIA", workerRequest.Text, StringComparison.Ordinal);
+        Assert.Contains("already confirmed and started this Worker", workerRequest.Text, StringComparison.Ordinal);
         var sessions = await context.Services.WorkerRoutingStore.ListSessionsAsync(workspace.Result.Project.Id);
         var session = Assert.Single(sessions);
         Assert.Equal("model-a", session.Profile.ModelProfileId);

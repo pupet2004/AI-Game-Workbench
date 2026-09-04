@@ -31,7 +31,7 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
         ResponsibilityObligation = LocalizationService.Current["ProjectSetup.DefaultResponsibility"];
         ResponsibilityExpectedOutcome = LocalizationService.Current["ProjectSetup.DefaultExpected"];
         InitialAssignment = LocalizationService.Current["ProjectSetup.DefaultAssignment"];
-        IsGovernanceEstablished = status.Kind == ProjectWorldEntryKind.ProjectWorldReady;
+        IsGovernanceEstablished = status.Kind is ProjectWorldEntryKind.ProjectWorldReady or ProjectWorldEntryKind.ProjectWorldSetupIncomplete;
     }
 
     public ProjectWorldEntryStatus Status { get; }

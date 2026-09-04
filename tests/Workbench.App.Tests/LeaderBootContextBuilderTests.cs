@@ -40,6 +40,28 @@ public sealed class LeaderBootContextBuilderTests
             Assert.Contains("ordinary turns", text, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+    [Fact]
+    public void Accepted_project_state_material_is_first_and_keeps_authority_provenance()
+    {
+        var material = new ResolvedContinuityMaterial(
+            ContinuityMaterialKind.AcceptedProjectState,
+            "accepted-state:10000000-0000-4000-8000-000000000001",
+            "Accepted Project State",
+            "CURRENT AUTHORITY STATE (USER-ACCEPTED)\n- Current Mode = STRICT\n  AuthorityDecision: decision-1\n  AcceptedContribution: contribution-1\n  Claim: claim-1",
+            180);
+
+        var request = LeaderBootContextBuilder.BuildSelected(Project,
+            [material, new(ContinuityMaterialKind.DailySummary, "daily:2026-08-14", "Summary", "Current Mode = RELAXED", 23)],
+            "answer");
+        var text = NormalizeNewlines(request.Text);
+
+        AssertOrder(text, "CURRENT AUTHORITY STATE (USER-ACCEPTED)", "Current Mode = RELAXED");
+        Assert.Contains("AuthorityDecision: decision-1", text, StringComparison.Ordinal);
+        Assert.Contains("AcceptedContribution: contribution-1", text, StringComparison.Ordinal);
+        Assert.Contains("Claim: claim-1", text, StringComparison.Ordinal);
+        Assert.Contains("Accepted Project State", text, StringComparison.Ordinal);
+    }
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-08-13T00:00:00+00:00");
     private static readonly CoreProject Project = new(
         Guid.Parse("10000000-0000-4000-8000-000000000001"),

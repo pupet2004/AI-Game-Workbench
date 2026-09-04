@@ -58,6 +58,26 @@ public sealed class LeaderPaneViewTests
     }
 
     [Fact]
+    public void Native_surface_reinitializes_webview_on_visual_tree_reattach()
+    {
+        var codeBehind = ReadLeaderSurfaceCodeBehind();
+
+        Assert.Contains("OnAttachedToVisualTree", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("_ready = false", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("_surface.NavigateToString(LoadSurfaceHtml()", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Subscribe(DataContext as LeaderPaneViewModel)", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Native_surface_detach_does_not_dispose_or_replace_leader_session()
+    {
+        var codeBehind = ReadLeaderSurfaceCodeBehind();
+
+        Assert.Contains("_ready = false", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("new AgentSession", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Leader_conversation_is_scrollable_and_input_stays_in_bottom_row()
     {
         var markup = ReadLeaderView();

@@ -58,6 +58,31 @@ public sealed class AgentHostTests
     }
 
     [Fact]
+    public async Task Hosted_transport_failure_emits_failed_terminal_event_before_rethrowing()
+    {
+        var runtime = new FakeAgentRuntime { SendException = new InvalidOperationException("stream disconnected") };
+        var session = await runtime.CreateSessionAsync(new CreateAgentSessionRequest(runtime.Account.Id, "model-a", "C:/Project"));
+        var host = new InProcessAgentHost(Registry(runtime));
+        var received = new List<HostedAgentEvent>();
+        host.EventReceived += (_, item) => received.Add(item);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var _ in host.RunTurnAsync(
+                               session,
+                               new HostedAgentIntent(AgentIntentSource.Leader, "continue")))
+            {
+            }
+        });
+
+        var failed = Assert.Single(received, item => item.Event is AgentTurnCompleted);
+        var completion = Assert.IsType<AgentTurnCompleted>(failed.Event);
+        Assert.Equal(AgentSessionStatus.Failed, completion.Result.FinalStatus);
+        Assert.Contains("stream disconnected", completion.Result.Error, StringComparison.Ordinal);
+        Assert.False(host.Attach(session).HasActiveTurn);
+    }
+
+    [Fact]
     public async Task Persisted_running_session_without_an_active_turn_uses_runtime_status()
     {
         var runtime = new FakeAgentRuntime { StatusOverride = AgentSessionStatus.Ready };

@@ -10,6 +10,8 @@
 
 **Spec:** `docs/architecture/workbench-alpha-architecture.md`
 
+Status: **Partial implementation present in the current working tree.** Worker completion normalization, completion verification, workspace baseline persistence, and focused tests are present. Real Codex approval-route verification, live database recheck, artifact classification, and commit/release preservation remain pending; unchecked tasks below are intentionally retained as the outstanding checklist.
+
 ## Global Constraints
 
 - Preserve `Claim != Decision != Accepted State`.

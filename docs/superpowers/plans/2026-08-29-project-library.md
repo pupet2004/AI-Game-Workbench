@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-29-project-library-design.md`
 
+Status: **Implementation tasks complete in the current working tree; Native Surface restart remains an operational follow-up.**
+
 ## Global Constraints
 
 - Do not add database tables or change authority semantics.

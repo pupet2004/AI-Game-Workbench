@@ -527,8 +527,17 @@ public sealed class CodexAgentRuntime : IAgentRuntime, IAsyncDisposable
         string activeTurnId,
         CodexServerRequest request)
     {
-        if (!IsSupportedApprovalMethod(request.Method) ||
-            !request.Params.TryGetProperty("turnId", out var turnId) ||
+        if (!IsSupportedApprovalMethod(request.Method))
+        {
+            return null;
+        }
+
+        // Codex app-server normally includes turnId, but a request emitted
+        // while the response stream is recovering may omit it. The request
+        // has already been filtered by threadId and this session has one
+        // active turn, so only reject an explicitly different turn.
+        if (request.Params.TryGetProperty("turnId", out var turnId) &&
+            turnId.ValueKind == JsonValueKind.String &&
             !string.Equals(turnId.GetString(), activeTurnId, StringComparison.Ordinal))
         {
             return null;

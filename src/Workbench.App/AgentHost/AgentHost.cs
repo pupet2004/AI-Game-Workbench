@@ -160,20 +160,51 @@ public sealed class InProcessAgentHost(AgentRuntimeRegistry runtimes) : IAgentHo
         hosted.IsTurnActive = true;
         var recordedIntent = hosted.RecordIntent(intent);
         IntentReceived?.Invoke(this, new HostedAgentIntentReceived(session.Id, recordedIntent));
+        var terminalEventPublished = false;
         try
         {
             var runtime = _runtimes.GetByAccount(session.AccountId);
-            await foreach (var agentEvent in runtime.SendAsync(
-                               session,
-                               CreateRequest(intent),
-                               cancellationToken).ConfigureAwait(false))
+            await using var runtimeEvents = runtime.SendAsync(
+                session,
+                CreateRequest(intent),
+                cancellationToken).GetAsyncEnumerator(cancellationToken);
+            while (true)
             {
+                bool hasNext;
+                try
+                {
+                    hasNext = await runtimeEvents.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (!terminalEventPublished)
+                {
+                    // Provider transports can fail before sending
+                    // turn/completed. A hosted surface must still leave
+                    // Working immediately instead of waiting forever for an
+                    // event that will never arrive.
+                    var failed = new AgentTurnCompleted(
+                        new AgentResult(session.Id, AgentSessionStatus.Failed, null, exception.Message),
+                        DateTimeOffset.UtcNow);
+                    hosted.RecordEvent(failed);
+                    EventReceived?.Invoke(this, new HostedAgentEvent(session.Id, failed));
+                    throw;
+                }
+
+                if (!hasNext)
+                    break;
+
+                var agentEvent = runtimeEvents.Current;
+                terminalEventPublished |= agentEvent is AgentTurnCompleted;
                 hosted.RecordEvent(agentEvent);
                 EventReceived?.Invoke(this, new HostedAgentEvent(session.Id, agentEvent));
                 foreach (var progress in hosted.ExtractProgress(agentEvent))
                 {
                     hosted.RecordEvent(progress);
                     EventReceived?.Invoke(this, new HostedAgentEvent(session.Id, progress));
+                    yield return progress;
                 }
                 yield return agentEvent;
             }
@@ -337,6 +368,8 @@ public sealed class InProcessAgentHost(AgentRuntimeRegistry runtimes) : IAgentHo
                 Session = agentEvent switch
                 {
                     AgentStatusChanged status => Session with { Status = status.Status, UpdatedAt = status.OccurredAt },
+                    AgentApprovalRequested approval => Session with { Status = AgentSessionStatus.WaitingApproval, UpdatedAt = approval.OccurredAt },
+                    AgentQuestionRequested question => Session with { Status = AgentSessionStatus.WaitingApproval, UpdatedAt = question.OccurredAt },
                     AgentTurnCompleted completed => Session with { Status = completed.Result.FinalStatus, UpdatedAt = completed.OccurredAt },
                     _ => Session
                 };
@@ -356,27 +389,12 @@ public sealed class InProcessAgentHost(AgentRuntimeRegistry runtimes) : IAgentHo
             lock (_sync)
             {
                 _progressBuffer.Append(delta.Text);
-                var text = _progressBuffer.ToString();
                 var results = new List<AgentProgressChanged>();
-                var searchStart = 0;
-                while (true)
-                {
-                    var start = text.IndexOf(AgentProgressProtocol.StepCompletedMarker, searchStart, StringComparison.OrdinalIgnoreCase);
-                    if (start < 0) break;
-                    var end = text.IndexOf('\n', start);
-                    if (end < 0) break;
-                    if (AgentProgressProtocol.TryParseStepCompletedLine(text[start..end], out var completed))
-                        results.Add(new AgentProgressChanged(completed, delta.OccurredAt));
-                    searchStart = end + 1;
-                }
+                while (AgentProgressProtocol.TryConsumeNextMarker(_progressBuffer, out var completed))
+                    results.Add(new AgentProgressChanged(completed, delta.OccurredAt));
 
-                if (text.Length > 1024)
+                if (_progressBuffer.Length > 1024)
                     _progressBuffer.Clear();
-                else if (searchStart > 0)
-                {
-                    _progressBuffer.Clear();
-                    _progressBuffer.Append(text[searchStart..]);
-                }
                 return results;
             }
         }

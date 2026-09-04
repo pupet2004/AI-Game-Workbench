@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
+using Workbench.App.Continuity;
+using Workbench.Core.Continuity;
 
 namespace Workbench.App.Memory;
 
@@ -9,7 +11,8 @@ public sealed class ProjectContinuityMaterialService(
     IProjectMemoryApi memory,
     LeaderSessionEpochRepository epochs,
     LeaderMessageRepository messages,
-    ProjectLibraryEvolutionRepository library)
+    ProjectLibraryEvolutionRepository library,
+    B1ProjectionService? b1Projections = null)
 {
     public async Task<ContinuityMaterialCatalog> ListAsync(
         Guid projectId,
@@ -23,6 +26,29 @@ public sealed class ProjectContinuityMaterialService(
         }
 
         var materials = new List<ContinuityMaterialDescriptor>();
+        AcceptedProjectState? accepted = null;
+        if (b1Projections is not null)
+        {
+            try
+            {
+                accepted = await b1Projections.GetAcceptedProjectStateAsync(new ProjectRef(projectId), cancellationToken);
+            }
+            catch (InvalidDataException)
+            {
+                // Projects without a B1 governance root retain legacy continuity behavior.
+            }
+        }
+        if (accepted?.CurrentContributions.Count > 0)
+        {
+            var content = FormatAcceptedState(accepted);
+            materials.Add(new(
+                $"accepted-state:{projectId}",
+                ContinuityMaterialKind.AcceptedProjectState,
+                projectId,
+                "Accepted Project State",
+                null,
+                Encoding.UTF8.GetByteCount(content)));
+        }
         foreach (var daily in await memory.ListDailySummaryMetadataAsync(projectId, cancellationToken: cancellationToken))
         {
             materials.Add(new(
@@ -134,6 +160,15 @@ public sealed class ProjectContinuityMaterialService(
                 Encoding.UTF8.GetByteCount(libraryObject.CurrentOverview));
         }
 
+        if (selection.Kind == ContinuityMaterialKind.AcceptedProjectState &&
+            selection.Reference == $"accepted-state:{projectId}")
+        {
+            if (b1Projections is null) throw new InvalidOperationException();
+            var accepted = await b1Projections.GetAcceptedProjectStateAsync(new ProjectRef(projectId), cancellationToken);
+            var content = FormatAcceptedState(accepted);
+            return CreateAcceptedStateMaterial(projectId, selection.Reference, accepted, content);
+        }
+
         if (selection.Kind == ContinuityMaterialKind.LibraryTimelineNode &&
             selection.Reference.StartsWith("library-timeline:", StringComparison.Ordinal) &&
             Guid.TryParse(selection.Reference[17..], out var nodeId))
@@ -242,5 +277,38 @@ public sealed class ProjectContinuityMaterialService(
             }
         }
         return builder.ToString();
+    }
+
+    internal static string FormatAcceptedState(AcceptedProjectState state)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("CURRENT AUTHORITY STATE (USER-ACCEPTED)");
+        builder.AppendLine($"ProjectId: {state.ProjectRef.Value}");
+        foreach (var contribution in state.CurrentContributions)
+        {
+            builder.Append("- ").AppendLine(contribution.Statement);
+            builder.Append("  AuthorityDecision: ").AppendLine(contribution.AuthorityDecisionRef.Value.ToString());
+            builder.Append("  AcceptedContribution: ").AppendLine(contribution.ContributionRef.Value.ToString());
+            builder.Append("  Claim: ").AppendLine(contribution.SourceClaimRef?.Value.ToString() ?? "none");
+        }
+        return builder.ToString().TrimEnd();
+    }
+
+    internal static ResolvedContinuityMaterial CreateAcceptedStateMaterial(
+        Guid projectId,
+        string reference,
+        AcceptedProjectState state,
+        string? content = null)
+    {
+        var resolvedContent = content ?? FormatAcceptedState(state);
+        return new(
+            ContinuityMaterialKind.AcceptedProjectState,
+            reference,
+            "Accepted Project State",
+            resolvedContent,
+            Encoding.UTF8.GetByteCount(resolvedContent),
+            projectId,
+            state.CurrentContributions.Select(item => item.AuthorityDecisionRef).Distinct().ToArray(),
+            state.CurrentContributions.Select(item => item.ContributionRef).ToArray());
     }
 }

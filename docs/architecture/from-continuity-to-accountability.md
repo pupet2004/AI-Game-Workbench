@@ -4,7 +4,7 @@ Status: **Non-normative research horizon**
 
 Recorded: **2026-08-23**
 
-Implementation status: **No implementation, roadmap, schema, migration, or product commitment is authorized by this document.**
+Implementation status: **Historical research-horizon note. No accountability-platform implementation, roadmap, schema, migration, or product commitment is authorized by this document.** Current continuity implementation status is tracked in [Current Working-Tree Validation](../validation/current-working-tree-20260904.md).
 
 ## 1. Purpose
 
@@ -27,7 +27,7 @@ The discussion must remain split into three horizons so that future possibilitie
 | Horizon | Meaning | Commitment level |
 |---|---|---|
 | Implemented foundation | Sealed R5-B1 governance, attribution, persistence, and recovery semantics that exist on `master`. | Implemented and governed by the sealed R5-B1 documents. |
-| Product target | The lightweight Leader/Worker continuity experience currently being explored: bounded Agent participation, low-token recovery, typed handoffs, source-preserving Summary and Library navigation. | Product direction only; requires separate written design and approval before implementation. |
+| Product target | The lightweight Leader/Worker continuity experience explored by this note; portions of bounded Agent participation and source-preserving Library navigation now exist in the current working tree. | This note remains non-normative; current implementation claims must come from the canonical repository's validation record. |
 | Accountability research horizon | Stronger auditability, integrity, dependency, invalidation, recoverability, and organizational responsibility models. | Research questions only; no implementation is implied. |
 
 An idea appearing in the third horizon does not become a Workbench feature requirement. It must later prove that it solves a real continuity or recovery problem without turning Workbench into a governance platform.

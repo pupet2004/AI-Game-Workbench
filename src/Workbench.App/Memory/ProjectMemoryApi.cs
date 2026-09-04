@@ -1,4 +1,6 @@
 using Workbench.Core.Memory;
+using Workbench.Core.Continuity;
+using Workbench.App.Continuity;
 using Workbench.Storage.Memory;
 using Workbench.Storage.Settings;
 using Workbench.Storage.Leaders;
@@ -10,7 +12,9 @@ public sealed class ProjectMemoryApi : IProjectMemoryApi
     private readonly DailySummaryRepository _dailySummaries;
     private readonly ProjectMemoryPreferencesRepository _preferences;
     private readonly LeaderSessionEpochRepository _epochs; private readonly LeaderMessageRepository _messages; private readonly ProjectContinuityMaterialService _continuity; private readonly ProjectLibraryProposalService _libraryProposals;
-    public ProjectMemoryApi(DailySummaryRepository dailySummaries, ProjectMemoryPreferencesRepository preferences, LeaderSessionEpochRepository epochs, LeaderMessageRepository messages, ProjectLibraryProposalService libraryProposals, ProjectLibraryEvolutionRepository library) { _dailySummaries = dailySummaries; _preferences = preferences; _epochs = epochs; _messages = messages; _libraryProposals = libraryProposals; _continuity = new ProjectContinuityMaterialService(this, epochs, messages, library); }
+    private readonly B1ProjectionService? _b1Projections;
+    public ProjectMemoryApi(DailySummaryRepository dailySummaries, ProjectMemoryPreferencesRepository preferences, LeaderSessionEpochRepository epochs, LeaderMessageRepository messages, ProjectLibraryProposalService libraryProposals, ProjectLibraryEvolutionRepository library, B1ProjectionService? b1Projections = null) { _dailySummaries = dailySummaries; _preferences = preferences; _epochs = epochs; _messages = messages; _libraryProposals = libraryProposals; _b1Projections = b1Projections; _continuity = new ProjectContinuityMaterialService(this, epochs, messages, library, _b1Projections); }
+    public Task<AcceptedProjectState> GetAcceptedProjectStateAsync(Guid projectId, CancellationToken cancellationToken = default) => _b1Projections is null ? throw new InvalidOperationException("Accepted Project State is unavailable.") : _b1Projections.GetAcceptedProjectStateAsync(new ProjectRef(projectId), cancellationToken);
     public Task<DailySummaryDocument?> GetDailySummaryAsync(Guid projectId, DateOnly localDate, CancellationToken cancellationToken = default) => _dailySummaries.GetAsync(projectId, localDate, cancellationToken);
     public Task<DailySummaryDocument> UpsertDailySummaryAsync(DailySummaryWrite write, DateTimeOffset savedAt, CancellationToken cancellationToken = default) => _dailySummaries.SaveAsync(write, savedAt, cancellationToken);
     public Task<IReadOnlyList<DailySummaryMetadata>> ListDailySummaryMetadataAsync(Guid projectId, DateOnly? from = null, DateOnly? through = null, CancellationToken cancellationToken = default) => _dailySummaries.ListMetadataAsync(projectId, from, through, cancellationToken);

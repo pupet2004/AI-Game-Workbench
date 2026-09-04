@@ -1,5 +1,6 @@
 using System.Text;
 using Workbench.Runtime.Agents;
+using Workbench.Core.Continuity;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
 using Workbench.App.Memory;
@@ -56,7 +57,7 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
             var current = await _epochs.GetCurrentForProjectAsync(project.Id, cancellationToken);
             var plan = current is null ? null : await _continuityPlans!.GetAsync(project.Id, current.Id, cancellationToken);
             var resolved = plan is null
-                ? new ResolvedContinuityBundle(project.Id, [], 0, [])
+                ? await BuildInitialAcceptedStateBundleAsync(project.Id, cancellationToken)
                 : await _memoryApi.ResolveContinuityAsync(project.Id, plan, cancellationToken);
             return BuildSelected(project, resolved.Materials, originalUserText);
         }
@@ -65,6 +66,33 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
         var learned = await _memories.GetAsync(project.Id, "Learned", "Active", cancellationToken);
         var predecessor = await _epochs.GetMostRecentArchivedForProjectAsync(project.Id, cancellationToken);
         return Build(project, formal, learned, predecessor?.HandoffSummary, originalUserText);
+    }
+
+    private async Task<ResolvedContinuityBundle> BuildInitialAcceptedStateBundleAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        AcceptedProjectState accepted;
+        try
+        {
+            accepted = await _memoryApi!.GetAcceptedProjectStateAsync(projectId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            // Legacy/unmanaged projects may not have a B1 governance root yet.
+            return new ResolvedContinuityBundle(projectId, [], 0, []);
+        }
+        if (accepted.CurrentContributions.Count == 0)
+        {
+            return new ResolvedContinuityBundle(projectId, [], 0, []);
+        }
+
+        var content = ProjectContinuityMaterialService.FormatAcceptedState(accepted);
+        return new ResolvedContinuityBundle(projectId,
+            [ProjectContinuityMaterialService.CreateAcceptedStateMaterial(
+                projectId,
+                $"accepted-state:{projectId}",
+                accepted,
+                content)],
+            Encoding.UTF8.GetByteCount(content), []);
     }
 
     internal static AgentRequest BuildSelected(
@@ -83,9 +111,21 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
         {
             builder.AppendLine();
             builder.AppendLine("SELECTED CONTINUITY MATERIALS");
-            foreach (var material in materials)
+            foreach (var material in materials.OrderBy(item => item.Kind == ContinuityMaterialKind.AcceptedProjectState ? 0 : 1))
             {
                 builder.AppendLine($"{material.Kind}: {material.Label}");
+                if (material.ProjectId is { } projectId)
+                {
+                    builder.AppendLine($"ProjectId: {projectId}");
+                }
+                if (material.AuthorityDecisionRefs is { Count: > 0 } decisions)
+                {
+                    builder.AppendLine($"AuthorityDecision provenance: {string.Join(", ", decisions.Select(item => item.Value))}");
+                }
+                if (material.AcceptedContributionRefs is { Count: > 0 } contributions)
+                {
+                    builder.AppendLine($"AcceptedContribution provenance: {string.Join(", ", contributions.Select(item => item.Value))}");
+                }
                 builder.AppendLine(material.Content);
             }
         }

@@ -366,6 +366,58 @@ public sealed class WorkPaneViewModelTests
     }
 
     [Fact]
+    public void Worker_progress_is_incremental_and_terminal_status_does_not_complete_unreported_steps()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", "C:/Project", "thread-progress", AgentSessionStatus.Completed, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Progress task", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(record, ["one", "two", "three"]);
+
+        Assert.Equal("0/3", card.ProgressText);
+        card.ApplyProgress(1);
+        Assert.Equal("1/3", card.ProgressText);
+        Assert.Equal("✓", card.PlanSteps[0].Marker);
+        Assert.Equal("●", card.PlanSteps[1].Marker);
+    }
+
+    [Fact]
+    public void Explicit_completion_markers_advance_a_native_provider_plan()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", "C:/Project", "thread-progress", AgentSessionStatus.Running, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Progress task", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(record, ["one", "two", "three"]);
+
+        card.ApplyPlanUpdate([
+            new AgentPlanStep("step-1", "one", AgentPlanStepStatus.InProgress),
+            new AgentPlanStep("step-2", "two", AgentPlanStepStatus.Pending),
+            new AgentPlanStep("step-3", "three", AgentPlanStepStatus.Pending)]);
+        card.ApplyProgress(1);
+
+        Assert.Equal("1/3", card.ProgressText);
+        Assert.Equal("✓", card.PlanSteps[0].Marker);
+        Assert.Equal("●", card.PlanSteps[1].Marker);
+        Assert.Equal("○", card.PlanSteps[2].Marker);
+    }
+
+    [Fact]
+    public void Worker_progress_snapshot_restores_completed_steps()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(AgentSessionId.New(), runtime.Account.Id, runtime.Provider.Id, "model-a", "C:/Project", "thread-progress", AgentSessionStatus.Running, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var record = new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Progress task", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(record, ["one", "two"]);
+        card.ApplyProgress(1);
+        var restored = new WorkerSessionCardViewModel(record, ["one", "two"]);
+
+        restored.ApplyProgressSnapshot(card.CreateProgressSnapshot().Steps);
+
+        Assert.Equal("1/2", restored.ProgressText);
+        Assert.Equal("✓", restored.PlanSteps[0].Marker);
+        Assert.Equal("●", restored.PlanSteps[1].Marker);
+    }
+
+    [Fact]
     public async Task User_can_mark_a_worker_completed_without_deleting_its_session_record()
     {
         var runtime = new FakeAgentRuntime();

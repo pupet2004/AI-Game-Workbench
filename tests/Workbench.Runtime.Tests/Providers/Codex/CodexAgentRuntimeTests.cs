@@ -137,6 +137,24 @@ public sealed class CodexAgentRuntimeTests
     }
 
     [Fact]
+    public async Task Approval_without_turn_id_is_still_routed_to_the_active_thread()
+    {
+        var (runtime, transport) = await CreateInitializedRuntimeAsync();
+        await using var disposableRuntime = runtime;
+        var session = CreateSession(runtime.Account.Id, "thread-42", "C:/Projects/Game");
+        await using var enumerator = runtime.SendAsync(session, new AgentRequest("safe prompt")).GetAsyncEnumerator();
+        var moveNext = enumerator.MoveNextAsync().AsTask();
+        var turnStart = JsonDocument.Parse(await transport.ReadClientLineAsync()).RootElement;
+        await RespondAsync(transport, turnStart, new { turn = new { id = "turn-7", items = Array.Empty<object>(), status = "inProgress" } });
+
+        await transport.SendServerLineAsync("""{"id":905,"method":"item/commandExecution/requestApproval","params":{"threadId":"thread-42","itemId":"item-1","reason":"Run the requested command?"}}""");
+
+        Assert.True(await moveNext);
+        var approval = Assert.IsType<AgentApprovalRequested>(enumerator.Current);
+        Assert.Equal(session.Id, approval.SessionId);
+    }
+
+    [Fact]
     public async Task Approval_decision_writes_correct_codex_response_and_cleans_pending_request()
     {
         var (runtime, transport) = await CreateInitializedRuntimeAsync();

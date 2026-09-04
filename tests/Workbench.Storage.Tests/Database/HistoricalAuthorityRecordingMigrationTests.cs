@@ -14,7 +14,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(25L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(26L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
 
         var columns = await ColumnsAsync(connection, "task_review_decisions");
         Assert.Contains(columns, column => column.Name == "authority_mode" && !column.NotNull);
@@ -42,7 +42,7 @@ public sealed class HistoricalAuthorityRecordingMigrationTests
 
         await using var verified = database.CreateConnection();
         await verified.OpenAsync();
-        Assert.Equal(25L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
+        Assert.Equal(26L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
         Assert.Equal(gateSql, await ScalarAsync<string>(verified, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_review_user_gates';"));
         Assert.Equal(0L, await ScalarAsync<long>(verified, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }

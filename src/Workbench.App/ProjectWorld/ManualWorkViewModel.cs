@@ -172,7 +172,7 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
             var projection = B1Projector.Build(state);
             var attempt = projection.EffectiveCurrentAttemptRefs[_assignmentRef] ??
                 throw new B1CommandException(B1FailureCode.InvalidReference, LocalizationService.Current["Dynamic.AttemptMissing"]);
-            await _services.GuidedHandoffComposer.RecordAsync(
+            var handoff = await _services.GuidedHandoffComposer.RecordAsync(
                 attempt,
                 _assignmentRef,
                 new GuidedHandoffRequest(
@@ -184,8 +184,11 @@ public sealed partial class ManualWorkViewModel : ViewModelBase
                     SplitLines(ProposedChangesText),
                     string.IsNullOrWhiteSpace(ProposedAssignmentRevision) ? null : ProposedAssignmentRevision,
                     SplitLines(EvidenceReferencesText)));
+            _currentHandoffRef = handoff.HandoffRef;
+            HasHandoff = true;
+            HandoffText = $"{LocalizationService.Current["Dynamic.CurrentHandoff"]} {handoff.HandoffRef}";
             IsHandoffComposerVisible = false;
-            HandoffStatusMessage = "Handoff recorded and selected as the current continuation. The project state is unchanged until a decision is recorded.";
+            HandoffStatusMessage = LocalizationService.Current["Dynamic.HandoffRecorded"];
             PrimaryResult = string.Empty;
             ValidationsText = string.Empty;
             UnresolvedIssuesText = string.Empty;

@@ -8,6 +8,26 @@ using Workbench.App.Tests.Support;
 public sealed class MainWindowViewTests
 {
     [Fact]
+    public async Task Reopening_a_governance_only_project_enters_resumable_setup()
+    {
+        using var folder = new TemporaryDirectory("incomplete-project-route");
+        await using var context = await AppTestContext.CreateAsync();
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var projectRef = new Workbench.Core.Continuity.ProjectRef(opened.Project.Id);
+        await context.Services.B1ProjectGovernance.CreateGovernedProjectForExistingProjectAsync(
+            projectRef, context.Services.UserPrincipalProvider.GetCurrent());
+        var main = context.CreateMain();
+
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+
+        var setup = Assert.IsType<ProjectWorldSetupViewModel>(main.CurrentPage);
+        Assert.True(setup.IsGovernanceEstablished);
+        Assert.Equal(ProjectWorldEntryKind.ProjectWorldSetupIncomplete, setup.Status.Kind);
+        Assert.False(setup.CanEstablishGovernance);
+    }
+
+    [Fact]
     public async Task Creating_a_new_local_project_enters_project_setup()
     {
         using var folder = new TemporaryDirectory("new-project-route");

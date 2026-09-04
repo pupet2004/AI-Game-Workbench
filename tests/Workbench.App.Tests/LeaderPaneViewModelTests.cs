@@ -3,6 +3,7 @@ using Workbench.App.AgentHost;
 using Workbench.App.Leader;
 using Workbench.App.ViewModels.Leader;
 using Workbench.App.ViewModels.Panes;
+using Workbench.App.Services;
 using Workbench.Core.Projects;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Providers;
@@ -58,6 +59,26 @@ public sealed class LeaderPaneViewModelTests
     }
 
     [Fact]
+    public async Task Sending_without_a_model_is_visible_and_writes_no_session()
+    {
+        var runtime = new FakeAgentRuntime(models:
+        [
+            new ModelProfile(new ProviderId("fake-provider"), "model-a", "Model A", AgentCapability.StructuredEvents),
+            new ModelProfile(new ProviderId("fake-provider"), "model-b", "Model B", AgentCapability.StructuredEvents)
+        ]);
+        var pane = CreatePane(CreateProject(), CreateRegistry(runtime), new ProjectLeaderSessionManager());
+
+        await pane.InitializeAsync();
+        pane.DraftMessage = "must not send";
+        await pane.SendAsync();
+
+        Assert.Null(pane.Session);
+        Assert.Null(pane.SessionEpochId);
+        Assert.Empty(runtime.CreateRequests);
+        Assert.Contains(pane.Messages, message => message.Role == LeaderMessageRole.Error && message.Text.Contains("Leader", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Single_available_model_can_be_selected_automatically()
     {
         var (pane, _, _) = CreatePane();
@@ -75,7 +96,7 @@ public sealed class LeaderPaneViewModelTests
         await pane.InitializeAsync();
 
         Assert.False(pane.IsRuntimeAvailable);
-        Assert.Equal("Leader unavailable", pane.RuntimeStatus);
+        Assert.Equal(LocalizationService.Current["Dynamic.LeaderUnavailable"], pane.RuntimeStatus);
         Assert.True(pane.CanRetryRuntime);
     }
 
@@ -299,7 +320,7 @@ public sealed class LeaderPaneViewModelTests
         Assert.False(pane.IsBusy);
         Assert.Contains(pane.Messages, message =>
             message.Role == LeaderMessageRole.Error &&
-            message.Text.Contains("without completion", StringComparison.OrdinalIgnoreCase));
+            message.Text == LocalizationService.Current["Dynamic.LeaderTurnIncomplete"]);
     }
 
     [Fact]

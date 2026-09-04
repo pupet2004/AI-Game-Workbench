@@ -54,6 +54,9 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
             var plan = await LoadPlanAsync(item, cancellationToken);
             var card = new WorkerSessionCardViewModel(item, plan,
                 compact: item.Session.Status == AgentSessionStatus.Completed && sessions.Count > 3);
+            var persistedProgress = await _store.GetProgressAsync(item.ProjectId, item.TaskId, item.Session.Id, cancellationToken);
+            if (persistedProgress is not null)
+                card.ApplyProgressSnapshot(persistedProgress.Steps);
             ApplyHostedProgress(card);
             var lease = await _store.GetActiveSurfaceLeaseAsync(item.ProjectId, item.TaskId, item.Session.Id, cancellationToken);
             if (lease is not null)
@@ -133,10 +136,14 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
                 worker.UpdateSession(snapshot.Session);
             var completedActivities = snapshot.Events.OfType<AgentToolEvent>().Count(item => item.IsCompleted);
             var completedSteps = snapshot.Events.OfType<AgentProgressChanged>().Select(item => item.CompletedSteps).DefaultIfEmpty(0).Max();
+            var finalTextSteps = snapshot.Events.OfType<AgentTurnCompleted>()
+                .SelectMany(item => AgentProgressProtocol.ExtractCompletedSteps(item.Result.FinalText))
+                .DefaultIfEmpty(0)
+                .Max();
             var latestPlan = snapshot.Events.OfType<AgentPlanUpdated>().LastOrDefault();
             if (latestPlan is not null)
                 worker.ApplyPlanUpdate(latestPlan.Steps);
-            worker.ApplyProgress(Math.Max(completedActivities, completedSteps), snapshot.Session.Status == AgentSessionStatus.Completed);
+            worker.ApplyProgress(Math.Max(completedActivities, Math.Max(completedSteps, finalTextSteps)));
         }
         catch
         {
@@ -158,19 +165,21 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
                     {
                         case AgentProgressChanged progress:
                             worker.ApplyProgress(progress.CompletedSteps);
+                            _ = PersistProgressAsync(worker);
                             break;
                         case AgentPlanUpdated plan:
                             worker.ApplyPlanUpdate(plan.Steps);
+                            _ = PersistProgressAsync(worker);
                             break;
                         case AgentTurnCompleted completed:
                             worker.UpdateSession(worker.Session with { Status = completed.Result.FinalStatus, UpdatedAt = completed.OccurredAt });
-                            worker.ApplyProgress(worker.PlanSteps.Count, terminalCompleted: completed.Result.FinalStatus == AgentSessionStatus.Completed);
+                            var finalTextSteps = AgentProgressProtocol.ExtractCompletedSteps(completed.Result.FinalText);
+                            if (finalTextSteps.Count > 0)
+                                worker.ApplyProgress(finalTextSteps.Max());
                             OnPropertyChanged(nameof(SelectedWorker));
                             break;
                         case AgentStatusChanged status:
                             worker.UpdateSession(worker.Session with { Status = status.Status, UpdatedAt = status.OccurredAt });
-                            if (status.Status == AgentSessionStatus.Completed)
-                                worker.ApplyProgress(worker.PlanSteps.Count, terminalCompleted: true);
                             OnPropertyChanged(nameof(SelectedWorker));
                             break;
                     }
@@ -185,6 +194,19 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
     {
         if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess()) action();
         else Avalonia.Threading.Dispatcher.UIThread.Post(action);
+    }
+
+    private async Task PersistProgressAsync(WorkerSessionCardViewModel worker)
+    {
+        if (_store is null) return;
+        try
+        {
+            await _store.AppendProgressAsync(worker.CreateProgressSnapshot());
+        }
+        catch
+        {
+            // Progress persistence is advisory and must not interrupt the Worker surface.
+        }
     }
 
     private async Task<WorkerSessionRecord> ReconcileStatusAsync(WorkerSessionRecord worker, CancellationToken cancellationToken)
@@ -321,12 +343,17 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(worker);
         OpenError = null;
-        var record = await ReconcileStatusAsync(worker.Record, cancellationToken);
+
+        // Opening a hosted Worker is a surface action. Do not wait for a
+        // potentially slow provider reconciliation before re-attaching the
+        // already-existing window.
         if (_openHostedSurface is not null && _agentHost is not null)
         {
             await _openHostedSurface(worker);
             return;
         }
+
+        var record = await ReconcileStatusAsync(worker.Record, cancellationToken);
         if (ReferenceEquals(_externalCliWorker, worker) || worker.IsExternalCliActive)
         {
             OpenError = "此 Worker 已由 CLI 接管。关闭 CLI 后，Workbench 会自动恢复监管。";
@@ -649,7 +676,6 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
 {
     private WorkerSessionRecord record;
     private int _completedStepCount;
-    private bool _hasNativePlan;
     private Guid? _continuationAttemptId;
     private int? _externalCliProcessId;
     private WorkerSessionSurfaceState _surfaceState = WorkerSessionSurfaceState.WorkbenchOwned;
@@ -674,7 +700,7 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
     [RelayCommand] private void ToggleCompact() => IsCompact = !IsCompact;
     public IReadOnlyList<WorkerPlanStepViewModel> PlanSteps { get; }
     public bool HasPlan => PlanSteps.Count > 0;
-    public string ProgressText => !HasPlan ? string.Empty : record.Session.Status == AgentSessionStatus.Completed ? $"{PlanSteps.Count}/{PlanSteps.Count} · 已完成" : $"{PlanSteps.Count(step => step.Marker == "✓")}/{PlanSteps.Count}";
+    public string ProgressText => !HasPlan ? string.Empty : $"{PlanSteps.Count(step => step.Marker == "✓")}/{PlanSteps.Count}";
     public string CurrentPlanStep => PlanSteps.FirstOrDefault(step => step.IsCurrent)?.Text ?? string.Empty;
     [ObservableProperty] public partial bool IsExternalCliActive { get; set; }
     public string SurfaceStatus => _surfaceState switch
@@ -710,15 +736,12 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
         OnPropertyChanged(nameof(ProgressText));
     }
 
-    internal void ApplyProgress(int completedActivities, bool terminalCompleted = false)
+    internal void ApplyProgress(int completedActivities)
     {
         if (!HasPlan) return;
-        if (_hasNativePlan && !terminalCompleted) return;
-        _completedStepCount = terminalCompleted
-            ? PlanSteps.Count
-            : Math.Max(_completedStepCount, Math.Clamp(completedActivities, 0, PlanSteps.Count));
+        _completedStepCount = Math.Max(_completedStepCount, Math.Clamp(completedActivities, 0, PlanSteps.Count));
         var completed = _completedStepCount;
-        var current = terminalCompleted || completed >= PlanSteps.Count ? -1 : completed;
+        var current = completed >= PlanSteps.Count ? -1 : completed;
         for (var index = 0; index < PlanSteps.Count; index++)
         {
             var marker = index < completed
@@ -732,10 +755,38 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
         OnPropertyChanged(nameof(CurrentPlanStep));
     }
 
+    internal void ApplyProgressSnapshot(IReadOnlyList<WorkerProgressStep> steps)
+    {
+        if (!HasPlan) return;
+        _completedStepCount = Math.Max(_completedStepCount,
+            Math.Clamp(steps.Count(item => item.Status == AgentPlanStepStatus.Completed), 0, PlanSteps.Count));
+        for (var index = 0; index < PlanSteps.Count; index++)
+        {
+            var status = index < steps.Count ? steps[index].Status : AgentPlanStepStatus.Pending;
+            var marker = status switch
+            {
+                AgentPlanStepStatus.Completed => "✓",
+                AgentPlanStepStatus.InProgress => "●",
+                AgentPlanStepStatus.Failed => "!",
+                _ => "○"
+            };
+            PlanSteps[index].SetState(marker, status == AgentPlanStepStatus.InProgress);
+        }
+        OnPropertyChanged(nameof(ProgressText));
+        OnPropertyChanged(nameof(CurrentPlanStep));
+    }
+
+    internal WorkerProgressSnapshot CreateProgressSnapshot()
+    {
+        var steps = PlanSteps.Select((step, index) => new WorkerProgressStep(
+            $"step-{index + 1}",
+            step.Marker == "✓" ? AgentPlanStepStatus.Completed : step.Marker == "!" ? AgentPlanStepStatus.Failed : step.Marker == "●" ? AgentPlanStepStatus.InProgress : AgentPlanStepStatus.Pending)).ToArray();
+        return new WorkerProgressSnapshot(record.ProjectId, record.TaskId, record.Session.Id, steps, DateTimeOffset.UtcNow);
+    }
+
     internal void ApplyPlanUpdate(IReadOnlyList<AgentPlanStep> steps)
     {
         if (!HasPlan || steps.Count == 0) return;
-        _hasNativePlan = true;
         _completedStepCount = Math.Max(_completedStepCount,
             steps.Count(item => item.Status == AgentPlanStepStatus.Completed));
         for (var index = 0; index < PlanSteps.Count; index++)
@@ -757,7 +808,7 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
     private IReadOnlyList<WorkerPlanStepViewModel> BuildPlan(IReadOnlyList<string> plan)
     {
         if (plan.Count == 0) return [];
-        var completed = record.Session.Status == AgentSessionStatus.Completed ? plan.Count : 0;
+        var completed = 0;
         var current = record.Session.Status is AgentSessionStatus.Running or AgentSessionStatus.WaitingApproval ? 0 : -1;
         return plan.Select((text, index) => new WorkerPlanStepViewModel(
             index < completed ? "✓" : index == current ? "●" : record.Session.Status is AgentSessionStatus.Failed or AgentSessionStatus.Interrupted && index == current ? "!" : "○",

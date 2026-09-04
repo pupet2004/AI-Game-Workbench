@@ -1,4 +1,6 @@
 using Workbench.App.Leader;
+using Workbench.App.ViewModels;
+using Workbench.App.ViewModels.Leader;
 using Workbench.Core.Tasks;
 using Workbench.Storage.Database;
 using Workbench.Storage.Tasks;
@@ -31,6 +33,7 @@ public sealed class LeaderDraftProposalTests
         var library = memoryObject.GetProperty("properties").GetProperty("library_proposal");
         var libraryObject = library.GetProperty("anyOf").EnumerateArray().Single(item => item.GetProperty("type").GetString() == "object");
         Assert.False(libraryObject.GetProperty("additionalProperties").GetBoolean());
+        Assert.Contains("occurred_at", libraryObject.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
         Assert.Contains("memory_commands", document.RootElement.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
     }
 
@@ -468,6 +471,59 @@ public sealed class LeaderDraftProposalTests
 
         Assert.Equal(2, runtime.CreateRequests.Count);
         Assert.Equal("model-b", runtime.CreateRequests.Last().ModelId);
+    }
+
+    [Fact]
+    public async Task Persisted_draft_rebuilds_actionable_confirmation_after_leader_reconstruction()
+    {
+        var runtime = new FakeAgentRuntime("Fake Provider", "Fake Account", null,
+            new Workbench.Runtime.Providers.ModelProfile(
+                new Workbench.Runtime.Providers.ProviderId("fake-provider"),
+                "model-a", "Model A", Workbench.Runtime.Agents.AgentCapability.StructuredEvents));
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var projectPath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"draft-recovery-{Guid.NewGuid():N}")).FullName;
+        var project = await context.Services.ProjectOpenService.OpenAsync(projectPath);
+        var proposal = new LeaderDraftProposal(
+            project.Project.Id,
+            "Recoverable draft",
+            "Create the final acceptance file",
+            "acceptance/result-final.txt",
+            "All other files",
+            ["ORBIT", "STRICT", "PHASE_3_FINAL_OK"],
+            TaskRiskLevel.Low,
+            new LeaderExecutionRecommendation("fake-provider", "model-a", "fake-runtime"));
+        var profile = ExecutionProfile.Create(
+            "fake-provider", runtime.Account.Id.Value.ToString(), "model-a", "fake-runtime");
+        var created = await new LeaderDraftProposalBuilder(project.Project.Id, context.Services.TaskRepository)
+            .CreateDraftAsync(proposal, profile);
+        Assert.True(created.Succeeded);
+
+        var reopenedSessions = new ProjectLeaderSessionManager(
+            context.Services.ProjectLeaderRepository,
+            context.Services.LeaderSessionEpochRepository,
+            context.Services.LeaderMessageRepository,
+            context.Time);
+        var reopened = new WorkspaceViewModel(
+            project,
+            context.Services.ProjectLayoutRepository,
+            () => Task.CompletedTask,
+            context.Time,
+            runtimeRegistry: context.Services.RuntimeRegistry,
+            leaderSessionManager: reopenedSessions,
+            taskRepository: context.Services.TaskRepository,
+            taskRevisionRepository: context.Services.TaskRevisionRepository,
+            workerSessionRouter: context.Services.WorkerSessionRouter,
+            workerExecutionRepository: context.Services.WorkerExecutionRepository);
+
+        await reopened.LeaderPane.InitializeAsync();
+
+        Assert.True(reopened.LeaderPane.HasDraftConfirmation);
+        Assert.Equal(created.TaskId, reopened.LeaderPane.DraftConfirmation!.TaskId);
+        Assert.Equal(
+            (await context.Services.TaskRevisionRepository.ListAsync(project.Project.Id, created.TaskId!.Value)).Single().Id,
+            reopened.LeaderPane.DraftConfirmation.Revision.Id);
     }
 
     [Fact]

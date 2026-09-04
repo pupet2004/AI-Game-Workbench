@@ -348,12 +348,20 @@ public sealed partial class HostedAgentSurfaceViewModel : ObservableObject, IAsy
                 // Worker approvals are governed from the Leader surface. Keep
                 // the Worker transcript informative without exposing a second
                 // competing approval control.
+                Session = Session with { Status = AgentSessionStatus.WaitingApproval, UpdatedAt = approval.OccurredAt };
+                StatusText = LocalizationService.Current["Dynamic.Waiting"];
+                IsBusy = true;
+                OnPropertyChanged(nameof(Session));
                 _pendingApproval = null;
                 OnPropertyChanged(nameof(PendingApproval));
                 Entries.Add(new HostedSurfaceEntry(HostedSurfaceEntryKind.Approval, AgentIntentSource.Workbench,
                     $"已转交 Leader 审核：{approval.Summary}", approval.OccurredAt));
                 break;
             case AgentQuestionRequested question:
+                Session = Session with { Status = AgentSessionStatus.WaitingApproval, UpdatedAt = question.OccurredAt };
+                StatusText = LocalizationService.Current["Dynamic.Waiting"];
+                IsBusy = true;
+                OnPropertyChanged(nameof(Session));
                 _pendingQuestion = question;
                 OnPropertyChanged(nameof(PendingQuestion));
                 Entries.Add(new HostedSurfaceEntry(HostedSurfaceEntryKind.Question, AgentIntentSource.Workbench, question.Prompt, question.OccurredAt));

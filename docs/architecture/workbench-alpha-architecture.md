@@ -4,6 +4,8 @@ Status: **Release-facing architecture summary**
 Version: `v0.1.0-alpha.20260827`  
 Recorded: **2026-08-27**
 
+> Historical release-facing architecture snapshot. The current working-tree delta and validation evidence are tracked in [Current Working-Tree Validation](../validation/current-working-tree-20260904.md).
+
 ## Core Boundary
 
 Workbench owns the durable Project World. Agents provide replaceable execution and interaction. The Agent surface is a projection, not the owner of identity, authority, or continuity.

@@ -5,6 +5,8 @@ namespace Workbench.App.ProjectWorld;
 public enum ProjectWorldEntryKind
 {
     ProjectWorldReady,
+    ProjectWorldSetupIncomplete,
+    BootstrapRecoveryRequired,
     LegacySetupRequired,
     LegacyWorkspaceReady,
     UnmanagedProjectUnavailable,

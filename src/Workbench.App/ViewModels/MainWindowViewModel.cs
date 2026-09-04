@@ -129,7 +129,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         // Project Home adoption/create confirmation flow is introduced. B1
         // initialization is entered only for an adopted Legacy project or an
         // already-governed empty Project World.
-        if (entryStatus.Kind == ProjectWorldEntryKind.LegacySetupRequired)
+        if (entryStatus.Kind is ProjectWorldEntryKind.LegacySetupRequired or ProjectWorldEntryKind.ProjectWorldSetupIncomplete)
         {
             var setup = new ProjectWorldSetupViewModel(
                 _services,
@@ -138,6 +138,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 BackToHomeAsync,
                 ShowWorkspace);
             CurrentPage = setup;
+            return;
+        }
+
+        if (entryStatus.Kind == ProjectWorldEntryKind.BootstrapRecoveryRequired)
+        {
+            await BackToHomeAsync();
+            ((HomeViewModel)CurrentPage).SetStartupError(entryStatus.DisplayLabel);
             return;
         }
 
@@ -177,6 +184,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              projectSummaryRepository: _services.ProjectSummaryRepository,
              acceptedStateReader: _services.LibraryAcceptedStateReader,
              agentHost: _services.AgentHost,
+             workerExecutionRepository: _services.WorkerExecutionRepository,
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result));
         CurrentPage = workspace;
@@ -219,7 +227,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         {
             if (!existing.IsVisible)
                 existing.Show();
+            existing.WindowState = Avalonia.Controls.WindowState.Normal;
+            // Activate can be ignored by Windows when another window owns the
+            // foreground. A brief Topmost toggle reliably brings this surface
+            // forward without leaving it permanently above other apps.
+            existing.Topmost = true;
             existing.Activate();
+            existing.Topmost = false;
             return;
         }
 

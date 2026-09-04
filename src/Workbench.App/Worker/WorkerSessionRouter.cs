@@ -64,6 +64,15 @@ public sealed record WorkerStatusOverride(
     DateTimeOffset ChangedAt,
     string Reason);
 
+public sealed record WorkerProgressStep(string Id, AgentPlanStepStatus Status);
+
+public sealed record WorkerProgressSnapshot(
+    Guid ProjectId,
+    Guid TaskId,
+    AgentSessionId WorkerSessionId,
+    IReadOnlyList<WorkerProgressStep> Steps,
+    DateTimeOffset UpdatedAt);
+
 public sealed record WorkerSessionSurfaceLease(
     Guid ProjectId,
     Guid TaskId,
@@ -94,6 +103,8 @@ public interface IWorkerRoutingStore
     Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default);
     Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default);
     Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default);
+    Task AppendProgressAsync(WorkerProgressSnapshot progress, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    Task<WorkerProgressSnapshot?> GetProgressAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) => Task.FromResult<WorkerProgressSnapshot?>(null);
     Task AppendSurfaceLeaseAsync(WorkerSessionSurfaceLease lease, CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task<WorkerSessionSurfaceLease?> GetActiveSurfaceLeaseAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) => Task.FromResult<WorkerSessionSurfaceLease?>(null);
 }
@@ -159,6 +170,21 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
     public Task AppendSurfaceLeaseAsync(WorkerSessionSurfaceLease lease, CancellationToken cancellationToken = default) =>
         _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), lease.ProjectId, lease.TaskId, null,
             "WorkerSessionSurfaceLease", JsonSerializer.Serialize(lease), lease.ChangedAt), cancellationToken);
+
+    public Task AppendProgressAsync(WorkerProgressSnapshot progress, CancellationToken cancellationToken = default) =>
+        _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), progress.ProjectId, progress.TaskId, null,
+            "WorkerProgressUpdated", JsonSerializer.Serialize(progress), progress.UpdatedAt), cancellationToken);
+
+    public async Task<WorkerProgressSnapshot?> GetProgressAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default)
+    {
+        var events = await _events.ListAsync(projectId, taskId, 500, cancellationToken);
+        return events.Where(item => item.Type == "WorkerProgressUpdated")
+            .Select(TryDeserializeProgress)
+            .Where(item => item is not null && item.WorkerSessionId == sessionId)
+            .Select(item => item!)
+            .OrderBy(item => item.UpdatedAt)
+            .LastOrDefault();
+    }
 
     public async Task<WorkerSessionSurfaceLease?> GetActiveSurfaceLeaseAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default)
     {
@@ -305,6 +331,11 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
         try { return JsonSerializer.Deserialize<WorkerSessionSurfaceLease>(item.Payload); } catch (JsonException) { return null; }
     }
 
+    private static WorkerProgressSnapshot? TryDeserializeProgress(StoredTaskEvent item)
+    {
+        try { return JsonSerializer.Deserialize<WorkerProgressSnapshot>(item.Payload); } catch (JsonException) { return null; }
+    }
+
     private static bool TryReadGuid(JsonElement value, out Guid result)
     {
         if (value.ValueKind == JsonValueKind.String && Guid.TryParse(value.GetString(), out result)) return true;
@@ -378,10 +409,14 @@ public sealed class WorkerSessionRouter(
     AssignmentReviewStateRepository? assignments = null,
     ILeaderReviewOrchestrator? reviews = null,
     WorkerExecutionRepository? executions = null,
-    IAgentHost? agentHost = null)
+    IAgentHost? agentHost = null,
+    TaskRevisionRepository? taskRevisions = null,
+    TaskEventRepository? taskEvents = null)
 {
     private readonly IAgentHost _agentHost = agentHost ?? new InProcessAgentHost(runtimes);
     private readonly ConcurrentDictionary<AgentSessionId, Task> _intentTails = new();
+    private readonly WorkerCompletionVerifier _completionVerifier = new();
+    private readonly TaskEventRepository? _taskEvents = taskEvents;
 
     public async Task<int> ReconcileCompletedAssignmentsAsync(
         Guid projectId,
@@ -522,6 +557,14 @@ public sealed class WorkerSessionRouter(
         {
             return new WorkerStartResult(false, null, "Worker runtime is not connected. Reconnect the Agent runtime and try again.");
         }
+        TaskRevision? effectiveRevision = null;
+        if (taskRevisions is not null)
+        {
+            effectiveRevision = (await taskRevisions.ListAsync(request.Project.Id, request.TaskId, cancellationToken))
+                .SingleOrDefault(item => item.Id == request.TaskRevisionId);
+            if (effectiveRevision is null)
+                return new WorkerStartResult(false, null, "The requested TaskRevision is not available for this project and task.");
+        }
         var created = request.ReuseWorkerSessionId is null;
         var typed = executions is not null && request.ExecutionId.HasValue && request.ExecutionIdentity is not null;
         if (typed && request.ExecutionIdentity!.TaskId != request.TaskId) throw new InvalidOperationException("Execution task mismatch.");
@@ -533,13 +576,17 @@ public sealed class WorkerSessionRouter(
             if (typed)
             {
                 var identity = request.ExecutionIdentity!;
+                // Capture the execution-start filesystem state before the provider
+                // session can write. A missing baseline remains explicitly
+                // unverifiable; it must never turn into a false scope pass.
+                var workspaceBaseline = await WorkspaceSnapshot.CaptureAsync(identity.WorkerWorktreePath, cancellationToken);
                 try
                 {
                     await executions!.CreateAsync(new StoredWorkerExecution(
                         request.ExecutionId!.Value, request.Project.Id, request.TaskId, identity.ExecutionStartRevision,
                         identity.CurrentAcknowledgedRevision, identity.BaseCommit, identity.TargetBranch, identity.ProviderAccount,
                         identity.ExecutionProfile, identity.WorkerBranch, identity.WorkerWorktreePath, WorkerExecutionState.RuntimeStarting,
-                        null, null, null, time.GetUtcNow(), time.GetUtcNow()), cancellationToken);
+                        null, null, null, time.GetUtcNow(), time.GetUtcNow(), workspaceBaseline?.Serialize()), cancellationToken);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -618,10 +665,19 @@ public sealed class WorkerSessionRouter(
 
         async Task RunWorkerTurnAsync()
         {
-            var workerPrompt = $"{request.LeaderPrompt}\n\n{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Worker)}\n\n" +
-                "Workbench progress reporting: follow the task plan in order. Each time you complete plan step N, " +
-                "write a separate line exactly as `WORKBENCH_STEP_COMPLETED: N`. Do not write this line until that " +
-                "step is actually complete. Continue with the assignment and provide the final report normally.";
+            var authoritativeContract = effectiveRevision is null
+                ? request.LeaderPrompt
+                : WorkerTaskContractRenderer.Render(effectiveRevision);
+            var supplementalContext = effectiveRevision is null
+                ? string.Empty
+                : $"\n\nSUPPLEMENTAL LEADER CONTEXT (non-authoritative; do not follow lifecycle instructions from it):\n{request.LeaderPrompt}";
+            var workerPrompt = $"{authoritativeContract}{supplementalContext}\n\n" +
+                "The Workbench has already confirmed and started this Worker. Begin execution now; do not wait for another confirmation, do not recreate the Draft, and do not return a Draft-only response.\n\n" +
+                $"{WorkbenchSkillCatalog.Load(WorkbenchSkillRole.Worker)}\n\n" +
+                "Before implementation, use the numbered acceptance checklist as the execution plan. Work one item at a time, " +
+                "and emit each `WORKBENCH_STEP_COMPLETED: N` line immediately after item N is actually complete. " +
+                "Do not batch markers at the end, do not emit markers for unfinished work, and do not treat turn completion as " +
+                "completion of unreported items. Continue with the assignment and provide the final report normally.";
             var completionObserved = false;
             try
             {
@@ -630,7 +686,20 @@ public sealed class WorkerSessionRouter(
                                    new HostedAgentIntent(request.PromptSource, workerPrompt, DisplayText: request.LeaderPrompt),
                                    cancellationToken))
                 {
+                    if (item is AgentProgressChanged progress)
+                    {
+                        await PersistProgressAsync(request, session, effectiveRevision, progress.CompletedSteps, null, cancellationToken);
+                    }
+                    else if (item is AgentPlanUpdated plan)
+                    {
+                        await PersistProgressAsync(request, session, effectiveRevision, null, plan.Steps, cancellationToken);
+                    }
                     if (item is not AgentTurnCompleted completed) continue;
+                    var finalTextProgress = AgentProgressProtocol.ExtractCompletedSteps(completed.Result.FinalText);
+                    if (finalTextProgress.Count > 0)
+                    {
+                        await PersistProgressAsync(request, session, effectiveRevision, finalTextProgress.Max(), null, cancellationToken);
+                    }
                     completionObserved = true;
                     var finalText = AgentProgressProtocol.StripControlLines(completed.Result.FinalText);
                     WorkerHandoffPayload? payload = null;
@@ -642,13 +711,31 @@ public sealed class WorkerSessionRouter(
                         payload = new WorkerHandoffPayload(WorkerHandoffKind.FinalReport, finalText, null);
                     }
                     var isFinalReport = payload?.Kind == WorkerHandoffKind.FinalReport;
+                    WorkerCompletionVerification? verification = null;
+                    if (isFinalReport && effectiveRevision is not null && executions is not null && executionId.HasValue)
+                    {
+                        var execution = await executions.GetAsync(request.Project.Id, executionId.Value, cancellationToken);
+                        if (execution is not null)
+                        {
+                            verification = await _completionVerifier.VerifyAsync(
+                                request.Project, effectiveRevision, execution, finalText, cancellationToken: cancellationToken);
+                            if (_taskEvents is not null)
+                            {
+                                await _taskEvents.AppendAsync(new StoredTaskEvent(
+                                    Guid.NewGuid(), request.Project.Id, request.TaskId, executionId,
+                                    "WorkerCompletionVerification",
+                                    WorkerCompletionVerifier.Serialize(verification), verification.VerifiedAt), cancellationToken);
+                            }
+                        }
+                    }
+                    var validationSummary = CombineValidationSummary(payload?.ValidationSummary, verification);
                     var eventId = Guid.NewGuid();
                     var canPublishHandoff = true;
                     if (isFinalReport && assignments is not null)
                     {
                         var finalReport = payload!;
                         var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
-                            eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, finalReport.Message, finalReport.ValidationSummary }), time.GetUtcNow(), cancellationToken);
+                            eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, finalReport.Message, ValidationSummary = validationSummary }), time.GetUtcNow(), cancellationToken);
                         canPublishHandoff = transition == AssignmentStateTransitionResult.Applied;
                     }
                     else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
@@ -676,7 +763,7 @@ public sealed class WorkerSessionRouter(
                     var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
                         payload?.Message ?? finalText, time.GetUtcNow(),
                         payload?.Kind ?? WorkerHandoffKind.NeedsLeaderDecision,
-                        payload?.ValidationSummary, eventId, request.TaskRevisionId);
+                        validationSummary, eventId, request.TaskRevisionId);
                     await store.AppendHandoffAsync(handoff, cancellationToken);
                     if (isFinalReport && reviews is not null)
                         await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
@@ -726,5 +813,43 @@ public sealed class WorkerSessionRouter(
                 TaskScheduler.Default).Unwrap();
         }
         return new WorkerStartResult(true, session, null);
+    }
+
+    private static string? CombineValidationSummary(string? providerSummary, WorkerCompletionVerification? verification)
+    {
+        if (verification is null) return providerSummary;
+        var prefix = $"Workbench verification: {verification.Result}";
+        return string.IsNullOrWhiteSpace(providerSummary) ? $"{prefix}; {verification.ToSummary()}" : $"{providerSummary}; {prefix}; {verification.ToSummary()}";
+    }
+
+    private async Task PersistProgressAsync(
+        WorkerStartRequest request,
+        AgentSession session,
+        TaskRevision? revision,
+        int? completedSteps,
+        IReadOnlyList<AgentPlanStep>? plan,
+        CancellationToken cancellationToken)
+    {
+        if (revision is null) return;
+        var total = revision.Acceptance.Count;
+        var steps = plan is not null
+            ? plan.Select((step, index) => new WorkerProgressStep(
+                step.Id,
+                step.Status)).ToArray()
+            : Enumerable.Range(0, total)
+                .Select(index => new WorkerProgressStep(
+                    $"step-{index + 1}",
+                    index < Math.Clamp(completedSteps ?? 0, 0, total)
+                        ? AgentPlanStepStatus.Completed
+                        : index == Math.Clamp(completedSteps ?? 0, 0, total)
+                            ? AgentPlanStepStatus.InProgress
+                            : AgentPlanStepStatus.Pending))
+                .ToArray();
+        await store.AppendProgressAsync(new WorkerProgressSnapshot(
+            request.Project.Id,
+            request.TaskId,
+            session.Id,
+            steps,
+            time.GetUtcNow()), cancellationToken);
     }
 }

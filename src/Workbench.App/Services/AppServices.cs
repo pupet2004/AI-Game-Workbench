@@ -255,8 +255,6 @@ public sealed class AppServices : IAsyncDisposable
             effectiveTimeProvider);
         var libraryEvolutionRepository = new ProjectLibraryEvolutionRepository(database);
         var libraryProposalService = new ProjectLibraryProposalService(database, effectiveTimeProvider);
-        var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages, libraryProposalService, libraryEvolutionRepository);
-        var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
         var taskEvents = new TaskEventRepository(database);
         var reviewState = new AssignmentReviewStateRepository(database);
         var typedReviewState = new LeaderReviewStateRepository(database);
@@ -286,6 +284,8 @@ public sealed class AppServices : IAsyncDisposable
             b1AuthorityEvaluator,
             effectiveTimeProvider);
         var b1Projections = new B1ProjectionService(b1AuthorityRepository);
+        var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages, libraryProposalService, libraryEvolutionRepository, b1Projections);
+        var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
         var libraryProjectionContracts = new LibraryProjectionContractService(
             b1AuthorityRepository,
             libraryEvolutionRepository,
@@ -351,7 +351,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost, new TaskRevisionRepository(database), taskEvents),
             workerRoutingStore,
             workerExecutionRepository,
             leaderReviewOrchestrator,

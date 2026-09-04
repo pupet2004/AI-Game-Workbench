@@ -46,6 +46,30 @@ public sealed class ManualWorkViewModelTests
         Assert.Equal(1L, await fixture.CountAsync("b1_attempts"));
     }
 
+    [Fact]
+    public async Task Recording_handoff_updates_current_selection_without_reload()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        HandoffRef? reviewed = null;
+        var viewModel = new ManualWorkViewModel(
+            fixture.Services,
+            fixture.Result,
+            fixture.Assignment,
+            () => Task.CompletedTask,
+            handoff => { reviewed = handoff; return Task.CompletedTask; });
+
+        await viewModel.InitializeAsync();
+        await viewModel.BeginOrContinueCommand.ExecuteAsync(null);
+        viewModel.PrimaryResult = "Manual result";
+        viewModel.ShowHandoffComposerCommand.Execute(null);
+        await viewModel.RecordHandoffCommand.ExecuteAsync(null);
+
+        Assert.True(viewModel.HasHandoff);
+        Assert.DoesNotContain("未选择交接", viewModel.HandoffText);
+        await viewModel.ReviewWorkResultCommand.ExecuteAsync(null);
+        Assert.NotNull(reviewed);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly AppTestContext _context;
@@ -63,6 +87,7 @@ public sealed class ManualWorkViewModelTests
 
         public AppServices Services { get; }
         public ProjectOpenResult Result { get; }
+        public AssignmentRef Assignment => _assignment;
 
         public static async Task<Fixture> CreateAsync()
         {

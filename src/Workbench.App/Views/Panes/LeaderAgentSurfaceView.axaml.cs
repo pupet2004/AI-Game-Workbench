@@ -27,7 +27,6 @@ public partial class LeaderAgentSurfaceView : UserControl
         Loaded += OnLoaded;
         _surface.NavigationCompleted += OnWebViewInitialized;
         _surface.WebMessageReceived += OnWebMessageReceived;
-        _surface.NavigateToString(LoadSurfaceHtml(), new Uri("https://workbench.local/"));
     }
 
     private static string LoadSurfaceHtml()
@@ -85,6 +84,18 @@ public partial class LeaderAgentSurfaceView : UserControl
     {
         _ready = e.IsSuccess;
         PushState();
+    }
+
+    protected override void OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+
+        // The hosted Leader session outlives this Surface. A WebView can be
+        // detached and later remounted, so each attachment needs a fresh DOM
+        // document and bridge handshake without creating a new session.
+        _ready = false;
+        Subscribe(DataContext as LeaderPaneViewModel);
+        _surface.NavigateToString(LoadSurfaceHtml(), new Uri("https://workbench.local/"));
     }
 
     private async void OnWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
@@ -433,6 +444,7 @@ public partial class LeaderAgentSurfaceView : UserControl
 
     protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
     {
+        _ready = false;
         if (_pane is not null)
         {
             _pane.PropertyChanged -= OnPanePropertyChanged;

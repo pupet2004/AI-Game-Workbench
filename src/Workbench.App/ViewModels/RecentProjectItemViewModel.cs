@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Workbench.App.ProjectWorld;
+using Workbench.App.Services;
 using Workbench.Core.Projects;
 using CoreProject = Workbench.Core.Projects.Project;
 
@@ -36,5 +37,5 @@ public sealed partial class RecentProjectItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(EntryStatusLabel))]
     public partial ProjectWorldEntryStatus? EntryStatus { get; set; }
 
-    public string EntryStatusLabel => EntryStatus?.DisplayLabel ?? "Status unavailable";
+    public string EntryStatusLabel => EntryStatus?.DisplayLabel ?? LocalizationService.Current["Status.Unavailable"];
 }

@@ -1,6 +1,6 @@
 # Paper Gap Closure Plan
 
-Status: **Phase 3 completed; scoped gap closure implemented**
+Status: **Historical plan completed; current validation superseded by 2026-09-04 record**
 Date: **2026-08-25**
 
 ## Scope
@@ -51,7 +51,7 @@ Success means:
 
 - Existing Product Slice 1 implementation was reviewed rather than duplicated.
 - Manual create/setup/work/handoff/decision/Library/reopen certification remains green.
-- The paper's `967` test count is stale; the current working tree reports `996` passing tests.
+- The intermediate paper-era `967` and `996` test counts are historical. The current canonical working tree reports `1,068` passing tests; see [Current Working-Tree Validation](../../validation/current-working-tree-20260904.md).
 
 ## Phase 2 — Provider-neutral B1 Agent Adapter
 
@@ -113,7 +113,8 @@ After each phase:
 ## Final verification
 
 - `dotnet build AI.Game.Workbench.sln --no-restore`: PASS, 0 warnings, 0 errors.
-- `dotnet test AI.Game.Workbench.sln --no-restore --verbosity minimal`: PASS, 996 passed, 0 failed, 0 skipped.
+- Historical final verification: `996 passed, 0 failed, 0 skipped`.
+- Current verification: see [Current Working-Tree Validation](../../validation/current-working-tree-20260904.md).
 - Deferred by request: multi-user governance, automatic governance, empirical research, and formal verification.
 
 The final audit report should still distinguish the sealed `HEAD` baseline from the current uncommitted working tree and should not claim the deferred items are implemented.

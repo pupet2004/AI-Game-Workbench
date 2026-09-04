@@ -3,6 +3,8 @@
 Version: `v0.1.0-alpha.20260827`  
 Recorded: **2026-08-27**
 
+> Historical Alpha limitation record. Current working-tree verification is tracked separately in [Current Working-Tree Validation](validation/current-working-tree-20260904.md).
+
 This list is intentional. It defines the boundary of the first public Alpha rather than promising unfinished features.
 
 ## Agent Surface
@@ -15,7 +17,7 @@ This list is intentional. It defines the boundary of the first public Alpha rath
 ## Runtime Coverage
 
 - Codex is the primary runtime path.
-- OpenCode participation is proven in the local WEIQI3 acceptance test, but not every OpenCode model or error mode is covered.
+- OpenCode participation is proven only by the separately gated local WEIQI3 acceptance run; the default full suite skips live-provider execution, and not every OpenCode model or error mode is covered.
 - Claude, Kimi, DSH, and other providers are architectural targets, not Alpha acceptance claims.
 - Runtime events are normalized only to the currently implemented provider-neutral contract.
 

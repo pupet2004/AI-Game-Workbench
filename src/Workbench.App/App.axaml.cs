@@ -2,6 +2,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using System.Runtime.InteropServices;
 using Workbench.App.Services;
 using Workbench.App.ViewModels;
 using Workbench.App.Views;
@@ -35,6 +38,7 @@ public partial class App : Application
             window.DataContext = viewModel;
             var shutdownStarted = false;
             var shutdownComplete = false;
+            var restoreWindowState = WindowState.Normal;
 
             async Task ExitApplicationAsync()
             {
@@ -58,8 +62,15 @@ public partial class App : Application
             void ShowMainWindow()
             {
                 window.Show();
+                window.WindowState = restoreWindowState;
                 window.Activate();
             }
+
+            Program.Instance?.Start(() =>
+            {
+                Dispatcher.UIThread.Post(ShowMainWindow);
+                return Task.CompletedTask;
+            });
 
             var trayMenu = new NativeMenu();
             var openItem = new NativeMenuItem("打开 Workbench");
@@ -89,10 +100,14 @@ public partial class App : Application
                     return;
                 }
 
-                // A normal window close detaches the main Surface while the
-                // application and all hosted Agent sessions remain alive.
+                // Keep the native window alive. A real Window.Hide() destroys
+                // the Win32 HWND in this Avalonia configuration, so use a
+                // reversible minimized background state instead.
                 args.Cancel = true;
-                window.Hide();
+                restoreWindowState = window.WindowState is WindowState.Minimized
+                    ? WindowState.Normal
+                    : window.WindowState;
+                window.WindowState = WindowState.Minimized;
             };
             desktop.MainWindow = window;
             _ = viewModel.InitializeAsync();
@@ -100,4 +115,5 @@ public partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
     }
+
 }

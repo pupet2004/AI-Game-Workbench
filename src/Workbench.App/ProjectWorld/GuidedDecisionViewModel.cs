@@ -94,7 +94,9 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
         try
         {
             var decision = await _services.GuidedDecision.CommitAsync(BuildRequest());
-            StatusMessage = string.Format(LocalizationService.Current["Dynamic.DecisionRecorded"], decision.ProjectCommitSequence);
+            StatusMessage = SelectedContributionMode == ContributionDecisionMode.Ignore
+                ? string.Format(LocalizationService.Current["Dynamic.DecisionRecordedNoContribution"], decision.ProjectCommitSequence)
+                : string.Format(LocalizationService.Current["Dynamic.DecisionRecorded"], decision.ProjectCommitSequence);
             IsPreviewVisible = false;
         }
         catch (Exception exception) { ErrorMessage = $"{LocalizationService.Current["Dynamic.DecisionFailed"]} {exception.Message}"; }

@@ -1,4 +1,5 @@
 using Workbench.Core.Memory;
+using Workbench.Core.Continuity;
 using Workbench.Storage.Memory;
 using Workbench.Storage.Leaders;
 
@@ -6,6 +7,7 @@ namespace Workbench.App.Memory;
 
 public interface IProjectMemoryApi
 {
+    Task<AcceptedProjectState> GetAcceptedProjectStateAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<DailySummaryDocument?> GetDailySummaryAsync(Guid projectId, DateOnly localDate, CancellationToken cancellationToken = default);
     Task<DailySummaryDocument> UpsertDailySummaryAsync(DailySummaryWrite write, DateTimeOffset savedAt, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DailySummaryMetadata>> ListDailySummaryMetadataAsync(Guid projectId, DateOnly? from = null, DateOnly? through = null, CancellationToken cancellationToken = default);

@@ -9,7 +9,7 @@
             <TextBlock Text="{Binding ProjectName}" FontSize="20" />
             <TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" Opacity="0.7" />
             <TextBlock Text="{Binding Status.DisplayLabel}" FontWeight="SemiBold" />
-            <TextBlock Text="Older project context remains unchanged. Continuing creates a separate current project record; nothing is imported as current truth."
+            <TextBlock Text="{Binding [ProjectSetup.LegacyDescription]}"
                        IsVisible="{Binding Status.HasLegacyContext}"
                        TextWrapping="Wrap" />
 
@@ -17,7 +17,7 @@
                     IsVisible="{Binding !IsGovernanceEstablished}">
                 <StackPanel Spacing="10">
                     <TextBlock Text="{Binding [ProjectSetup.Step1]}" FontSize="18" />
-                    <TextBlock Text="This records who is setting up the project. No earlier work, roles, or history is inferred." TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding [ProjectSetup.Step1Description]}" TextWrapping="Wrap" />
                     <Button Content="{Binding [ProjectSetup.Confirm]}" Command="{Binding EstablishGovernanceCommand}"
                             IsEnabled="{Binding CanEstablishGovernance}" HorizontalAlignment="Left" />
                 </StackPanel>
@@ -41,7 +41,7 @@
                             IsEnabled="{Binding CanPreview}" HorizontalAlignment="Left" />
                     <Border Padding="12" Background="#12000000" IsVisible="{Binding IsPreviewVisible}">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="Before you continue" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding [ProjectSetup.PreviewHeading]}" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" />
                             <Button Content="{Binding [ProjectSetup.ConfirmOpen]}" Command="{Binding ConfirmInitializationCommand}"
                                     IsEnabled="{Binding CanConfirm}" HorizontalAlignment="Left" />

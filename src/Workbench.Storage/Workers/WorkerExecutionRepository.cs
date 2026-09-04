@@ -10,7 +10,8 @@ public sealed record StoredWorkerExecution(
     TaskRevisionReference CurrentAcknowledgedRevision, string BaseCommit, string TargetBranch,
     ProviderAccountBinding ProviderAccount, ExecutionProfile ExecutionProfile, string WorkerBranch,
     string WorkerWorktreePath, WorkerExecutionState State, string? AgentSessionId,
-    string? ExternalSessionId, string? WorkingDirectory, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    string? ExternalSessionId, string? WorkingDirectory, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    string? WorkspaceBaselineJson = null);
 
 public sealed class WorkerExecutionRepository(WorkbenchDatabase database)
 {
@@ -31,13 +32,13 @@ public sealed class WorkerExecutionRepository(WorkbenchDatabase database)
                 current_ack_revision_id, current_ack_revision_number, base_commit, target_branch,
                 provider_id, provider_account_id, model_profile_id, agent_runtime_id,
                 worker_branch, worker_worktree_path, state, agent_session_id, external_session_id,
-                working_directory, created_at, updated_at)
+                working_directory, created_at, updated_at, workspace_baseline_json)
             VALUES(
                 $id, $project, $task, $start_revision, $start_number,
                 $current_revision, $current_number, $base, $target,
                 $provider, $account, $model, $runtime,
                 $branch, $worktree, $state, $agent, $external,
-                $working, $created, $updated);
+                $working, $created, $updated, $baseline);
             """;
         command.Parameters.AddWithValue("$id", execution.ExecutionId.ToString());
         command.Parameters.AddWithValue("$project", execution.ProjectId.ToString());
@@ -60,6 +61,7 @@ public sealed class WorkerExecutionRepository(WorkbenchDatabase database)
         command.Parameters.AddWithValue("$working", (object?)execution.WorkingDirectory ?? DBNull.Value);
         command.Parameters.AddWithValue("$created", execution.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("$updated", execution.UpdatedAt.ToString("O"));
+        command.Parameters.AddWithValue("$baseline", (object?)execution.WorkspaceBaselineJson ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -175,7 +177,7 @@ public sealed class WorkerExecutionRepository(WorkbenchDatabase database)
         return await reader.ReadAsync(cancellationToken) ? Read(reader) : null;
     }
 
-    private const string SelectSql = "SELECT id, project_id, task_id, execution_start_revision_id, execution_start_revision_number, current_ack_revision_id, current_ack_revision_number, base_commit, target_branch, provider_id, provider_account_id, model_profile_id, agent_runtime_id, worker_branch, worker_worktree_path, state, agent_session_id, external_session_id, working_directory, created_at, updated_at FROM worker_executions";
+    private const string SelectSql = "SELECT id, project_id, task_id, execution_start_revision_id, execution_start_revision_number, current_ack_revision_id, current_ack_revision_number, base_commit, target_branch, provider_id, provider_account_id, model_profile_id, agent_runtime_id, worker_branch, worker_worktree_path, state, agent_session_id, external_session_id, working_directory, created_at, updated_at, workspace_baseline_json FROM worker_executions";
 
     private static StoredWorkerExecution Read(SqliteDataReader reader) => new(
         Guid.Parse(reader.GetString(0)), Guid.Parse(reader.GetString(1)), Guid.Parse(reader.GetString(2)),
@@ -185,7 +187,8 @@ public sealed class WorkerExecutionRepository(WorkbenchDatabase database)
         ExecutionProfile.Create(reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12)),
         reader.GetString(13), reader.GetString(14), Enum.Parse<WorkerExecutionState>(reader.GetString(15)),
         reader.IsDBNull(16) ? null : reader.GetString(16), reader.IsDBNull(17) ? null : reader.GetString(17),
-        reader.IsDBNull(18) ? null : reader.GetString(18), DateTimeOffset.Parse(reader.GetString(19)), DateTimeOffset.Parse(reader.GetString(20)));
+        reader.IsDBNull(18) ? null : reader.GetString(18), DateTimeOffset.Parse(reader.GetString(19)), DateTimeOffset.Parse(reader.GetString(20)),
+        reader.IsDBNull(21) ? null : reader.GetString(21));
 
     private static bool SamePath(string first, string second)
     {

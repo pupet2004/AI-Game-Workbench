@@ -9,6 +9,7 @@
             <TextBlock Text="{Binding [Home.Title]}" FontSize="28" FontWeight="SemiBold" />
             <TextBlock Text="{Binding [Home.Description]}"
                        TextWrapping="Wrap" Opacity="0.75" MaxWidth="760" />
+            <TextBlock Text="{Binding [Home.PickerHint]}" TextWrapping="Wrap" Opacity="0.75" MaxWidth="760" />
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="{Binding [Home.RecentProjects]}" FontSize="20" />
                 <Button Grid.Column="1" Content="{Binding [Home.Settings]}" Command="{Binding ShowSettingsCommand}" />

@@ -341,7 +341,7 @@ public static class LeaderResponseSchema
                         {
                           "type": "object",
                           "additionalProperties": false,
-                          "required": ["action", "target_object_id", "target_node_id", "expected_node_revision", "expected_overview_revision", "category", "topic", "local_date", "node_content", "current_overview", "materials"],
+                          "required": ["action", "target_object_id", "target_node_id", "expected_node_revision", "expected_overview_revision", "category", "topic", "local_date", "node_content", "current_overview", "materials", "occurred_at"],
                           "properties": {
                             "action": { "type": "string", "enum": ["CreateNode", "UpdateNode"] },
                             "target_object_id": { "type": ["string", "null"] },

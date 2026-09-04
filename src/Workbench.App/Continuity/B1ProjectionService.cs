@@ -13,9 +13,14 @@ public sealed class B1ProjectionService(
         ProjectRef projectRef,
         CancellationToken ct = default)
     {
-        var state = await _authorityRepository.LoadProjectStateAsync(projectRef, ct);
+        var state = await GetProjectStateAsync(projectRef, ct);
         return B1Projector.Build(state);
     }
+
+    public Task<B1ProjectState> GetProjectStateAsync(
+        ProjectRef projectRef,
+        CancellationToken ct = default) =>
+        _authorityRepository.LoadProjectStateAsync(projectRef, ct);
 
     public async Task<AcceptedProjectState> GetAcceptedProjectStateAsync(
         ProjectRef projectRef,

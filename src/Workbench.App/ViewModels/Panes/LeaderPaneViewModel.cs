@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Workbench.App.ViewModels.Leader;
@@ -8,6 +9,7 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Tasks;
+using Workbench.Storage.Workers;
 using Workbench.App.Worker;
 using Workbench.App.Memory;
 using Workbench.App.Services;
@@ -34,7 +36,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly ILeaderBootContextBuilder? _bootContextBuilder;
     private readonly LeaderMemoryPolicyCoordinator? _memoryPolicyCoordinator;
     private readonly LeaderDraftProposalBuilder? _draftProposalBuilder;
+    private readonly TaskRepository? _tasks;
     private readonly TaskRevisionRepository? _taskRevisions;
+    private readonly WorkerExecutionRepository? _workerExecutions;
     private readonly WorkerSessionRouter? _workerSessionRouter;
     private readonly Func<CancellationToken, Task>? _refreshWorkPane;
     private readonly IProjectMemoryApi? _projectMemoryApi;
@@ -72,7 +76,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         ILeaderReviewUserResponseBinder? responseBinder = null,
         GitSnapshot? git = null,
         ProjectSummaryRepository? projectSummaryRepository = null,
-        IAgentHost? agentHost = null)
+        IAgentHost? agentHost = null,
+        WorkerExecutionRepository? workerExecutionRepository = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -85,7 +90,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _bootContextBuilder = bootContextBuilder;
         _memoryPolicyCoordinator = memoryPolicyCoordinator;
         _draftProposalBuilder = taskRepository is null ? null : new LeaderDraftProposalBuilder(project.Id, taskRepository);
+        _tasks = taskRepository;
         _taskRevisions = taskRevisionRepository;
+        _workerExecutions = workerExecutionRepository;
         _workerSessionRouter = workerSessionRouter;
         _refreshWorkPane = refreshWorkPane;
         _projectMemoryApi = projectMemoryApi;
@@ -293,6 +300,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await _sessionManager.LoadAsync(_project.Id, cancellationToken);
+        await RestorePendingDraftConfirmationAsync(cancellationToken);
         if (History is not null)
         {
             await History.InitializeAsync(cancellationToken);
@@ -376,6 +384,61 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         NotifyAllState();
     }
 
+    private async Task RestorePendingDraftConfirmationAsync(CancellationToken cancellationToken)
+    {
+        if (_draftProposalBuilder is null || _taskRevisions is null || DraftConfirmation is not null)
+            return;
+
+        var tasks = await _tasks!.ListDraftsAsync(_project.Id, cancellationToken);
+        var executions = _workerExecutions is null
+            ? []
+            : await _workerExecutions.ListAsync(_project.Id, cancellationToken);
+
+        foreach (var task in tasks)
+        {
+            if (executions.Any(execution => execution.TaskId == task.TaskId))
+                continue;
+
+            var revision = (await _taskRevisions.ListAsync(_project.Id, task.TaskId, cancellationToken))
+                .SingleOrDefault(item => item.Id == task.CurrentRevisionId);
+            if (revision is null)
+                continue;
+
+            var profile = revision.RecommendedExecutionProfile;
+            var resources = await _runtimeRegistry.GetWorkerResourcesAsync(cancellationToken);
+            var resource = resources.FirstOrDefault(item =>
+                string.Equals(item.ProviderId, profile.ProviderId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ProviderAccountId, profile.ProviderAccountId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.ModelProfileId, profile.ModelProfileId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.AgentRuntimeId, profile.AgentRuntimeId, StringComparison.OrdinalIgnoreCase));
+            resource ??= new WorkerResource(
+                profile.ProviderId,
+                profile.ProviderAccountId,
+                profile.AgentRuntimeId,
+                profile.ProviderId,
+                profile.ModelProfileId,
+                profile.ModelProfileId,
+                _runtimeRegistry.TryGetByAccount(
+                    new Workbench.Runtime.Providers.ProviderAccountId(Guid.Parse(profile.ProviderAccountId)),
+                    out _));
+
+            DraftConfirmation = new LeaderDraftConfirmation(
+                task.TaskId,
+                task.Title,
+                revision.Goal,
+                revision.Scope,
+                revision.Acceptance,
+                revision.RiskLevel,
+                new LeaderExecutionRecommendation(profile.ProviderId, profile.ModelProfileId, profile.AgentRuntimeId),
+                resource,
+                revision);
+            WorkerResources.Clear();
+            foreach (var readyResource in resources.Where(item => item.IsReady))
+                WorkerResources.Add(readyResource);
+            return;
+        }
+    }
+
     private async Task LoadAvailableModelsAsync(CancellationToken cancellationToken)
     {
         var previous = _conversation.SelectedModel;
@@ -423,8 +486,13 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             throw new InvalidOperationException("Choose whether to continue the previous Leader session or start fresh.");
         }
 
-        var selectedModel = SelectedModel
-            ?? throw new InvalidOperationException("Select a model before sending a message.");
+        var selectedModel = SelectedModel;
+        if (selectedModel is null)
+        {
+            AddErrorMessage("请选择 Leader 模型");
+            NotifyAllState();
+            return;
+        }
         var text = DraftMessage;
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
@@ -529,8 +597,13 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         CancellationToken cancellationToken)
     {
         var resultId = Guid.NewGuid();
-        var selectedModel = SelectedModel
-            ?? throw new InvalidOperationException("Select a model before sending a message.");
+        var selectedModel = SelectedModel;
+        if (selectedModel is null)
+        {
+            AddErrorMessage("请选择 Leader 模型");
+            NotifyAllState();
+            return;
+        }
 
         _conversation.IsBusy = true;
         _conversation.Activities.Clear();
@@ -744,8 +817,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                         _conversation.PendingQuestion = question;
                         NotifyAllState();
                         break;
-                    case AgentError:
-                        AddErrorMessage(LocalizationService.Current["Dynamic.LeaderRuntimeError"]);
+                    case AgentError error:
+                        AddErrorMessage(FormatRuntimeError(error.Message));
                         break;
                     case AgentTurnCompleted completed:
                         turnCompleted = true;
@@ -825,7 +898,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             AgentSessionStatus.Interrupted or
                             AgentSessionStatus.Stopped)
                         {
-                            AddErrorMessage(string.Format(LocalizationService.Current["Dynamic.LeaderTurnEnded"], completed.Result.FinalStatus));
+                            var ended = string.Format(LocalizationService.Current["Dynamic.LeaderTurnEnded"], completed.Result.FinalStatus);
+                            AddErrorMessage(string.IsNullOrWhiteSpace(completed.Result.Error)
+                                ? ended
+                                : $"{ended}\n{FormatRuntimeErrorDetail(completed.Result.Error)}");
                         }
                         else if (completed.Result.FinalStatus == AgentSessionStatus.Completed)
                         {
@@ -1203,6 +1279,35 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private void AddErrorMessage(string text) =>
         Messages.Add(new LeaderMessageViewModel(LeaderMessageRole.Error, text));
 
+    private static string FormatRuntimeError(string rawMessage) =>
+        $"{LocalizationService.Current["Dynamic.LeaderRuntimeError"]}\n{FormatRuntimeErrorDetail(rawMessage)}";
+
+    private static string FormatRuntimeErrorDetail(string? rawMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawMessage)) return LocalizationService.Current["Dynamic.UnknownRuntimeError"];
+
+        var detail = rawMessage.Trim();
+        try
+        {
+            using var document = JsonDocument.Parse(detail);
+            var root = document.RootElement;
+            if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object &&
+                error.TryGetProperty("message", out var nestedMessage) && nestedMessage.ValueKind == JsonValueKind.String)
+            {
+                detail = nestedMessage.GetString() ?? detail;
+            }
+            else if (root.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
+            {
+                detail = message.GetString() ?? detail;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return detail.Length <= 600 ? detail : $"{detail[..600]}...";
+    }
+
     private async Task CreateLibraryProposalAsync(
         LeaderLibraryProposalCommand command,
         CancellationToken cancellationToken)
@@ -1336,7 +1441,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     private void DispatchToLeader(Action action)
     {
-        if (_leaderContext is null || ReferenceEquals(SynchronizationContext.Current, _leaderContext))
+        // Unit-test hosts do not install an Avalonia dispatcher. In that
+        // environment there is no UI queue to pump, so execute inline. In
+        // the desktop app prefer the captured UI SynchronizationContext;
+        // this keeps worker approvals visible without delaying them behind a
+        // dispatcher that may not yet be initialized.
+        if (_leaderContext is null ||
+            ReferenceEquals(SynchronizationContext.Current, _leaderContext) ||
+            Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
         {
             action();
             return;
@@ -1505,6 +1617,28 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             AddErrorMessage("Worker 路由服务不可用，任务草案未启动。");
             NotifyAllState();
             return;
+        }
+        if (_tasks is not null && _taskRevisions is not null)
+        {
+            var task = await _tasks.GetAsync(_project.Id, confirmation.TaskId, cancellationToken);
+            var currentRevision = task is null
+                ? null
+                : (await _taskRevisions.ListAsync(_project.Id, confirmation.TaskId, cancellationToken))
+                    .SingleOrDefault(item => item.Id == task.CurrentRevisionId);
+            var existingExecution = _workerExecutions is null
+                ? null
+                : (await _workerExecutions.ListAsync(_project.Id, cancellationToken))
+                    .FirstOrDefault(item => item.TaskId == confirmation.TaskId);
+            if (task is null || task.Status != TaskLifecycleStatus.Draft ||
+                currentRevision is null || currentRevision.Id != confirmation.Revision.Id ||
+                existingExecution is not null)
+            {
+                AddErrorMessage("任务草案已过期或已被处理，无法启动 Worker。");
+                DraftConfirmation = null;
+                NotifyAllState();
+                return;
+            }
+            confirmation = confirmation with { Revision = currentRevision };
         }
         var profile = confirmation.Revision.RecommendedExecutionProfile;
         var request = new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Revision.Id, confirmation.Title,

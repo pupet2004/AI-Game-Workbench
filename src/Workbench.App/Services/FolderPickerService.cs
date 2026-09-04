@@ -21,7 +21,7 @@ public sealed class FolderPickerService : IFolderPickerService
     {
         var folders = await _topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Open Project Folder",
+            Title = LocalizationService.Current["Home.PickerTitle"],
             AllowMultiple = false
         });
 
