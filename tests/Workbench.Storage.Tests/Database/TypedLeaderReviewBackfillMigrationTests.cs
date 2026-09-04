@@ -15,7 +15,7 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(26L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(27L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     }
 
@@ -36,7 +36,7 @@ public sealed class TypedLeaderReviewBackfillMigrationTests
 
         await database.InitializeAsync();
         await using var connection = database.CreateConnection(); await connection.OpenAsync();
-        Assert.Equal(26L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(27L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(("Autonomous", "Recorded"), await ReadAuthorityAsync(connection, fixture.DecisionPass));
         Assert.Equal(("", "LegacyNotRecorded"), await ReadAuthorityAsync(connection, fixture.DecisionAsk));
         Assert.Equal(("Responded", (long?)null, (long?)null), await ReadGateAsync(connection, fixture.DecisionAsk));

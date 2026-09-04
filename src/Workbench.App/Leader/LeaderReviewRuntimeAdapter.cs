@@ -128,11 +128,21 @@ public static class LeaderReviewPromptBuilder
             Worker Validation:
             {input.FinalReport.ValidationSummary ?? "None reported."}
 
+            B1/Worker provenance (non-authoritative review input):
+            {FormatBridgeContext(input)}
+
             Outcome: PASS means acceptance is met. FIX means a concrete implementation defect without changing approved intent. CONTINUE means no clear defect but acceptance is not yet met. ASK_USER is required for approved-intent/product/data/scope changes, meaningful cost, irreversible action, or unresolved reasonable choices.
             Action level: if it can be resolved without changing approved intent, use L1_LOCAL_FIX or L2_TASK_REWORK; otherwise use L3_DECISION_REQUIRED. ASK_USER requires L3_DECISION_REQUIRED.
 
             Output only one Decision JSON object matching the supplied schema. Do not include prose or markdown.
             """;
+    }
+
+    private static string FormatBridgeContext(LeaderReviewInput input)
+    {
+        var context = input.B1WorkerContext;
+        if (context is null) return "UNLINKED LEGACY WORKER";
+        return $"Assignment={context.AssignmentRef}; AssignmentRevision={context.AssignmentRevisionRef}; Attempt={context.AttemptRef}; WorkerTask={context.WorkerTaskId}; WorkerExecution={context.WorkerExecutionId}; SessionBinding={context.SessionBindingRef?.ToString() ?? "none"}; AgentSession={context.AgentSessionId?.ToString() ?? "none"}; Provider={context.ProviderId ?? "unknown"}; Verification={context.VerificationResult ?? "NONE"}; Evidence={context.VerificationEvidenceRef?.Value ?? "none"}";
     }
 }
 

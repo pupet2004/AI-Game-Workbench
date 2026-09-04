@@ -4,6 +4,8 @@ using Workbench.Core.Tasks;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Tasks;
 using Workbench.Storage.Workers;
+using Workbench.App.Continuity;
+using Workbench.Core.Continuity;
 
 namespace Workbench.App.Leader;
 
@@ -28,13 +30,16 @@ public sealed record LeaderReviewInput(
     Guid FinalReportEventId,
     LeaderReviewFinalReport FinalReport,
     TaskLifecycleStatus AssignmentStatus,
-    LeaderReviewHandoffBindingKind HandoffBinding = LeaderReviewHandoffBindingKind.Canonical);
+    LeaderReviewHandoffBindingKind HandoffBinding = LeaderReviewHandoffBindingKind.Canonical,
+    B1WorkerReviewContext? B1WorkerContext = null);
 
 public sealed class LeaderReviewInputBuilder(
     ProjectRepository projects,
     TaskRepository tasks,
     TaskRevisionRepository revisions,
-    TaskEventRepository events)
+    TaskEventRepository events,
+    B1WorkerExecutionBridgeService? bridge = null,
+    WorkerExecutionRepository? executions = null)
 {
     private const int EventReadLimit = 200;
 
@@ -105,6 +110,24 @@ public sealed class LeaderReviewInputBuilder(
             return null;
         }
 
+        B1WorkerReviewContext? bridgeContext = null;
+        if (bridge is not null && executions is not null &&
+            await executions.GetByAgentSessionIdAsync(projectId, taskId, finalReport.WorkerSessionId, cancellationToken) is { } execution &&
+            await bridge.GetWorkerExecutionLinkAsync(new ProjectRef(projectId), execution.ExecutionId, cancellationToken) is { } executionLink &&
+            await bridge.GetWorkerTaskLinkAsync(new ProjectRef(projectId), taskId, cancellationToken) is { } taskLink)
+        {
+            var sessionLink = await bridge.GetWorkerSessionLinkAsync(new ProjectRef(projectId), execution.ExecutionId, cancellationToken);
+            var evidence = await bridge.GetVerificationEvidenceAsync(new ProjectRef(projectId), execution.ExecutionId, cancellationToken);
+            bridgeContext = new B1WorkerReviewContext(
+                taskLink.AssignmentRef, taskLink.AssignmentRevisionRef, executionLink.AttemptRef,
+                taskLink.WorkerTaskId, taskLink.WorkerTaskRevisionId, execution.ExecutionId,
+                sessionLink?.SessionBindingRef, sessionLink?.AgentSessionId, sessionLink?.ExternalSessionRef,
+                sessionLink?.ProviderId ?? execution.ProviderAccount.ProviderId,
+                sessionLink?.AccountId ?? execution.ProviderAccount.AccountId,
+                sessionLink?.ModelId ?? execution.ExecutionProfile.ModelProfileId,
+                evidence?.VerificationResult, evidence?.EvidenceRef, evidence?.VerificationJson);
+        }
+
         return new LeaderReviewInput(
             project.Id,
             project.Name,
@@ -118,7 +141,7 @@ public sealed class LeaderReviewInputBuilder(
             finalReportEvent.EventId,
             new LeaderReviewFinalReport(finalReport.Message, finalReport.ValidationSummary),
             task.Status,
-            bindingKind);
+            bindingKind, bridgeContext);
     }
 
     private static bool TryReadFinalReport(string payload, out FinalReportEventPayload value)

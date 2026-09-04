@@ -67,6 +67,8 @@ public sealed class AppServices : IAsyncDisposable
         ILeaderReviewUserResponseBinder leaderReviewUserResponseBinder,
         B1ProjectGovernanceRepository b1ProjectGovernance,
         B1AuthorityRepository b1AuthorityRepository,
+        B1WorkerExecutionBridgeService b1WorkerExecutionBridge,
+        CanonicalWorkerLaunchService canonicalWorkerLaunch,
         B1EvidenceRepository b1Evidence,
         B1NonAuthoritativeCommandService b1NonAuthoritativeCommands,
         B1AuthorityCommandService b1AuthorityCommands,
@@ -120,6 +122,8 @@ public sealed class AppServices : IAsyncDisposable
         LeaderReviewUserResponseBinder = leaderReviewUserResponseBinder;
         B1ProjectGovernance = b1ProjectGovernance;
         B1AuthorityRepository = b1AuthorityRepository;
+        B1WorkerExecutionBridge = b1WorkerExecutionBridge;
+        CanonicalWorkerLaunch = canonicalWorkerLaunch;
         B1Evidence = b1Evidence;
         B1NonAuthoritativeCommands = b1NonAuthoritativeCommands;
         B1AuthorityCommands = b1AuthorityCommands;
@@ -185,6 +189,8 @@ public sealed class AppServices : IAsyncDisposable
     public ILeaderReviewUserResponseBinder LeaderReviewUserResponseBinder { get; }
     public B1ProjectGovernanceRepository B1ProjectGovernance { get; }
     public B1AuthorityRepository B1AuthorityRepository { get; }
+    public B1WorkerExecutionBridgeService B1WorkerExecutionBridge { get; }
+    public CanonicalWorkerLaunchService CanonicalWorkerLaunch { get; }
     public B1EvidenceRepository B1Evidence { get; }
     public B1NonAuthoritativeCommandService B1NonAuthoritativeCommands { get; }
     public B1AuthorityCommandService B1AuthorityCommands { get; }
@@ -263,11 +269,6 @@ public sealed class AppServices : IAsyncDisposable
         var leaderAutoProceed = new LeaderReviewAutoProceedExecutor(new TaskRepository(database), reviewState, typedReviewState, effectiveTimeProvider);
         var leaderAskUserGate = new LeaderReviewAskUserGate(new TaskRepository(database), reviewState, typedReviewState, leaderAuthoritySettings, projectLeaders, leaderMessages, effectiveTimeProvider);
         var leaderUserResponseBinder = new LeaderReviewUserResponseBinder(typedReviewState, taskEvents, effectiveTimeProvider);
-        var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
-            new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents),
-            new LeaderReviewRuntimeAdapter(agentHost), reviewState, typedReviewState, leaderAuthoritySettings, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
-            leaderAutoProceed, leaderAskUserGate);
-
         var workerExecutionRepository = new WorkerExecutionRepository(database);
         var workerRoutingStore = new TaskEventWorkerRoutingStore(taskEvents, workerExecutionRepository);
         var b1AuthorityRepository = new B1AuthorityRepository(database);
@@ -283,6 +284,14 @@ public sealed class AppServices : IAsyncDisposable
             b1AuthorityRepository,
             b1AuthorityEvaluator,
             effectiveTimeProvider);
+        var b1WorkerExecutionBridge = new B1WorkerExecutionBridgeService(
+            new B1WorkerBridgeRepository(database),
+            b1AuthorityRepository,
+            b1Evidence);
+        var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
+            new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents, b1WorkerExecutionBridge, workerExecutionRepository),
+            new LeaderReviewRuntimeAdapter(agentHost), reviewState, typedReviewState, leaderAuthoritySettings, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
+            leaderAutoProceed, leaderAskUserGate);
         var b1Projections = new B1ProjectionService(b1AuthorityRepository);
         var projectMemoryApi = new ProjectMemoryApi(dailySummaryRepository, projectMemoryPreferencesRepository, leaderEpochs, leaderMessages, libraryProposalService, libraryEvolutionRepository, b1Projections);
         var leaderMemoryPolicyCoordinator = new LeaderMemoryPolicyCoordinator(effectiveRuntimeRegistry, projectMemoryApi, effectiveTimeProvider);
@@ -351,7 +360,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost, new TaskRevisionRepository(database), taskEvents),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost, new TaskRevisionRepository(database), taskEvents, b1WorkerExecutionBridge, b1NonAuthoritativeCommands),
             workerRoutingStore,
             workerExecutionRepository,
             leaderReviewOrchestrator,
@@ -361,6 +370,8 @@ public sealed class AppServices : IAsyncDisposable
             leaderUserResponseBinder,
             b1ProjectGovernance,
             b1AuthorityRepository,
+            b1WorkerExecutionBridge,
+            new CanonicalWorkerLaunchService(b1AuthorityRepository, b1NonAuthoritativeCommands, b1ProjectGovernance, effectiveTimeProvider),
             b1Evidence,
             b1NonAuthoritativeCommands,
             b1AuthorityCommands,

@@ -7,7 +7,7 @@ namespace Workbench.Runtime.Tests.Providers.Codex;
 
 public sealed class CodexAppServerIntegrationTests(ITestOutputHelper output)
 {
-    [Fact]
+    [Fact(Skip = "Live provider integration is excluded from deterministic suite; run via dedicated live acceptance command.")]
     public async Task Real_codex_app_server_completes_provider_neutral_lifecycle()
     {
         if (!string.Equals(

@@ -15,7 +15,7 @@ namespace Workbench.App.Tests;
 
 public sealed class LiveLeaderIntegrationTests(ITestOutputHelper output)
 {
-    [Fact]
+    [Fact(Skip = "Live provider integration is excluded from deterministic suite; run via dedicated live acceptance command.")]
     public async Task Real_codex_completes_two_turn_project_leader_session()
     {
         if (!string.Equals(
@@ -75,7 +75,7 @@ public sealed class LiveLeaderIntegrationTests(ITestOutputHelper output)
         output.WriteLine($"ExternalSessionId: {secondSession.ExternalSessionId}");
     }
 
-    [Fact]
+    [Fact(Skip = "Live provider integration is excluded from deterministic suite; run via dedicated live acceptance command.")]
     public async Task Real_codex_fresh_epoch_answers_from_certified_project_memory_only()
     {
         if (!string.Equals(

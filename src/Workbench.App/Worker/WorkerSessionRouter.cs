@@ -4,12 +4,14 @@ using Workbench.App.Leader;
 using Workbench.App.Skills;
 using Workbench.Core.Tasks;
 using Workbench.Core.Workers;
+using Workbench.Core.Continuity;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Runtime.Runtime;
 using Workbench.Storage.Tasks;
 using Workbench.Storage.Workers;
 using Workbench.App.AgentHost;
+using Workbench.App.Continuity;
 
 namespace Workbench.App.Worker;
 
@@ -26,7 +28,13 @@ public sealed record WorkerStartRequest(
     Guid? ExecutionId = null,
     WorkerExecutionIdentity? ExecutionIdentity = null,
     bool WaitForCompletion = true,
-    AgentIntentSource PromptSource = AgentIntentSource.Leader);
+    AgentIntentSource PromptSource = AgentIntentSource.Leader,
+    AssignmentRef? B1AssignmentRef = null,
+    RevisionRef? B1AssignmentRevisionRef = null,
+    AttemptRef? B1AttemptRef = null,
+    SessionBindingRef? B1SessionBindingRef = null,
+    LogicalActorRef? B1LogicalActorRef = null,
+    UserPrincipalRef? B1OperatorRef = null);
 
 public sealed record WorkerStartResult(bool Succeeded, AgentSession? WorkerSession, string? Error);
 
@@ -411,12 +419,16 @@ public sealed class WorkerSessionRouter(
     WorkerExecutionRepository? executions = null,
     IAgentHost? agentHost = null,
     TaskRevisionRepository? taskRevisions = null,
-    TaskEventRepository? taskEvents = null)
+    TaskEventRepository? taskEvents = null,
+    B1WorkerExecutionBridgeService? b1WorkerExecutionBridge = null,
+    B1NonAuthoritativeCommandService? b1RoutingCommands = null)
 {
     private readonly IAgentHost _agentHost = agentHost ?? new InProcessAgentHost(runtimes);
     private readonly ConcurrentDictionary<AgentSessionId, Task> _intentTails = new();
     private readonly WorkerCompletionVerifier _completionVerifier = new();
     private readonly TaskEventRepository? _taskEvents = taskEvents;
+    private readonly B1WorkerExecutionBridgeService? _b1WorkerExecutionBridge = b1WorkerExecutionBridge;
+    private readonly B1NonAuthoritativeCommandService? _b1RoutingCommands = b1RoutingCommands;
 
     public async Task<int> ReconcileCompletedAssignmentsAsync(
         Guid projectId,
@@ -567,6 +579,9 @@ public sealed class WorkerSessionRouter(
         }
         var created = request.ReuseWorkerSessionId is null;
         var typed = executions is not null && request.ExecutionId.HasValue && request.ExecutionIdentity is not null;
+        var linked = request.B1AssignmentRef.HasValue || request.B1AttemptRef.HasValue || request.B1AssignmentRevisionRef.HasValue;
+        if (linked && (!typed || _b1WorkerExecutionBridge is null || request.B1AssignmentRef is null || request.B1AssignmentRevisionRef is null || request.B1AttemptRef is null))
+            return new WorkerStartResult(false, null, "A B1-linked Worker start requires Assignment, AssignmentRevision, Attempt, and typed execution identity.");
         if (typed && request.ExecutionIdentity!.TaskId != request.TaskId) throw new InvalidOperationException("Execution task mismatch.");
         var executionId = typed ? request.ExecutionId : null;
         AgentSession session;
@@ -587,6 +602,15 @@ public sealed class WorkerSessionRouter(
                         identity.CurrentAcknowledgedRevision, identity.BaseCommit, identity.TargetBranch, identity.ProviderAccount,
                         identity.ExecutionProfile, identity.WorkerBranch, identity.WorkerWorktreePath, WorkerExecutionState.RuntimeStarting,
                         null, null, null, time.GetUtcNow(), time.GetUtcNow(), workspaceBaseline?.Serialize()), cancellationToken);
+                    if (linked)
+                    {
+                        await _b1WorkerExecutionBridge!.LinkWorkerTaskAsync(
+                            new ProjectRef(request.Project.Id), request.B1AssignmentRef!.Value,
+                            request.B1AssignmentRevisionRef!.Value, request.TaskId, request.TaskRevisionId, cancellationToken);
+                        await _b1WorkerExecutionBridge.LinkWorkerExecutionAsync(
+                            new ProjectRef(request.Project.Id), request.B1AttemptRef!.Value,
+                            request.ExecutionId!.Value, B1WorkerExecutionRelationKind.Initial, cancellationToken);
+                    }
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -615,6 +639,23 @@ public sealed class WorkerSessionRouter(
                 {
                     await executions!.PersistSessionIdentityAsync(request.Project.Id, request.TaskId, request.ExecutionId!.Value,
                         session.Id.Value.ToString(), session.ExternalSessionId, session.WorkingDirectory ?? request.Project.RootPath, cancellationToken);
+                    if (linked && request.B1SessionBindingRef is null && _b1RoutingCommands is not null && request.B1LogicalActorRef is { } actor && request.B1OperatorRef is { } operatorRef)
+                    {
+                        var external = session.ExternalSessionId ?? session.Id.Value.ToString("N");
+                        var binding = await _b1RoutingCommands.CreateSessionBindingAsync(new CreateSessionBindingCommand(
+                            new ProjectRef(request.Project.Id), operatorRef,
+                            new SessionBinding(new SessionBindingRef(Guid.NewGuid()), request.B1AttemptRef!.Value, actor,
+                                new ExternalSessionRef($"{runtime.Provider.Id.Value}:session/{external}"), time.GetUtcNow())), cancellationToken);
+                        request = request with { B1SessionBindingRef = binding.SessionBindingRef };
+                    }
+                    if (linked && request.B1SessionBindingRef is { } bindingRef)
+                    {
+                        var external = session.ExternalSessionId ?? session.Id.Value.ToString("N");
+                        await _b1WorkerExecutionBridge!.LinkAgentSessionAsync(new B1WorkerSessionLink(
+                            new ProjectRef(request.Project.Id), bindingRef, request.ExecutionId!.Value, session.Id.Value,
+                            new ExternalSessionRef($"{runtime.Provider.Id.Value}:session/{external}"), runtime.Provider.Id.Value,
+                            runtime.Account.Id.Value.ToString(), session.ModelId, time.GetUtcNow()), cancellationToken);
+                    }
                     await executions.UpdateStateAsync(request.Project.Id, request.TaskId, request.ExecutionId.Value, WorkerExecutionState.Running, cancellationToken);
                 }
                 await store.SaveSessionAsync(new WorkerSessionRecord(request.Project.Id, request.TaskId, request.TaskTitle, session,
@@ -725,6 +766,19 @@ public sealed class WorkerSessionRouter(
                                     Guid.NewGuid(), request.Project.Id, request.TaskId, executionId,
                                     "WorkerCompletionVerification",
                                     WorkerCompletionVerifier.Serialize(verification), verification.VerifiedAt), cancellationToken);
+                            }
+                            if (_b1WorkerExecutionBridge is not null && request.B1AssignmentRef is not null && request.B1AttemptRef is not null)
+                            {
+                                await _b1WorkerExecutionBridge.RecordVerificationEvidenceAsync(
+                                    new ProjectRef(request.Project.Id),
+                                    new EvidenceRef($"workbench:worker-execution/{execution.ExecutionId:N}/verification"),
+                                    execution.ExecutionId,
+                                    execution.TaskId,
+                                    effectiveRevision.Id,
+                                    request.B1AttemptRef.Value,
+                                    verification.Result.ToString(),
+                                    verification,
+                                    cancellationToken);
                             }
                         }
                     }

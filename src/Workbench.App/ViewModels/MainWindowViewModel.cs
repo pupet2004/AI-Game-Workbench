@@ -185,6 +185,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              acceptedStateReader: _services.LibraryAcceptedStateReader,
              agentHost: _services.AgentHost,
              workerExecutionRepository: _services.WorkerExecutionRepository,
+             canonicalWorkerLaunch: _services.CanonicalWorkerLaunch,
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result));
         CurrentPage = workspace;

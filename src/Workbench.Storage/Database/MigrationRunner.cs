@@ -141,6 +141,10 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration026WorkerWorkspaceBaseline.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration027B1WorkerBridge.Version)
+        {
+            await ApplyAsync(connection, Migration027B1WorkerBridge.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

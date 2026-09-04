@@ -23,6 +23,8 @@ Workbench must continue to own the fourth layer. A reused shell is a projection,
 | Kilo Code | `ed3380ea494156cd36107d3ac95acaf08bf28b7f` (`v7.5.0`, 2026-08-26) | `packages/kilo-vscode/package.json`, `packages/kilo-ui/package.json`, `packages/kilo-web-ui/package.json`, and `packages/session-ui/package.json` declare MIT. The repository README has historically used different wording, so a release-level dependency/license audit is still required before vendoring. |
 | Cline | `HEAD` in `spikes/agent-shell-reuse/upstream/cline` (local shallow clone, 2026-08-26) | Repository `LICENSE` is Apache-2.0. The desktop example is not treated as a separately licensed product until its dependency notices are audited. |
 
+The `upstream/cline` and `upstream/kilocode` directories are local-only spike clones. They are external reference material, not Workbench production dependencies and not part of the Alpha source identity. Their upstream commit identities remain recorded here; the clones are intentionally excluded from the parent release tree.
+
 ## Kilo Code
 
 ### What is reusable

@@ -197,7 +197,7 @@ Workbench.Project -> Workbench.Storage
 | `Workbench.Project/Opening` and `Detection` | Application/project-locator adapter | **ACTIVE.** Opens and classifies a filesystem project; despite the assembly name, this is not the Project World Kernel. |
 | `Workbench.Project/Git` | Read-only external locator/provenance adapter | **ACTIVE ADAPTER.** Repository root, HEAD, branch, and dirty-state inspection do not make Workbench the owner of Git execution. |
 | `Workbench.Runtime` | Execution Environment and Provider adapter | **ACTIVE, REPLACEABLE, MIXED CONTRACT.** Codex remains the primary runtime path; the current working tree also contains an OpenCode runtime used through the B1 participation adapter. Broader provider coverage remains unvalidated. `IAgentRuntime` includes useful connection operations plus optional discovery, status, capability, and transcript surfaces; it is broader than a minimal participation gateway. |
-| `Workbench.App/Services/AppServices` | Composition root | **ACTIVE COEXISTENCE ROOT.** Composes B1 services beside Legacy Leader, Worker, Memory, Library, review, and Runtime services. Composition does not make those worlds semantically equivalent. |
+| `Workbench.App/Services/AppServices` | Composition root | **ACTIVE COEXISTENCE ROOT.** Composes B1 services beside Legacy Leader, Worker, Memory, Library, review, and Runtime services. B1 and Worker remain semantically distinct and now have a durable typed bridge; composition does not make the worlds equivalent. |
 | `Workbench.App/ViewModels` and `Views` | Presentation/Application | **MIXED CURRENT UI.** The current working tree consumes B1 accepted-state and Library projections, while the full designed B1 Manual/Agent experience remains transitional. Legacy Leader/Worker surfaces continue to coexist. |
 | `Workbench.Core/Leaders`, `Tasks`, `Workers`, `Memory` | Legacy and mixed domain/application-era models | **TRANSITIONAL.** Assembly membership does not promote these types into B1 authority semantics. Useful identity, contract, and provenance fragments coexist with execution-era assumptions. |
 | `Workbench.App/Leader`, `Worker`, `Memory` | Legacy participation, orchestration, compatibility, and delegated leakage | **TRANSITIONAL / MIXED.** Contains valid routing and UI use cases, plus Agent-centric review, rollover, execution, transcript, and compatibility behavior. |
@@ -271,7 +271,7 @@ These are reconciliation findings, not immediate refactoring instructions.
 
 ### 7.2 B1 exists beside, not underneath, the old workflows
 
-`AppServices` composes the new B1 spine and the old Leader/Worker/review/Memory surfaces in parallel. The B1 services are real and recovery-certified, but the current UI and existing Agent workflows do not automatically pass through B1 Claims and authority commands. Treating composition as completed semantic integration would be false.
+`AppServices` composes the new B1 spine and the old Leader/Worker/review/Memory surfaces in parallel. The B1 services are real and recovery-certified, and the Worker lane now has an explicit durable typed attribution bridge. The current UI and existing Agent workflows do not universally pass through B1 Claims and authority commands; treating composition as full semantic cutover would be false.
 
 ### 7.3 Mixed orchestration obscures ownership
 
@@ -350,6 +350,8 @@ The non-normative research note [From Continuity to Accountability](./from-conti
 ## 10. Reconciliation Judgment
 
 R5-B1 successfully moved the durable center of Workbench into a recoverable Project World. The current repository, however, remains a deliberate coexistence system: the sealed B1 spine operates beside active Agent-centric and Legacy product paths. This is not a contradiction, provided their records and behaviors are not mistaken for B1 identity, authority, or accepted state.
+
+The current canonical Leader-to-Worker path is B1-linked when a unique current delegation and typed Git-backed execution identity are available; legacy entry remains available for ambiguous or non-governed starts.
 
 The global architecture should therefore be read in this order:
 

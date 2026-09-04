@@ -19,6 +19,7 @@ using Workbench.Core.Workers;
 using Workbench.Project.Git;
 using Workbench.Storage.Memory;
 using Workbench.App.AgentHost;
+using Workbench.App.Continuity;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ViewModels.Panes;
@@ -39,6 +40,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly TaskRepository? _tasks;
     private readonly TaskRevisionRepository? _taskRevisions;
     private readonly WorkerExecutionRepository? _workerExecutions;
+    private readonly CanonicalWorkerLaunchService? _canonicalWorkerLaunch;
     private readonly WorkerSessionRouter? _workerSessionRouter;
     private readonly Func<CancellationToken, Task>? _refreshWorkPane;
     private readonly IProjectMemoryApi? _projectMemoryApi;
@@ -77,7 +79,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         GitSnapshot? git = null,
         ProjectSummaryRepository? projectSummaryRepository = null,
         IAgentHost? agentHost = null,
-        WorkerExecutionRepository? workerExecutionRepository = null)
+        WorkerExecutionRepository? workerExecutionRepository = null,
+        CanonicalWorkerLaunchService? canonicalWorkerLaunch = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -93,6 +96,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _tasks = taskRepository;
         _taskRevisions = taskRevisionRepository;
         _workerExecutions = workerExecutionRepository;
+        _canonicalWorkerLaunch = canonicalWorkerLaunch;
         _workerSessionRouter = workerSessionRouter;
         _refreshWorkPane = refreshWorkPane;
         _projectMemoryApi = projectMemoryApi;
@@ -1645,6 +1649,22 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             profile, confirmation.Goal, null, "Worker",
             (handoff, token) => _sessionManager.IngestWorkerHandoffAsync(handoff, token),
             WaitForCompletion: false);
+        if (_canonicalWorkerLaunch is not null && _git is { IsRepository: true, HeadCommit: not null, BranchName: not null })
+        {
+            var canonical = await _canonicalWorkerLaunch.PrepareAsync(_project.Id, confirmation.Revision, cancellationToken);
+            if (canonical is not null)
+            {
+                request = request with
+                {
+                    B1AssignmentRef = canonical.AssignmentRef,
+                    B1AssignmentRevisionRef = canonical.AssignmentRevisionRef,
+                    B1AttemptRef = canonical.AttemptRef,
+                    B1SessionBindingRef = canonical.SessionBindingRef,
+                    B1LogicalActorRef = canonical.LogicalActorRef,
+                    B1OperatorRef = canonical.OperatorRef
+                };
+            }
+        }
         if (_git is { IsRepository: true, HeadCommit: not null, BranchName: not null } git)
         {
             var executionId = Guid.NewGuid();

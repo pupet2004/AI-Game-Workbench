@@ -16,6 +16,7 @@ using Workbench.Storage.Tasks;
 using Workbench.App.Worker;
 using Workbench.App.Memory;
 using Workbench.App.AgentHost;
+using Workbench.App.Continuity;
 
 namespace Workbench.App.ViewModels;
 
@@ -60,6 +61,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          LibraryAcceptedStateReader? acceptedStateReader = null,
          IAgentHost? agentHost = null,
          WorkerExecutionRepository? workerExecutionRepository = null,
+         CanonicalWorkerLaunchService? canonicalWorkerLaunch = null,
          Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null,
          Func<Task>? openProjectOverview = null)
     {
@@ -119,7 +121,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             git: result.Git,
             projectSummaryRepository: projectSummaryRepository,
             agentHost: agentHost,
-            workerExecutionRepository: workerExecutionRepository);
+            workerExecutionRepository: workerExecutionRepository,
+            canonicalWorkerLaunch: canonicalWorkerLaunch);
     }
 
     public ProjectOpenResult Result { get; }

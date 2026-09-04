@@ -41,9 +41,9 @@ public sealed class ManualContinuityMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(26L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(27L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(B1Tables, await StringsAsync(connection,
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'b1_%' ORDER BY name;"));
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'b1_%' AND name NOT GLOB 'b1_worker_*' ORDER BY name;"));
         Assert.Contains("activation_source_claim_id", await StringsAsync(connection,
             "SELECT name FROM pragma_table_info('b1_revisions') ORDER BY cid;"));
     }
@@ -115,7 +115,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = fixture.Database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(26L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(27L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(beforeRows, await ReadLegacySnapshotAsync(after));
         var schemaDeltaKeys = new[] { "index|ix_library_nodes_object_occurred", "table|project_library_timeline_nodes", "table|worker_executions" };
         var expectedSchema = beforeSchema
@@ -148,7 +148,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(26L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(27L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(before, await ReadV11BoundedSnapshotAsync(after));
         Assert.Equal("ok", await ScalarAsync<string>(after, "PRAGMA quick_check;"));
         Assert.Equal(0L, await ScalarAsync<long>(after, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));

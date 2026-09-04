@@ -118,9 +118,22 @@ public sealed class WorkspaceViewModelTests
 
         workspace.ApplyPaneWidths(400, 400, 200);
         workspace.ApplyPaneWidths(200, 550, 250);
-        await Task.Delay(80);
+        ProjectLayout? saved = null;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        while (DateTime.UtcNow < deadline)
+        {
+            saved = await context.Services.ProjectLayoutRepository.GetAsync(workspace.Result.Project.Id);
+            if (saved is not null &&
+                saved.LeaderWidth == 0.2 &&
+                saved.WorkWidth == 0.55 &&
+                saved.LibraryWidth == 0.25)
+            {
+                break;
+            }
 
-        var saved = await context.Services.ProjectLayoutRepository.GetAsync(workspace.Result.Project.Id);
+            await Task.Delay(20);
+        }
+
         Assert.Equal([0.2, 0.55, 0.25], [saved!.LeaderWidth, saved.WorkWidth, saved.LibraryWidth]);
     }
 

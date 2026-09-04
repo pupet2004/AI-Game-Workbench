@@ -28,3 +28,15 @@ Thumbs.db
 Desktop.ini
 *.tmp
 *.temp
+
+# Release hygiene: generated and internal validation material stays outside
+# the source candidate unless explicitly promoted into docs/validation.
+artifacts/
+acceptance-lab-*/
+docx_qa_en_*/
+tools/html-video/
+round*-screen.png
+
+# Upstream spike clones are local-only references, not Alpha source identity.
+spikes/agent-shell-reuse/upstream/cline/
+spikes/agent-shell-reuse/upstream/kilocode/
