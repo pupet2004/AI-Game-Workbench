@@ -116,6 +116,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     public ObservableCollection<ActiveAssignmentItemView> ActiveWork { get; } = [];
     public ObservableCollection<AttentionItemView> NeedsAttention { get; } = [];
     public ObservableCollection<DecisionItemView> RecentDecisions { get; } = [];
+    public ObservableCollection<ProjectEvolutionRecord> EvolutionEntries { get; } = [];
 
     public bool HasLegacyContext { get; private set; }
     public bool CanProjectToLibrary => !Loading && SelectedLibraryContribution is not null &&
@@ -143,6 +144,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             var state = await _services.B1AuthorityRepository.LoadProjectStateAsync(projectRef, cancellationToken);
             var projection = B1Projector.Build(state);
             var library = await _services.LibraryAcceptedStateReader.ReadAsync(projectRef, cancellationToken);
+            var evolution = await _services.ProjectEvolutionIndex.ListAsync(_result.Project.Id, cancellationToken);
 
             AcceptedState.Clear();
             LibraryContributions.Clear();
@@ -223,6 +225,10 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                         ? LocalizationService.Current["Dynamic.NoAcceptedStatements"]
                         : string.Join("; ", decision.AcceptedStateContributions.Select(value => value.Statement))));
             }
+
+            EvolutionEntries.Clear();
+            foreach (var entry in evolution)
+                EvolutionEntries.Add(entry);
 
             HasAcceptedState = AcceptedState.Count > 0;
             HasLegacyContext = (await _services.B1ProjectGovernance.GetAsync(projectRef, cancellationToken))?.Origin == B1GovernanceOrigin.Adopted;

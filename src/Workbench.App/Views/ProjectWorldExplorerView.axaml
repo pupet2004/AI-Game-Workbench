@@ -138,6 +138,27 @@
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="6"><TextBlock Text="{Binding [Explorer.Legacy]}" FontSize="18" FontWeight="SemiBold" /><TextBlock Text="{Binding LegacyContextText}" TextWrapping="Wrap" /></StackPanel>
             </Border>
+            <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [Explorer.Evolution]}" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding [Explorer.EvolutionDescription]}" Opacity="0.7" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding EvolutionEntries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:ProjectEvolutionRecord">
+                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="{Binding Category}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding OccurredAt}" Opacity="0.7" />
+                                        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding ObjectRef}" Opacity="0.7" />
+                                        <TextBlock Text="{Binding AuthorityStatus}" Opacity="0.7" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
             <TextBlock Text="{Binding [Explorer.ProjectAreas]}" Opacity="0.65" />
         </StackPanel>
     </ScrollViewer>

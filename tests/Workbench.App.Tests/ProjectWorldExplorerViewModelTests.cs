@@ -43,6 +43,23 @@ public sealed class ProjectWorldExplorerViewModelTests
         Assert.Contains("Assignment + Revision", explorer.RecentDecisions[0].EffectsText);
     }
 
+    [Fact]
+    public async Task Explorer_exposes_deterministic_project_evolution_entries()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var now = fixture.Services.TimeProvider.GetUtcNow();
+        var libraryObject = await fixture.Services.ProjectLibraryEvolutionRepository.CreateObjectAsync(
+            fixture.OpenResult.Project.Id, "Chapter", "Chapter 1", now);
+        await fixture.Services.ProjectLibraryEvolutionRepository.AddNodeAsync(
+            fixture.OpenResult.Project.Id, libraryObject.Id, new DateOnly(2026, 9, 6), "Chapter completed", [], now);
+
+        var explorer = new ProjectWorldExplorerViewModel(fixture.Services, fixture.OpenResult, () => Task.CompletedTask);
+        await explorer.InitializeAsync();
+
+        Assert.Contains(explorer.EvolutionEntries, entry => entry.Category == ProjectEvolutionCategory.Library &&
+            entry.Summary.Contains("Chapter completed", StringComparison.Ordinal));
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly AppTestContext _context;

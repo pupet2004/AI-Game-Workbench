@@ -13,6 +13,7 @@ using Workbench.Runtime.Registry;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using Workbench.Storage.Memory;
+using Workbench.Core.Continuity;
 
 namespace Workbench.App.Tests.Worker;
 
@@ -36,10 +37,99 @@ public sealed class LeaderDraftProposalTests
     [Fact]
     public void Normal_leader_result_explicitly_uses_null_authority_confirmation()
     {
-        var json = "{\"response\":\"普通回答\",\"draft_proposal\":null,\"memory_commands\":null,\"authority_confirmation\":null,\"summary_deltas\":null}";
+        var json = "{\"response\":\"普通回答\",\"draft_proposal\":null,\"memory_commands\":null,\"authority_confirmation\":null,\"summary_deltas\":null,\"evolution_candidates\":[]}";
 
         Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
         Assert.Null(parsed.AuthorityConfirmation);
+    }
+
+    [Fact]
+    public void Evolution_candidate_schema_is_closed_bounded_and_nullable_only_at_before_after()
+    {
+        using var document = JsonDocument.Parse(LeaderResponseSchema.Json);
+        var candidates = document.RootElement.GetProperty("properties").GetProperty("evolution_candidates");
+
+        Assert.Equal("array", candidates.GetProperty("type").GetString());
+        Assert.Equal(3, candidates.GetProperty("maxItems").GetInt32());
+        var item = candidates.GetProperty("items");
+        Assert.False(item.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(
+            ["object", "object_kind", "change_type", "before", "after", "impact_class", "route_hint", "reason", "source_ref"],
+            item.GetProperty("required").EnumerateArray().Select(value => value.GetString()));
+        Assert.Contains(item.GetProperty("properties").GetProperty("before").GetProperty("type").EnumerateArray(), value => value.GetString() == "null");
+        Assert.Contains(item.GetProperty("properties").GetProperty("after").GetProperty("type").EnumerateArray(), value => value.GetString() == "null");
+        Assert.Equal(
+            ["WorldRule", "ProjectStructure", "CharacterOrObject", "Content", "Architecture", "Unclassified"],
+            item.GetProperty("properties").GetProperty("impact_class").GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(
+            ["AuthorityConfirmation", "LibraryProposal", "NoGovernance", "Unclassified"],
+            item.GetProperty("properties").GetProperty("route_hint").GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+    }
+
+    [Fact]
+    public void Evolution_candidate_parses_as_read_only_sidecar()
+    {
+        var json = """
+            {
+              "response": "已识别一项可能影响未来工作的变化。",
+              "draft_proposal": null,
+              "memory_commands": null,
+              "authority_confirmation": null,
+              "summary_deltas": null,
+            "evolution_candidates": [{
+                "object": "无限计算器",
+                "object_kind": "WorldRule",
+                "change_type": "ConstraintRevision",
+                "before": "可能控制人的时间行为",
+                "after": "只预测时空稳定性风险，不控制人的思想",
+                "impact_class": "WorldRule",
+                "route_hint": "AuthorityConfirmation",
+                "reason": "用户明确改变了世界规则边界",
+                "source_ref": "current_user_message"
+              }]
+            }
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+
+        var candidate = Assert.Single(parsed.EvolutionCandidates);
+        Assert.Equal("无限计算器", candidate.Object);
+        Assert.Equal("WorldRule", candidate.ObjectKind);
+        Assert.Equal("ConstraintRevision", candidate.ChangeType);
+        Assert.Equal("可能控制人的时间行为", candidate.Before);
+        Assert.Equal("只预测时空稳定性风险，不控制人的思想", candidate.After);
+        Assert.Equal(LeaderEvolutionImpactClass.WorldRule, candidate.ImpactClass);
+        Assert.Equal(LeaderEvolutionRouteHint.AuthorityConfirmation, candidate.RouteHint);
+        Assert.Equal("current_user_message", candidate.SourceRef);
+        Assert.Null(parsed.Proposal);
+        Assert.Null(parsed.MemoryCommands);
+        Assert.Null(parsed.AuthorityConfirmation);
+    }
+
+    [Fact]
+    public void Parser_keeps_backward_compatibility_when_candidate_field_is_absent()
+    {
+        const string json = "{\"response\":\"legacy envelope\",\"draft_proposal\":null,\"memory_commands\":null,\"authority_confirmation\":null,\"summary_deltas\":null}";
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+        Assert.Empty(parsed.EvolutionCandidates);
+    }
+
+    [Fact]
+    public void More_than_three_evolution_candidates_is_rejected()
+    {
+        const string item = "{\"object\":\"x\",\"object_kind\":\"Rule\",\"change_type\":\"Revision\",\"before\":null,\"after\":\"y\",\"impact_class\":\"Content\",\"route_hint\":\"LibraryProposal\",\"reason\":\"explicit change\",\"source_ref\":\"current_user_message\"}";
+        var json = $"{{\"response\":\"too many\",\"draft_proposal\":null,\"memory_commands\":null,\"authority_confirmation\":null,\"summary_deltas\":null,\"evolution_candidates\":[{item},{item},{item},{item}]}}";
+
+        Assert.False(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out _));
+    }
+
+    [Fact]
+    public void Unknown_evolution_impact_or_route_is_rejected()
+    {
+        const string json = "{\"response\":\"candidate\",\"draft_proposal\":null,\"memory_commands\":null,\"authority_confirmation\":null,\"summary_deltas\":null,\"evolution_candidates\":[{\"object\":\"x\",\"object_kind\":\"Rule\",\"change_type\":\"Revision\",\"before\":null,\"after\":\"y\",\"impact_class\":\"MaybeImportant\",\"route_hint\":\"Anything\",\"reason\":\"explicit change\",\"source_ref\":\"current_user_message\"}]}";
+
+        Assert.False(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out _));
     }
 
     [Fact]
@@ -303,6 +393,7 @@ public sealed class LeaderDraftProposalTests
         Assert.NotNull(runtime.SentRequests.Single().OutputSchema);
         Assert.Contains("draft_proposal", runtime.SentRequests.Single().OutputSchema!, StringComparison.Ordinal);
         Assert.Contains("memory_commands", runtime.SentRequests.Single().OutputSchema!, StringComparison.Ordinal);
+        Assert.Contains("evolution_candidates", runtime.SentRequests.Single().OutputSchema!, StringComparison.Ordinal);
 
         Assert.DoesNotContain("outputSchema", new AgentRequest("worker").Text, StringComparison.Ordinal);
     }
@@ -331,6 +422,201 @@ public sealed class LeaderDraftProposalTests
         command.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
         Assert.Equal(0L, (long)(await command.ExecuteScalarAsync())!);
         Assert.Single(runtime.CreatedSessions);
+    }
+
+    [Fact]
+    public async Task Evolution_candidate_is_exposed_without_task_library_authority_or_worker_side_effects()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+                """
+                {
+                  "response": "检测到一项变化候选。",
+                  "draft_proposal": null,
+                  "memory_commands": null,
+                  "authority_confirmation": null,
+                  "summary_deltas": null,
+                  "evolution_candidates": [{
+                    "object": "无限计算器",
+                    "object_kind": "WorldRule",
+                    "change_type": "ConstraintRevision",
+                    "before": "可能控制人的时间行为",
+                    "after": "只预测时空稳定性风险，不控制人的思想",
+                    "impact_class": "WorldRule",
+                    "route_hint": "AuthorityConfirmation",
+                    "reason": "用户明确改变了世界规则边界",
+                    "source_ref": "current_user_message"
+                  }]
+                }
+                """, null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.DraftMessage = "以后无限计算器只预测风险，不控制思想。";
+
+        await workspace.LeaderPane.SendAsync();
+
+        var candidate = Assert.Single(workspace.LeaderPane.EvolutionCandidates);
+        Assert.Equal("无限计算器", candidate.Object);
+        Assert.True(workspace.LeaderPane.HasEvolutionCandidates);
+        Assert.Empty(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Empty(await context.Services.WorkerExecutionRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
+        await using var connection = context.Services.Database.CreateConnection();
+        await connection.OpenAsync();
+        var authorityCount = connection.CreateCommand();
+        authorityCount.CommandText = "SELECT COUNT(*) FROM b1_authority_decisions WHERE project_id = $projectId";
+        authorityCount.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
+        Assert.Equal(0L, (long)(await authorityCount.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Evolution_candidate_turn_does_not_materialize_a_same_turn_authority_confirmation()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+                """
+                {
+                  "response": "检测到变化候选。",
+                  "draft_proposal": null,
+                  "memory_commands": null,
+                  "authority_confirmation": {
+                    "title": "误路由的 Authority 草稿",
+                    "contributions": [{"statement": "林砚改为调查员。"}]
+                  },
+                  "summary_deltas": null,
+                  "evolution_candidates": [{
+                    "object": "林砚",
+                    "object_kind": "Character",
+                    "change_type": "RoleRevision",
+                    "before": "审核员",
+                    "after": "调查员",
+                    "impact_class": "CharacterOrObject",
+                    "route_hint": "AuthorityConfirmation",
+                    "reason": "用户明确修改角色设定",
+                    "source_ref": "current_user_message"
+                  }]
+                }
+                """, null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.DraftMessage = "以后把林砚的职业从审核员改成时间异常调查员。";
+
+        await workspace.LeaderPane.SendAsync();
+
+        Assert.Single(workspace.LeaderPane.EvolutionCandidates);
+        Assert.Null(workspace.LeaderPane.PendingAuthorityConfirmation);
+        Assert.Contains("治理草稿需要在后续明确请求中单独生成", workspace.LeaderPane.MemoryCommandStatus, StringComparison.Ordinal);
+        Assert.Empty(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
+        await using var connection = context.Services.Database.CreateConnection();
+        await connection.OpenAsync();
+        var authorityCount = connection.CreateCommand();
+        authorityCount.CommandText = "SELECT COUNT(*) FROM b1_authority_decisions WHERE project_id = $projectId";
+        authorityCount.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
+        Assert.Equal(0L, (long)(await authorityCount.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Evolution_candidate_route_suggestion_prepares_ephemeral_draft_without_persistence()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+                """
+                {
+                  "response": "变化已分类。",
+                  "draft_proposal": null,
+                  "memory_commands": null,
+                  "authority_confirmation": null,
+                  "summary_deltas": null,
+                  "evolution_candidates": [{
+                    "object": "无限计算器",
+                    "object_kind": "WorldRule",
+                    "change_type": "ConstraintRevision",
+                    "before": "可能控制人的时间行为",
+                    "after": "只预测时空稳定性风险，不控制人的思想",
+                    "impact_class": "WorldRule",
+                    "route_hint": "AuthorityConfirmation",
+                    "reason": "用户明确改变了世界规则边界",
+                    "source_ref": "current_user_message"
+                  }]
+                }
+                """, null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.DraftMessage = "以后无限计算器只预测风险，不控制思想。";
+
+        await workspace.LeaderPane.SendAsync();
+
+        var suggestion = Assert.Single(workspace.LeaderPane.GovernanceSuggestions);
+        Assert.True(suggestion.CanPrepareDraft);
+        workspace.LeaderPane.PrepareGovernanceDraftCommand.Execute(suggestion);
+
+        Assert.True(workspace.LeaderPane.HasPreparedGovernanceDraft);
+        Assert.NotNull(workspace.LeaderPane.PreparedGovernanceDraft!.AuthorityConfirmation);
+        Assert.Null(workspace.LeaderPane.PreparedGovernanceDraft.LibraryProposal);
+        Assert.Empty(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Empty(await context.Services.WorkerExecutionRepository.ListAsync(workspace.Result.Project.Id));
+        Assert.Empty(await context.Services.ProjectMemoryApi.GetPendingLibraryProposalsAsync(workspace.Result.Project.Id));
+    }
+
+    [Fact]
+    public async Task Evolution_candidate_and_execution_proposal_in_one_turn_do_not_materialize_worker_draft()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+                """
+                {
+                  "response": "检测到变化并提出治理建议。",
+                  "draft_proposal": {
+                    "title": "扩充第一章",
+                    "goal": "扩充时间礼仪课",
+                    "scope": "chapter-01.md",
+                    "outOfScope": "其他章节",
+                    "acceptance": ["完成"],
+                    "riskLevel": "Low",
+                    "recommendedExecutionProfile": {"providerHint": null, "modelHint": null, "runtimeHint": null}
+                  },
+                  "memory_commands": null,
+                  "authority_confirmation": null,
+                  "summary_deltas": null,
+                  "evolution_candidates": [{
+                    "object": "时间礼仪课",
+                    "object_kind": "Content",
+                    "change_type": "ContentRevision",
+                    "before": "内容偏少",
+                    "after": "需要扩充",
+                    "impact_class": "Content",
+                    "route_hint": "LibraryProposal",
+                    "reason": "用户指出内容不足",
+                    "source_ref": "current_user_message"
+                  }]
+                }
+                """, null), DateTimeOffset.UtcNow));
+        await workspace.LeaderPane.InitializeAsync();
+        workspace.LeaderPane.DraftMessage = "第一章这里感觉时间礼仪课写得有点少。";
+
+        await workspace.LeaderPane.SendAsync();
+
+        Assert.Single(workspace.LeaderPane.EvolutionCandidates);
+        Assert.Null(workspace.LeaderPane.DraftConfirmation);
+        Assert.Empty(await context.Services.TaskRepository.ListAsync(workspace.Result.Project.Id));
     }
     [Fact]
     public void Structured_envelope_parses_without_provider_specific_fields()

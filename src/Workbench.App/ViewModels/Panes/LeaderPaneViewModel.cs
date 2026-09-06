@@ -136,6 +136,19 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public ObservableCollection<LeaderChangedFileViewModel> ChangedFiles => _conversation.ChangedFiles;
 
+    public ObservableCollection<LeaderEvolutionCandidate> EvolutionCandidates { get; } = [];
+
+    public bool HasEvolutionCandidates => EvolutionCandidates.Count > 0;
+
+    public ObservableCollection<LeaderGovernanceRouteSuggestion> GovernanceSuggestions { get; } = [];
+
+    public bool HasGovernanceSuggestions => GovernanceSuggestions.Count > 0;
+
+    [ObservableProperty]
+    public partial LeaderGovernanceDraftPreview? PreparedGovernanceDraft { get; set; }
+
+    public bool HasPreparedGovernanceDraft => PreparedGovernanceDraft is not null;
+
     internal ProjectSummaryRepository? SummaryRepository => _projectSummaryRepository;
 
     [ObservableProperty]
@@ -624,6 +637,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _conversation.IsBusy = true;
         _conversation.Activities.Clear();
         _conversation.ChangedFiles.Clear();
+        EvolutionCandidates.Clear();
+        GovernanceSuggestions.Clear();
+        PreparedGovernanceDraft = null;
+        OnPropertyChanged(nameof(HasEvolutionCandidates));
+        OnPropertyChanged(nameof(HasGovernanceSuggestions));
         _conversation.ApprovalError = null;
         MemoryCommandStatus = null;
         NotifyAllState();
@@ -849,20 +867,41 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             structuredResponseParsed = true;
                             finalText = structured.Response;
                             summaryDeltas = suppressSummaryDeltas ? [] : structured.SummaryDeltas;
-                            if (structured.MemoryCommandError is not null)
+                            foreach (var candidate in structured.EvolutionCandidates)
+                            {
+                                EvolutionCandidates.Add(candidate);
+                                GovernanceSuggestions.Add(LeaderGovernanceRouteSuggestionBuilder.Create(_project.Id, candidate));
+                            }
+                            OnPropertyChanged(nameof(HasEvolutionCandidates));
+                            OnPropertyChanged(nameof(HasGovernanceSuggestions));
+                            var hasEvolutionCandidate = structured.EvolutionCandidates.Count > 0;
+                            if (hasEvolutionCandidate &&
+                                (structured.MemoryCommands?.LibraryProposal is not null ||
+                                 structured.AuthorityConfirmation is not null))
+                            {
+                                MemoryCommandStatus = "已检测到 Evolution Candidate；治理草稿需要在后续明确请求中单独生成。";
+                            }
+                            else if (structured.MemoryCommandError is not null)
                             {
                                 MemoryCommandStatus = structured.MemoryCommandError;
                             }
-                            else if (structured.MemoryCommands?.LibraryProposal is not null)
+                            else if (!hasEvolutionCandidate &&
+                                     structured.MemoryCommands?.LibraryProposal is not null)
                             {
                                 await CreateLibraryProposalAsync(structured.MemoryCommands.LibraryProposal, cancellationToken);
                             }
-                            if (structured.AuthorityConfirmation is not null)
+                            if (!hasEvolutionCandidate && structured.AuthorityConfirmation is not null)
                             {
                                 PendingAuthorityConfirmation = structured.AuthorityConfirmation;
                                 AuthorityConfirmationStatusMessage = null;
                             }
-                            if (_draftProposalBuilder is not null && structured.Proposal is not null)
+                            // A semantic Evolution Candidate is a governance observation,
+                            // never an implicit execution request. Keep the legacy Worker
+                            // draft channel isolated; an explicit follow-up turn is required
+                            // before materializing a Task/TaskRevision.
+                            if (_draftProposalBuilder is not null &&
+                                structured.Proposal is not null &&
+                                structured.EvolutionCandidates.Count == 0)
                             {
                                 var resources = await _runtimeRegistry.GetWorkerResourcesAsync(cancellationToken);
                                 var candidate = SelectCandidate(resources, structured.Proposal.Recommendation);
@@ -1562,6 +1601,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(PendingAuthorityConfirmation));
         OnPropertyChanged(nameof(AuthorityConfirmationStatusMessage));
         OnPropertyChanged(nameof(HasMemoryCommandStatus));
+        OnPropertyChanged(nameof(HasGovernanceSuggestions));
+        OnPropertyChanged(nameof(PreparedGovernanceDraft));
+        OnPropertyChanged(nameof(HasPreparedGovernanceDraft));
         OnPropertyChanged(nameof(Activities));
         OnPropertyChanged(nameof(ChangedFiles));
         NotifyCommandState();
@@ -1727,6 +1769,23 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         PendingAuthorityConfirmation = null;
         AuthorityConfirmationStatusMessage = null;
+        NotifyAllState();
+    }
+
+    [RelayCommand]
+    private void PrepareGovernanceDraft(LeaderGovernanceRouteSuggestion suggestion)
+    {
+        ArgumentNullException.ThrowIfNull(suggestion);
+        PreparedGovernanceDraft = suggestion.CanPrepareDraft
+            ? new LeaderGovernanceDraftPreview(suggestion, suggestion.AuthorityConfirmation, suggestion.LibraryProposal)
+            : null;
+        NotifyAllState();
+    }
+
+    [RelayCommand]
+    private void ClearPreparedGovernanceDraft()
+    {
+        PreparedGovernanceDraft = null;
         NotifyAllState();
     }
 

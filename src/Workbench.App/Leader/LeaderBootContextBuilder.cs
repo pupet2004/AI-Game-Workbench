@@ -254,6 +254,18 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
         builder.AppendLine("A persisted Library projection means the Library update is already present in Library; do not report it as pending_confirmation merely because a workspace artifact contains that stale status.");
         builder.AppendLine("Library Proposal/Recommendation content remains non-authoritative unless an AuthorityDecision explicitly supports it; Library acceptance does not make it AcceptedProjectState.");
         builder.AppendLine("If no Workbench-managed execution exists, report that there is no active Workbench Worker, even when runtime-local collaborators are present.");
+        builder.AppendLine("EVOLUTION CANDIDATE EXPERIMENT");
+        builder.AppendLine("Use evolution_candidates only to report an explicit, object-bound change that could affect future project work.");
+        builder.AppendLine("Compare the current user message or cited material with the persisted project context. Do not emit a candidate for a restatement of current state.");
+        builder.AppendLine("Do not record questions, possibilities, brainstorming, praise, wording polish, or ordinary discussion as candidates.");
+        builder.AppendLine("Each candidate must name the changed object, before/after state when known, impact_class, route_hint, reason, and a concrete source_ref. Use current_user_message for the current message; never invent a Session or entity ID.");
+        builder.AppendLine("impact_class must be exactly one of: WorldRule, ProjectStructure, CharacterOrObject, Content, Architecture, Unclassified.");
+        builder.AppendLine("route_hint must be exactly one of: AuthorityConfirmation, LibraryProposal, NoGovernance, Unclassified. Route hints are recommendations only and never trigger governance.");
+        builder.AppendLine("Do not classify deterministic Worker completion, Assignment, Attempt, Execution, or Artifact changes as evolution candidates; those are system events.");
+        builder.AppendLine("A candidate is an observation only. It is not AcceptedProjectState, a Library Proposal, a Library update, or an AuthorityDecision, and it must not change project state or trigger governance.");
+        builder.AppendLine("Do not treat an Evolution Candidate, route hint, or governance suggestion as an execution request. Do not emit draft_proposal unless the user explicitly asks to create or execute a bounded Workbench Worker task. A Candidate turn must not implicitly start or draft Worker work.");
+        builder.AppendLine("Keep semantic Candidate turns separate from governance commands: when evolution_candidates is non-empty, set authority_confirmation and memory_commands.library_proposal to null. A later explicit user request may open the existing governance path.");
+        builder.AppendLine("Return at most three candidates. When no qualifying change exists, return evolution_candidates as an empty array.");
         builder.AppendLine();
         builder.AppendLine("LIBRARY PROPOSAL CONTRACT");
         builder.AppendLine("Library is the project's long-lived factual evolution archive: what is true, implemented, structured, or materially present.");

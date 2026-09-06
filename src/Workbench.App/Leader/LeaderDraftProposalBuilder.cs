@@ -42,6 +42,35 @@ public sealed record LeaderLibraryProposalCommand(
 
 public sealed record LeaderMemoryCommands(LeaderLibraryProposalCommand? LibraryProposal);
 
+public enum LeaderEvolutionImpactClass
+{
+    WorldRule,
+    ProjectStructure,
+    CharacterOrObject,
+    Content,
+    Architecture,
+    Unclassified
+}
+
+public enum LeaderEvolutionRouteHint
+{
+    AuthorityConfirmation,
+    LibraryProposal,
+    NoGovernance,
+    Unclassified
+}
+
+public sealed record LeaderEvolutionCandidate(
+    string Object,
+    string ObjectKind,
+    string ChangeType,
+    string? Before,
+    string? After,
+    LeaderEvolutionImpactClass ImpactClass,
+    LeaderEvolutionRouteHint RouteHint,
+    string Reason,
+    string SourceRef);
+
 public sealed record LeaderStructuredResponse(
     string Response,
     LeaderDraftProposal? Proposal,
@@ -55,6 +84,7 @@ public sealed record LeaderStructuredResponse(
     public IReadOnlyList<SummaryDelta> SummaryDeltas { get; init; } = [];
     public string? SummaryDeltaError { get; init; }
     public AuthorityConfirmationDraft? AuthorityConfirmation { get; init; }
+    public IReadOnlyList<LeaderEvolutionCandidate> EvolutionCandidates { get; init; } = [];
 
     public static bool TryParse(string? text, Guid projectId, out LeaderStructuredResponse result)
     {
@@ -120,11 +150,20 @@ public sealed record LeaderStructuredResponse(
                 summaryDeltaError = "Summary delta sidecar could not be processed.";
             }
 
+            IReadOnlyList<LeaderEvolutionCandidate> evolutionCandidates = [];
+            if (root.TryGetProperty("evolution_candidates", out var candidates) && candidates.ValueKind != JsonValueKind.Null)
+            {
+                if (candidates.ValueKind != JsonValueKind.Array) throw new JsonException();
+                evolutionCandidates = candidates.EnumerateArray().Select(ParseEvolutionCandidate).ToArray();
+                if (evolutionCandidates.Count > 3) throw new JsonException();
+            }
+
             result = new LeaderStructuredResponse(visibleResponse, proposal, memoryCommands, memoryCommandError)
             {
                 SummaryDeltas = summaryDeltas,
                 SummaryDeltaError = summaryDeltaError,
-                AuthorityConfirmation = authorityConfirmation
+                AuthorityConfirmation = authorityConfirmation,
+                EvolutionCandidates = evolutionCandidates
             };
             return true;
         }
@@ -233,6 +272,27 @@ public sealed record LeaderStructuredResponse(
         return new AuthorityConfirmationDraft(projectId, title, contributions);
     }
 
+    private static LeaderEvolutionCandidate ParseEvolutionCandidate(JsonElement value) =>
+        new(
+            RequiredString(value, "object"),
+            RequiredString(value, "object_kind"),
+            RequiredString(value, "change_type"),
+            OptionalString(value, "before"),
+            OptionalString(value, "after"),
+            ParseEnum<LeaderEvolutionImpactClass>(value, "impact_class"),
+            ParseEnum<LeaderEvolutionRouteHint>(value, "route_hint"),
+            RequiredString(value, "reason"),
+            RequiredString(value, "source_ref"));
+
+    private static T ParseEnum<T>(JsonElement value, string property)
+        where T : struct, Enum
+    {
+        var text = RequiredString(value, property);
+        return Enum.TryParse<T>(text, false, out var parsed) && Enum.IsDefined(parsed)
+            ? parsed
+            : throw new JsonException();
+    }
+
     private static IReadOnlyList<SummaryDelta> ParseSummaryDeltas(JsonElement summary)
     {
         if (summary.ValueKind == JsonValueKind.Null) return [];
@@ -323,8 +383,8 @@ public static class LeaderResponseSchema
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["response", "draft_proposal", "memory_commands", "authority_confirmation", "summary_deltas"],
-          "properties": {
+          "required": ["response", "draft_proposal", "memory_commands", "authority_confirmation", "summary_deltas", "evolution_candidates"],
+            "properties": {
             "response": { "type": "string" },
             "draft_proposal": {
               "anyOf": [
@@ -455,6 +515,26 @@ public static class LeaderResponseSchema
                 },
                 { "type": "null" }
               ]
+            },
+            "evolution_candidates": {
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["object", "object_kind", "change_type", "before", "after", "impact_class", "route_hint", "reason", "source_ref"],
+                "properties": {
+                  "object": { "type": "string" },
+                  "object_kind": { "type": "string" },
+                  "change_type": { "type": "string" },
+                  "before": { "type": ["string", "null"] },
+                  "after": { "type": ["string", "null"] },
+                  "impact_class": { "type": "string", "enum": ["WorldRule", "ProjectStructure", "CharacterOrObject", "Content", "Architecture", "Unclassified"] },
+                  "route_hint": { "type": "string", "enum": ["AuthorityConfirmation", "LibraryProposal", "NoGovernance", "Unclassified"] },
+                  "reason": { "type": "string" },
+                  "source_ref": { "type": "string" }
+                }
+              }
             }
           }
         }

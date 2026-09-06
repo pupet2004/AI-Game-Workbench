@@ -82,6 +82,7 @@ public sealed class AppServices : IAsyncDisposable
         B1AgentParticipationAdapter b1AgentParticipation,
         GuidedDecisionService guidedDecision,
         ManualLibraryProjectionService manualLibraryProjection,
+        ProjectEvolutionIndexQuery projectEvolutionIndex,
         IUserPrincipalProvider userPrincipalProvider,
         AgentRuntimeRegistry runtimeRegistry,
         IAgentHost agentHost,
@@ -137,6 +138,7 @@ public sealed class AppServices : IAsyncDisposable
         B1AgentParticipation = b1AgentParticipation;
         GuidedDecision = guidedDecision;
         ManualLibraryProjection = manualLibraryProjection;
+        ProjectEvolutionIndex = projectEvolutionIndex;
         UserPrincipalProvider = userPrincipalProvider;
         RuntimeRegistry = runtimeRegistry;
         AgentHost = agentHost;
@@ -204,6 +206,7 @@ public sealed class AppServices : IAsyncDisposable
     public B1AgentParticipationAdapter B1AgentParticipation { get; }
     public GuidedDecisionService GuidedDecision { get; }
     public ManualLibraryProjectionService ManualLibraryProjection { get; }
+    public ProjectEvolutionIndexQuery ProjectEvolutionIndex { get; }
     public IUserPrincipalProvider UserPrincipalProvider { get; }
 
     public AgentRuntimeRegistry RuntimeRegistry { get; }
@@ -385,6 +388,7 @@ public sealed class AppServices : IAsyncDisposable
             b1AgentParticipation,
             guidedDecision,
             manualLibraryProjection,
+            new ProjectEvolutionIndexQuery(b1AuthorityRepository, libraryEvolutionRepository, new TaskRepository(database), taskEvents),
             userPrincipalProvider,
             effectiveRuntimeRegistry,
             agentHost,

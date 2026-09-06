@@ -81,6 +81,50 @@
                 <Border IsVisible="{Binding HasMemoryCommandStatus}" Padding="8" Background="#EEF4FF" CornerRadius="4">
                     <TextBlock Text="{Binding MemoryCommandStatus}" Foreground="#344054" TextWrapping="Wrap" />
                 </Border>
+                <Border IsVisible="{Binding HasEvolutionCandidates}"
+                        Padding="10"
+                        BorderBrush="#84ADFF"
+                        BorderThickness="1"
+                        Background="#F5F8FF"
+                        CornerRadius="5">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Evolution Candidates · experimental" FontWeight="SemiBold" Foreground="#344054" />
+                        <ItemsControl ItemsSource="{Binding GovernanceSuggestions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,0,6" Padding="8" Background="#FFFFFF" CornerRadius="4">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="{Binding Candidate.Object}" FontWeight="SemiBold" Foreground="#101828" />
+                                            <TextBlock Text="{Binding Candidate.ChangeType}" Foreground="#344054" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding Candidate.ImpactClass}" Foreground="#475467" />
+                                            <TextBlock Text="{Binding RouteLabel}" Foreground="#475467" />
+                                            <TextBlock Text="{Binding Candidate.Reason}" Foreground="#667085" TextWrapping="Wrap" />
+                                            <Button Content="{Binding ActionLabel}"
+                                                    IsEnabled="{Binding CanPrepareDraft}"
+                                                    Command="{Binding DataContext.PrepareGovernanceDraftCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Border IsVisible="{Binding HasPreparedGovernanceDraft}"
+                                Padding="8"
+                                Background="#FFF9E6"
+                                BorderBrush="#D6A84F"
+                                BorderThickness="1"
+                                CornerRadius="4">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Governance draft preview · not submitted" FontWeight="SemiBold" Foreground="#5B4300" />
+                                <TextBlock Text="{Binding PreparedGovernanceDraft.Title}" FontWeight="SemiBold" Foreground="#5B4300" />
+                                <TextBlock Text="{Binding PreparedGovernanceDraft.Body}" TextWrapping="Wrap" Foreground="#5B4300" />
+                                <Button Content="Clear draft preview"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding ClearPreparedGovernanceDraftCommand}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <views:LeaderAgentSurfaceView Grid.Row="2"

@@ -20,6 +20,11 @@ public sealed class LeaderBootContextBuilderTests
         Assert.Contains("WORKER SCOPE", text, StringComparison.Ordinal);
         Assert.Contains("runtime-local sub-agents", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Assignment, Attempt, Execution", text, StringComparison.Ordinal);
+        Assert.Contains("EVOLUTION CANDIDATE EXPERIMENT", text, StringComparison.Ordinal);
+        Assert.Contains("object-bound change", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not AcceptedProjectState", text, StringComparison.Ordinal);
+        Assert.Contains("evolution_candidates", text, StringComparison.Ordinal);
+        Assert.Contains("must not implicitly start or draft Worker work", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -61,6 +66,26 @@ public sealed class LeaderBootContextBuilderTests
         Assert.Contains("AcceptedContribution: contribution-1", text, StringComparison.Ordinal);
         Assert.Contains("Claim: claim-1", text, StringComparison.Ordinal);
         Assert.Contains("Accepted Project State", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void State_aware_boot_context_exposes_existing_rule_for_evolution_comparison()
+    {
+        var material = new ResolvedContinuityMaterial(
+            ContinuityMaterialKind.AcceptedProjectState,
+            "accepted-state:10000000-0000-4000-8000-000000000002",
+            "Accepted Project State",
+            "CURRENT AUTHORITY STATE (USER-ACCEPTED)\n- World timeline = one closed timeline\n  AuthorityDecision: decision-timeline\n  AcceptedContribution: contribution-timeline",
+            180);
+
+        var text = NormalizeNewlines(LeaderBootContextBuilder.BuildSelected(
+            Project,
+            [material],
+            "Change the single timeline to parallel universes.").Text);
+
+        Assert.Contains("World timeline = one closed timeline", text, StringComparison.Ordinal);
+        Assert.Contains("CURRENT USER MESSAGE\nChange the single timeline to parallel universes.", text, StringComparison.Ordinal);
+        Assert.Contains("Compare the current user message or cited material with the persisted project context", text, StringComparison.Ordinal);
     }
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-08-13T00:00:00+00:00");
     private static readonly CoreProject Project = new(
