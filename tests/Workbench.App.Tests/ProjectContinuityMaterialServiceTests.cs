@@ -11,6 +11,54 @@ namespace Workbench.App.Tests;
 public sealed class ProjectContinuityMaterialServiceTests
 {
     [Fact]
+    public async Task Initial_boot_bundle_without_plan_includes_authority_library_and_latest_legacy_work()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var directory = new Support.TemporaryDirectory("initial-recovery");
+        var project = (await context.Services.ProjectOpenService.OpenAsync(directory.Path)).Project;
+        var now = context.Time.GetUtcNow();
+        var projectRef = new Workbench.Core.Continuity.ProjectRef(project.Id);
+        var principal = new Workbench.Core.Continuity.UserPrincipalRef(context.Services.UserPrincipalProvider.GetCurrent().Value);
+        await context.Services.B1ProjectGovernance.CreateGovernedProjectForExistingProjectAsync(projectRef, principal);
+        await context.Services.B1AuthorityCommands.AuthorAcceptedStateAsync(new Workbench.Core.Continuity.AuthorAcceptedStateCommand(
+            projectRef, principal, new Workbench.Core.Continuity.DecidingAuthorityRef.UserPrincipal(principal), [],
+            [
+                new("从零刻开始，人类可以进行时间穿梭。", new Workbench.Core.Continuity.ContributionScopeTarget.Project(projectRef), null, null),
+                new("世界只有一条闭合时间线，不存在平行宇宙。", new Workbench.Core.Continuity.ContributionScopeTarget.Project(projectRef), null, null)
+            ]));
+        var libraryObject = await context.Services.ProjectLibraryEvolutionRepository.CreateObjectAsync(project.Id, "Chapter Delivery", "Chapter 1 交付与未接受生活化设定", now);
+        await context.Services.ProjectLibraryEvolutionRepository.AddNodeAsync(project.Id, libraryObject.Id, new DateOnly(2026, 9, 5), "Chapter 1 已完成；时间礼仪课仍是 Proposal / Recommendation。", [new("Artifact", "chapter-01.md", "Chapter 1 manuscript")], now);
+        var taskId = Guid.NewGuid();
+        var profile = Workbench.Core.Tasks.ExecutionProfile.Create("codex", "account", "model", "runtime");
+        var revision = new Workbench.Core.Tasks.TaskRevision(taskId, 1, "Complete Chapter 1", "bounded", "none", ["done"], Workbench.Core.Tasks.TaskRiskLevel.Low, profile, "test", Workbench.Core.Tasks.TaskRevisionApprover.User, now, null);
+        await new Workbench.Storage.Tasks.TaskRepository(context.Services.Database).CreateAsync(project.Id, new Workbench.Core.Tasks.TaskDraft(
+            taskId, "Chapter 1 delivery", "Complete Chapter 1", "bounded", "none", ["done"], Workbench.Core.Tasks.TaskRiskLevel.Low, profile, now, revision, Workbench.Core.Tasks.TaskLifecycleStatus.Completed));
+        var workerSessionId = Guid.NewGuid();
+        var reportId = Guid.NewGuid();
+        var events = new Workbench.Storage.Workers.TaskEventRepository(context.Services.Database);
+        await events.AppendAsync(new Workbench.Storage.Workers.StoredTaskEvent(reportId, project.Id, taskId, null, "WorkerFinalReportReceived",
+            System.Text.Json.JsonSerializer.Serialize(new { WorkerSessionId = workerSessionId, Message = "Chapter 1 completed; chapter-01.md produced.", ValidationSummary = "green" }), now));
+        await events.AppendAsync(new Workbench.Storage.Workers.StoredTaskEvent(Guid.NewGuid(), project.Id, taskId, null, "WorkerToLeaderHandoff",
+            System.Text.Json.JsonSerializer.Serialize(new { ProjectId = project.Id, TaskId = taskId, WorkerSessionId = workerSessionId, WorkerLabel = "Worker", Status = Workbench.Runtime.Agents.AgentSessionStatus.Completed, Message = "Chapter 1 completed; chapter-01.md produced.", CreatedAt = now, Kind = Workbench.App.Worker.WorkerHandoffKind.FinalReport, ValidationSummary = "green", SourceEventId = reportId, TaskRevisionId = revision.Id }), now));
+
+        var bundle = await context.Services.ProjectMemoryApi.BuildInitialContinuityBundleAsync(project.Id);
+
+        Assert.Contains(bundle.Materials, item => item.Kind == ContinuityMaterialKind.AcceptedProjectState && item.Content.Contains("从零刻开始", StringComparison.Ordinal));
+        Assert.Contains(bundle.Materials, item => item.Kind == ContinuityMaterialKind.LibraryTimelineNode && item.Content.Contains("时间礼仪课", StringComparison.Ordinal) && item.Content.Contains("chapter-01.md", StringComparison.Ordinal));
+        Assert.Contains(bundle.Materials, item => item.Kind == ContinuityMaterialKind.LegacyWorkerCompletion && item.Content.Contains("Chapter 1 completed", StringComparison.Ordinal));
+        Assert.Contains(bundle.Materials, item => item.Kind == ContinuityMaterialKind.AssignmentStatus && item.Content.Contains("Chapter 1 delivery", StringComparison.Ordinal));
+        Assert.True(bundle.Utf8Bytes <= 24_000);
+
+        var boot = LeaderBootContextBuilder.BuildSelected(project, bundle.Materials, "根据当前 Project World 继续。").Text;
+        Assert.Contains("PERSISTED LIBRARY PROJECTION", boot, StringComparison.Ordinal);
+        Assert.Contains("chapter-01.md", boot, StringComparison.Ordinal);
+        Assert.Contains("时间礼仪课", boot, StringComparison.Ordinal);
+        Assert.Contains("Workspace files are artifacts or source materials only", boot, StringComparison.Ordinal);
+        Assert.Contains("do not report it as pending_confirmation", boot, StringComparison.Ordinal);
+        Assert.Contains("Library Proposal/Recommendation content remains non-authoritative", boot, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Catalog_lists_library_structure_and_sizes_without_body_text_and_skips_empty_overview()
     {
         await using var context = await AppTestContext.CreateAsync();

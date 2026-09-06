@@ -64,10 +64,22 @@
     <Border Padding="16,16,16,8" BorderBrush="#D0D4DC" BorderThickness="0,0,1,0">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AllowAutoHide="False" VerticalContentAlignment="Top" HorizontalContentAlignment="Stretch">
         <StackPanel Spacing="0" VerticalAlignment="Top" Margin="0">
-            <Grid Margin="0,0,0,6" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                <TextBlock Text="{Binding [Worker.Title]}" FontWeight="SemiBold" />
-                <Button Grid.Column="1" Content="收起全部" Command="{Binding CollapseAllWorkersCommand}" IsEnabled="{Binding CanCollapseAllWorkers}" ToolTip.Tip="收起所有 Worker 卡片" />
-                <Button Grid.Column="2" Content="{Binding [Worker.Focus]}" Command="{Binding FocusCommand}" />
+            <Grid Margin="0,0,0,6" RowDefinitions="Auto,Auto" RowSpacing="6">
+                <TextBlock Grid.Row="0"
+                           Text="{Binding [Worker.Title]}"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Row="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="6">
+                    <Button Content="收起全部"
+                            Command="{Binding CollapseAllWorkersCommand}"
+                            IsEnabled="{Binding CanCollapseAllWorkers}"
+                            ToolTip.Tip="收起所有 Worker 卡片" />
+                    <Button Content="{Binding [Worker.Focus]}"
+                            Command="{Binding FocusCommand}" />
+                </StackPanel>
             </Grid>
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.Empty]}" FontSize="18" />
             <TextBlock IsVisible="{Binding !HasWorkers}" Text="{Binding [Worker.EmptyDescription]}" TextWrapping="Wrap" Foreground="#667085" />
@@ -85,7 +97,7 @@
             </Border>
             <Border IsVisible="{Binding HasWorkerDetails}" Padding="10" BorderBrush="#555" BorderThickness="1" CornerRadius="8" Background="#171717">
                 <StackPanel Spacing="6">
-                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="Worker 详情" FontWeight="SemiBold" /><Button Grid.Column="1" Content="关闭" Command="{Binding CloseWorkerDetailsCommand}" /></Grid>
+                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding [Worker.Details]}" FontWeight="SemiBold" /><Button Grid.Column="1" Content="{Binding [Leader.ChangeBrainCancel]}" Command="{Binding CloseWorkerDetailsCommand}" /></Grid>
                     <TextBlock Text="{Binding DetailedWorker.TaskTitle}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding DetailedWorker.WorkerLabel}" />
                     <TextBlock Text="{Binding DetailedWorker.Status}" />
@@ -93,9 +105,9 @@
                     <TextBlock IsVisible="{Binding DetailedWorker.IsExternalCliActive}" Text="{Binding DetailedWorker.ContinuationAttemptId, StringFormat=接管尝试：{0}}" TextWrapping="Wrap" />
                     <TextBlock IsVisible="{Binding DetailedWorker.IsExternalCliActive}" Text="{Binding DetailedWorker.ExternalCliProcessId, StringFormat=CLI 进程：{0}}" />
                     <Button IsVisible="{Binding DetailedWorker.CanContinue}" Content="继续当前任务" Command="{Binding ContinueWorkerCommand}" CommandParameter="{Binding DetailedWorker}" HorizontalAlignment="Left" />
-                    <TextBlock Text="{Binding DetailedWorker.SessionId, StringFormat=Session: {0}}" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding DetailedWorker.ExternalSessionId, StringFormat=External session: {0}}" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding DetailedWorker.Runtime, StringFormat=Runtime: {0}}" />
+                    <TextBlock Text="{Binding DetailedWorker.SessionId, StringFormat=会话：{0}}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DetailedWorker.ExternalSessionId, StringFormat=外部会话：{0}}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DetailedWorker.Runtime, StringFormat=运行时：{0}}" />
                     <TextBlock Text="{Binding DetailedWorker.WorkingDirectory, StringFormat=工作目录: {0}}" TextWrapping="Wrap" />
                     <Button Content="从 Workbench 移除记录" Command="{Binding RequestWorkerRemovalCommand}" CommandParameter="{Binding DetailedWorker}" HorizontalAlignment="Left" />
                 </StackPanel>
@@ -110,14 +122,23 @@
                                     <TextBlock Grid.Column="1" Text="{Binding CompactTimeText}" Foreground="#8A8A8A" VerticalAlignment="Center" Margin="8,0" />
                                     <Button Classes="workerCardButton" Grid.Column="2" Content="⌃" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="展开任务详情" />
                                 </Grid>
-                                <Grid IsVisible="{Binding !IsCompact}" Grid.RowSpan="2" Grid.ColumnSpan="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="4">
+                                <Grid IsVisible="{Binding !IsCompact}" Grid.RowSpan="2" Grid.ColumnSpan="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="4">
                                 <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" />
                                 <Button Classes="workerCardButton" Grid.Column="1" Content="⌄" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="收缩任务详情" VerticalAlignment="Top" />
                                 <Button Classes="workerCardButton" Grid.Column="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" VerticalAlignment="Top" />
                                 <TextBlock Grid.Row="1" Text="{Binding WorkerLabel}" />
                                 <TextBlock Grid.Row="2" Text="{Binding Profile}" Foreground="#667085" />
                                 <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto"><TextBlock Text="{Binding Status}" /><TextBlock Grid.Column="1" Text="{Binding SurfaceStatus}" IsVisible="{Binding IsExternalCliActive}" Foreground="#D0D4DC" Margin="8,0" /><TextBlock Grid.Column="2" Text="{Binding LastActiveAtText}" Foreground="#667085" /></Grid>
-                                <StackPanel Grid.Row="4" IsVisible="{Binding HasPlan}" Spacing="3">
+                                <Border Grid.Row="4" IsVisible="{Binding HandoffDisplay}" Padding="8" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="5">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="{Binding #WorkRoot.DataContext[Worker.Handoff]}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding HandoffDisplay.SourceLabel}" Foreground="#475467" />
+                                        <TextBlock Text="{Binding HandoffDisplay.AuthorityStatus}" Foreground="#475467" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding HandoffDisplay.Result}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding HandoffDisplay.Provenance}" Foreground="#667085" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <StackPanel Grid.Row="5" IsVisible="{Binding HasPlan}" Spacing="3">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Text="任务进度" Foreground="#D0D4DC" FontSize="12" />
                                         <TextBlock Grid.Column="1" Text="{Binding ProgressText}" Foreground="#D0D4DC" FontSize="12" />
@@ -133,7 +154,7 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
-                                <Button Grid.Row="5" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
+                                <Button Grid.Row="6" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
                                 </Grid>
                             </Grid>
                         </Border>

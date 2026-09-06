@@ -10,6 +10,7 @@
                     <TextBlock Text="{Binding [Explorer.Title]}" FontSize="28" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding ProjectName}" FontSize="20" />
                     <TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" Opacity="0.7" />
+                    <TextBlock Text="{Binding [Explorer.RecoveredProjectWorld]}" IsVisible="{Binding Recovery}" FontWeight="SemiBold" Opacity="0.8" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="{Binding [Explorer.Reload]}" Command="{Binding ReloadCommand}" IsEnabled="{Binding !IsBusy}" />
@@ -27,6 +28,7 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Explorer.Accepted]}" FontSize="18" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding ProjectStateLabel}" IsVisible="{Binding HasAcceptedState}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding AcceptedConstraintsSummary}" IsVisible="{Binding HasAcceptedState}" TextWrapping="Wrap" Opacity="0.8" />
                     <TextBlock IsVisible="{Binding !HasAcceptedState}" Text="{Binding [Explorer.NoAccepted]}" Opacity="0.7" />
                     <ItemsControl ItemsSource="{Binding AcceptedState}">
                         <ItemsControl.ItemTemplate>
@@ -82,11 +84,25 @@
                 </StackPanel>
             </Border>
 
+            <Border IsVisible="{Binding Recovery}" Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Recovery.Heading}" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding [Explorer.AcceptedConstraints]}" FontWeight="SemiBold" />
+                    <ItemsControl ItemsSource="{Binding Recovery.AcceptedConstraints}" />
+                    <TextBlock Text="{Binding [Explorer.CompletedWork]}" FontWeight="SemiBold" />
+                    <ItemsControl ItemsSource="{Binding Recovery.CompletedWork}" />
+                    <TextBlock Text="{Binding [Explorer.RemainingWork]}" FontWeight="SemiBold" />
+                    <ItemsControl ItemsSource="{Binding Recovery.RemainingWork}" />
+                    <TextBlock Text="{Binding [Explorer.RecoverySources]}" Foreground="#667085" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Explorer.ActiveWork]}" FontSize="18" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding [Explorer.ActiveWorkDescription]}" Opacity="0.7" TextWrapping="Wrap" />
                     <TextBlock IsVisible="{Binding !ActiveWork.Count}" Text="{Binding [Explorer.NoAssignments]}" Opacity="0.7" />
+                    <TextBlock Text="{Binding ActiveAssignmentSummary}" Opacity="0.8" />
                     <ItemsControl ItemsSource="{Binding ActiveWork}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="vm:ActiveAssignmentItemView">
@@ -96,6 +112,13 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding [Explorer.PendingHandoffs]}" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding PendingHandoffSummary}" />
                 </StackPanel>
             </Border>
 

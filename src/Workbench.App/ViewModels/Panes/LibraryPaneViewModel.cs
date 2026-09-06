@@ -20,19 +20,16 @@ public enum LibrarySection
     Time,
     Project
 }
-
 public enum LibraryTimelineDirection
 {
     OldToNew
 }
-
 public enum LibraryTimelineContextKind
 {
     LibraryRecord,
     B1AcceptedProjection,
     LegacyContext
 }
-
 public sealed record LibraryTimelineNodeView(
     Guid Id,
     Guid ObjectId,
@@ -102,6 +99,19 @@ public sealed record LibraryCategoryGroupView(
     string Category,
     IReadOnlyList<ProjectLibraryObject> Objects);
 
+public sealed record LibrarySearchResultView(
+    string Kind,
+    string AuthorityStatus,
+    string Category,
+    string Topic,
+    string Text,
+    string Source);
+
+internal sealed record LibraryProjectionSearchEntry(
+    Guid ObjectId,
+    string Text,
+    string Source);
+
 public partial class LibraryPaneViewModel : ViewModelBase
 {
     private readonly Func<Task> _focus;
@@ -116,6 +126,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly IProjectMemoryApi? _projectMemoryApi;
     private readonly ProjectSummaryRepository? _projectSummaryRepository;
     private readonly LibraryAcceptedStateReader? _acceptedStateReader;
+    private IReadOnlyList<LibrarySummaryEntryView> _summarySearchEntries = [];
+    private IReadOnlyList<LibraryProjectionSearchEntry> _libraryProjectionSearchEntries = [];
 
     public LibraryPaneViewModel(
         ProjectOpenResult result,
@@ -230,6 +242,8 @@ public partial class LibraryPaneViewModel : ViewModelBase
     public ObservableCollection<string> LibraryCategories { get; } = [];
     public ObservableCollection<LibraryCategoryGroupView> CategoryGroups { get; } = [];
     public ObservableCollection<ProjectLibraryObject> LibraryObjects { get; } = [];
+    public ObservableCollection<LibrarySearchResultView> SearchResults { get; } = [];
+    public bool HasSearchResults => SearchResults.Count > 0;
     [ObservableProperty] public partial string? SelectedCategory { get; set; }
     public ObservableCollection<ProjectLibraryObject> SelectedCategoryObjects { get; } = [];
     public ObservableCollection<LibraryTimelineNodeView> ObjectTimeline { get; } = [];
@@ -306,6 +320,82 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     [RelayCommand]
     private Task ApplyLibraryFilter() => LoadLibraryAsync();
+
+    [RelayCommand]
+    private Task SearchLibraryAsync()
+    {
+        SearchResults.Clear();
+        var query = LibraryTextFilter?.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            OnPropertyChanged(nameof(HasSearchResults));
+            return Task.CompletedTask;
+        }
+
+        bool Match(string value) => value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+        var libraryResults = new Dictionary<Guid, LibrarySearchResultView>();
+        foreach (var item in LibraryObjects)
+        {
+            if (Match(item.Topic))
+            {
+                libraryResults[item.Id] = new(
+                    "Library projection",
+                    "Projection; inspect source",
+                    item.Category,
+                    item.Topic,
+                    item.Topic,
+                    "Library object topic");
+            }
+            else if (Match(item.CurrentOverview ?? string.Empty))
+            {
+                libraryResults[item.Id] = new(
+                    "Library projection",
+                    "Projection; inspect source",
+                    item.Category,
+                    item.Topic,
+                    item.CurrentOverview ?? string.Empty,
+                    "Library object current overview");
+            }
+        }
+
+        foreach (var entry in _libraryProjectionSearchEntries.Where(value => Match(value.Text)))
+        {
+            if (libraryResults.ContainsKey(entry.ObjectId)) continue;
+            var item = LibraryObjects.FirstOrDefault(value => value.Id == entry.ObjectId);
+            if (item is null) continue;
+            libraryResults[item.Id] = new(
+                "Library projection",
+                "Projection; inspect source",
+                item.Category,
+                item.Topic,
+                entry.Text,
+                entry.Source);
+        }
+
+        foreach (var item in libraryResults.Values)
+        {
+            SearchResults.Add(item);
+        }
+
+        foreach (var item in CurrentAcceptedContributions.Where(value => Match(value.Contribution.Statement)))
+        {
+            SearchResults.Add(new("Accepted Fact", "Accepted Project State", "Project", "Accepted contribution", item.Contribution.Statement, item.Contribution.AuthorityDecisionRef.ToString()));
+        }
+
+        foreach (var item in PendingLibraryProposals.Where(value => Match(value.Draft.Topic) || Match(value.Draft.NodeContent) || Match(value.Draft.CurrentOverview ?? string.Empty)))
+        {
+            SearchResults.Add(new("Proposal", "Pending review", item.Draft.Category, item.Draft.Topic, item.Draft.NodeContent, item.Id.ToString()));
+        }
+
+        foreach (var item in _summarySearchEntries.Where(value => Match(value.Text)))
+        {
+            SearchResults.Add(new("Summary", "Summary; not Accepted State", "Summary", item.KindLabel, item.Text, string.Join(", ", item.SourceRefs.Select(source => source.SourceLocator))));
+        }
+
+        OnPropertyChanged(nameof(HasSearchResults));
+        return Task.CompletedTask;
+    }
 
     public async Task ShowCategoryAsync(CancellationToken cancellationToken = default)
     {
@@ -606,6 +696,31 @@ public partial class LibraryPaneViewModel : ViewModelBase
         var summaryEntries = _projectSummaryRepository is null
             ? []
             : await _projectSummaryRepository.QueryAsync(new SummaryQuery(Result.Project.Id, 200), cancellationToken);
+        _summarySearchEntries = summaryEntries
+            .Select(entry => new LibrarySummaryEntryView(entry.OccurredAt, entry.Kind, entry.Text, entry.SourceRefs))
+            .ToArray();
+
+        var projectionSearchEntries = new List<LibraryProjectionSearchEntry>();
+        foreach (var node in nodes)
+        {
+            if (!objects.ContainsKey(node.ObjectId)) continue;
+            projectionSearchEntries.Add(new(node.ObjectId, node.Content, $"Timeline node {node.Id} content"));
+            foreach (var material in await _evolutionLibrary.GetMaterialReferencesAsync(Result.Project.Id, node.Id, cancellationToken))
+            {
+                projectionSearchEntries.Add(new(
+                    node.ObjectId,
+                    material.Reference,
+                    $"Material {material.MaterialKind} reference {material.Reference}"));
+                if (!string.IsNullOrWhiteSpace(material.Label))
+                {
+                    projectionSearchEntries.Add(new(
+                        node.ObjectId,
+                        material.Label,
+                        $"Material {material.MaterialKind} label {material.Label}"));
+                }
+            }
+        }
+        _libraryProjectionSearchEntries = projectionSearchEntries;
 
         LibraryCategories.Clear();
         foreach (var category in objects.Values.Select(value => value.Category).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(value => value, StringComparer.OrdinalIgnoreCase)) LibraryCategories.Add(category);

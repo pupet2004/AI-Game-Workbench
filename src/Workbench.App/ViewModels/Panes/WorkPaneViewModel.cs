@@ -9,6 +9,7 @@ using Workbench.Storage.Tasks;
 using Workbench.Runtime.Runtime;
 using Workbench.App.AgentHost;
 using CoreProject = Workbench.Core.Projects.Project;
+using Workbench.App.ProjectWorld;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -54,6 +55,11 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
             var plan = await LoadPlanAsync(item, cancellationToken);
             var card = new WorkerSessionCardViewModel(item, plan,
                 compact: item.Session.Status == AgentSessionStatus.Completed && sessions.Count > 3);
+            var handoff = await _store.GetLatestHandoffAsync(item.ProjectId, item.TaskId, item.Session.Id, cancellationToken);
+            if (handoff is not null)
+                card.SetHandoffDisplay(new HandoffDisplayViewModel(HandoffDisplayModelFactory.FromLegacyWorkerHandoff(
+                    handoff,
+                    $"Task {item.TaskId} / Execution {item.ExecutionId?.ToString() ?? "legacy"} / Session {item.Session.Id}")));
             var persistedProgress = await _store.GetProgressAsync(item.ProjectId, item.TaskId, item.Session.Id, cancellationToken);
             if (persistedProgress is not null)
                 card.ApplyProgressSnapshot(persistedProgress.Steps);
@@ -713,6 +719,13 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
     };
     public string ContinuationAttemptId => _continuationAttemptId?.ToString() ?? "未创建";
     public string ExternalCliProcessId => _externalCliProcessId?.ToString() ?? "未记录";
+    [ObservableProperty] public partial HandoffDisplayViewModel? HandoffDisplay { get; private set; }
+
+    internal void SetHandoffDisplay(HandoffDisplayViewModel display)
+    {
+        HandoffDisplay = display;
+        OnPropertyChanged(nameof(HandoffDisplay));
+    }
 
     internal void SetExternalCliActive(bool active, WorkerSessionSurfaceLease? lease = null)
     {

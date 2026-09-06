@@ -28,6 +28,13 @@ public sealed class ProjectLibraryProposalService
         CancellationToken cancellationToken = default)
     {
         draft = ProjectLibraryEvolutionRepository.NormalizeProposalDraft(draft);
+        if (draft.TargetObjectId is { } targetObjectId &&
+            await _library.GetObjectAsync(draft.ProjectId, targetObjectId, cancellationToken) is null)
+        {
+            throw new InvalidOperationException(
+                "A Library Proposal target must be an existing Library Object owned by this project.");
+        }
+
         var payload = Serialize(draft);
         await using var connection = _database.CreateConnection();
         await connection.OpenAsync(cancellationToken);

@@ -63,7 +63,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          WorkerExecutionRepository? workerExecutionRepository = null,
          CanonicalWorkerLaunchService? canonicalWorkerLaunch = null,
          Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null,
-         Func<Task>? openProjectOverview = null)
+         Func<Task>? openProjectOverview = null,
+         Func<AuthorityConfirmationDraft, CancellationToken, Task<Workbench.Core.Continuity.AuthorityDecision>>? acceptAuthorityConfirmation = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -122,7 +123,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             projectSummaryRepository: projectSummaryRepository,
             agentHost: agentHost,
             workerExecutionRepository: workerExecutionRepository,
-            canonicalWorkerLaunch: canonicalWorkerLaunch);
+            canonicalWorkerLaunch: canonicalWorkerLaunch,
+            acceptAuthorityConfirmation: acceptAuthorityConfirmation);
     }
 
     public ProjectOpenResult Result { get; }

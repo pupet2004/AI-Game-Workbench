@@ -19,6 +19,54 @@ namespace Workbench.App.Tests.Worker;
 public sealed class LeaderDraftProposalTests
 {
     [Fact]
+    public void Strict_leader_schema_requires_every_top_level_property_and_authority_confirmation_is_nullable()
+    {
+        using var document = JsonDocument.Parse(LeaderResponseSchema.Json);
+        var root = document.RootElement;
+        var properties = root.GetProperty("properties").EnumerateObject().Select(property => property.Name).ToHashSet(StringComparer.Ordinal);
+        var required = root.GetProperty("required").EnumerateArray().Select(value => value.GetString()!).ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(properties.SetEquals(required), $"Missing required properties: {string.Join(", ", properties.Except(required))}");
+
+        var authority = root.GetProperty("properties").GetProperty("authority_confirmation");
+        var branches = authority.GetProperty("anyOf").EnumerateArray().ToArray();
+        Assert.Contains(branches, branch => branch.GetProperty("type").GetString() == "null");
+    }
+
+    [Fact]
+    public void Normal_leader_result_explicitly_uses_null_authority_confirmation()
+    {
+        var json = "{\"response\":\"普通回答\",\"draft_proposal\":null,\"memory_commands\":null,\"authority_confirmation\":null,\"summary_deltas\":null}";
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+        Assert.Null(parsed.AuthorityConfirmation);
+    }
+
+    [Fact]
+    public void Draft_proposal_and_authority_confirmation_cannot_both_be_present()
+    {
+        var json = """
+            {
+              "response": "不能同时出现。",
+              "draft_proposal": {
+                "title": "Worker task",
+                "goal": "Do work",
+                "scope": "bounded",
+                "outOfScope": "authority",
+                "acceptance": ["done"],
+                "riskLevel": "Low",
+                "recommendedExecutionProfile": {"providerHint": null, "modelHint": null, "runtimeHint": null}
+              },
+              "memory_commands": null,
+              "authority_confirmation": {"title": "Authority", "contributions": [{"statement": "fact"}]},
+              "summary_deltas": null
+            }
+            """;
+
+        Assert.False(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out _));
+    }
+
+    [Fact]
     public void Leader_schema_closes_every_object_branch_for_codex_nullable_validation()
     {
         using var document = JsonDocument.Parse(LeaderResponseSchema.Json);

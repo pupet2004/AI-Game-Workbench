@@ -15,6 +15,7 @@ using Workbench.App.Memory;
 using Workbench.App.Services;
 using Workbench.App.Skills;
 using Workbench.Core.Tasks;
+using Workbench.Core.Continuity;
 using Workbench.Core.Workers;
 using Workbench.Project.Git;
 using Workbench.Storage.Memory;
@@ -41,6 +42,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly TaskRevisionRepository? _taskRevisions;
     private readonly WorkerExecutionRepository? _workerExecutions;
     private readonly CanonicalWorkerLaunchService? _canonicalWorkerLaunch;
+    private readonly Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? _acceptAuthorityConfirmation;
     private readonly WorkerSessionRouter? _workerSessionRouter;
     private readonly Func<CancellationToken, Task>? _refreshWorkPane;
     private readonly IProjectMemoryApi? _projectMemoryApi;
@@ -80,7 +82,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         ProjectSummaryRepository? projectSummaryRepository = null,
         IAgentHost? agentHost = null,
         WorkerExecutionRepository? workerExecutionRepository = null,
-        CanonicalWorkerLaunchService? canonicalWorkerLaunch = null)
+        CanonicalWorkerLaunchService? canonicalWorkerLaunch = null,
+        Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? acceptAuthorityConfirmation = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -97,6 +100,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _taskRevisions = taskRevisionRepository;
         _workerExecutions = workerExecutionRepository;
         _canonicalWorkerLaunch = canonicalWorkerLaunch;
+        _acceptAuthorityConfirmation = acceptAuthorityConfirmation;
         _workerSessionRouter = workerSessionRouter;
         _refreshWorkPane = refreshWorkPane;
         _projectMemoryApi = projectMemoryApi;
@@ -141,6 +145,14 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public bool HasDraftConfirmation => DraftConfirmation is not null;
     public string? CurrentWorkerProfile => DraftConfirmation is null ? null : $"{DraftConfirmation.Resource.DisplayLabel} · {DraftConfirmation.Resource.ModelDisplayName}";
     public ObservableCollection<WorkerResource> WorkerResources { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPendingAuthorityConfirmation))]
+    public partial AuthorityConfirmationDraft? PendingAuthorityConfirmation { get; set; }
+    public bool HasPendingAuthorityConfirmation => PendingAuthorityConfirmation is not null;
+
+    [ObservableProperty]
+    public partial string? AuthorityConfirmationStatusMessage { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasMemoryCommandStatus))]
@@ -845,6 +857,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             {
                                 await CreateLibraryProposalAsync(structured.MemoryCommands.LibraryProposal, cancellationToken);
                             }
+                            if (structured.AuthorityConfirmation is not null)
+                            {
+                                PendingAuthorityConfirmation = structured.AuthorityConfirmation;
+                                AuthorityConfirmationStatusMessage = null;
+                            }
                             if (_draftProposalBuilder is not null && structured.Proposal is not null)
                             {
                                 var resources = await _runtimeRegistry.GetWorkerResourcesAsync(cancellationToken);
@@ -1541,6 +1558,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasHistory));
         OnPropertyChanged(nameof(HasDraftConfirmation));
         OnPropertyChanged(nameof(CurrentWorkerProfile));
+        OnPropertyChanged(nameof(HasPendingAuthorityConfirmation));
+        OnPropertyChanged(nameof(PendingAuthorityConfirmation));
+        OnPropertyChanged(nameof(AuthorityConfirmationStatusMessage));
         OnPropertyChanged(nameof(HasMemoryCommandStatus));
         OnPropertyChanged(nameof(Activities));
         OnPropertyChanged(nameof(ChangedFiles));
@@ -1700,6 +1720,41 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         NotifyAllState();
         if (_refreshWorkPane is not null)
             await _refreshWorkPane(cancellationToken);
+    }
+
+    [RelayCommand]
+    private void RejectAuthorityConfirmation()
+    {
+        PendingAuthorityConfirmation = null;
+        AuthorityConfirmationStatusMessage = null;
+        NotifyAllState();
+    }
+
+    [RelayCommand]
+    private async Task AcceptAuthorityConfirmationAsync(CancellationToken cancellationToken = default)
+    {
+        var draft = PendingAuthorityConfirmation;
+        if (draft is null) return;
+        if (_acceptAuthorityConfirmation is null)
+        {
+            AuthorityConfirmationStatusMessage = "Authority confirmation is unavailable.";
+            NotifyAllState();
+            return;
+        }
+
+        try
+        {
+            await _acceptAuthorityConfirmation(draft, cancellationToken);
+            PendingAuthorityConfirmation = null;
+            AuthorityConfirmationStatusMessage = "Accepted into Project World.";
+            if (_refreshLibraryPane is not null)
+                await _refreshLibraryPane(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AuthorityConfirmationStatusMessage = exception.Message;
+        }
+        NotifyAllState();
     }
 
     /// <summary>

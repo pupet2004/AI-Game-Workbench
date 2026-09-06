@@ -64,6 +64,18 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         ? LocalizationService.Current["Dynamic.ProjectAccepts"]
         : LocalizationService.Current["Explorer.NoAccepted"];
 
+    public string AcceptedConstraintsSummary => string.Join("; ", AcceptedState.Select(item => item.Statement));
+    public string ActiveAssignmentSummary => ActiveWork.Count == 0
+        ? "No active assignments"
+        : $"{ActiveWork.Count} active assignment{(ActiveWork.Count == 1 ? string.Empty : "s")}";
+    public int PendingHandoffCount { get; private set; }
+    public string PendingHandoffSummary => PendingHandoffCount == 0
+        ? "No pending handoffs"
+        : $"{PendingHandoffCount} pending handoff{(PendingHandoffCount == 1 ? string.Empty : "s")}";
+
+    [ObservableProperty]
+    public partial RecoveryViewModel? Recovery { get; private set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasAcceptedState), nameof(ProjectStateLabel))]
     public partial bool HasAcceptedState { get; set; }
@@ -167,6 +179,26 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                     $"{LocalizationService.Current["Dynamic.Revision"]} {revision.RevisionRef}",
                     continuation));
             }
+
+            OnPropertyChanged(nameof(AcceptedConstraintsSummary));
+            OnPropertyChanged(nameof(ActiveAssignmentSummary));
+            PendingHandoffCount = state.Handoffs.Count;
+            OnPropertyChanged(nameof(PendingHandoffCount));
+            OnPropertyChanged(nameof(PendingHandoffSummary));
+
+            var completed = projection.AcceptedProjectState.RevisionDispositions.Values
+                .Where(value => value.Disposition == AssignmentDisposition.Accepted)
+                .Select(value => value.AssignmentRef)
+                .ToHashSet();
+            var remaining = projection.AcceptedProjectState.Assignments.Keys
+                .Where(reference => !completed.Contains(reference))
+                .Select(reference => reference.ToString())
+                .ToArray();
+            Recovery = new RecoveryViewModel(new RecoveryPresentationModel(
+                AcceptedState.Select(item => item.Statement).ToArray(),
+                completed.Select(reference => reference.ToString()).ToArray(),
+                remaining,
+                ["AcceptedProjectState", "Assignment projection", "Handoff projection"]));
 
             NeedsAttention.Clear();
             if (state.Handoffs.Count == 0)

@@ -192,11 +192,11 @@ public partial class HomeViewModel : ViewModelBase
         }
         catch (DirectoryNotFoundException)
         {
-            ErrorMessage = "Could not open this project. The folder is no longer available; nothing was changed.";
+            ErrorMessage = _localization["Home.OpenFailedUnavailable"];
         }
         catch (Exception)
         {
-            ErrorMessage = "Could not open this project; nothing was changed.";
+            ErrorMessage = _localization["Home.OpenFailed"];
         }
         finally
         {
@@ -218,11 +218,11 @@ public partial class HomeViewModel : ViewModelBase
         }
         catch (DirectoryNotFoundException)
         {
-            ErrorMessage = "Could not create this project. The folder is no longer available; nothing was changed.";
+            ErrorMessage = _localization["Home.CreateFailedUnavailable"];
         }
         catch (Exception)
         {
-            ErrorMessage = "Could not create this project; nothing was changed.";
+            ErrorMessage = _localization["Home.CreateFailed"];
         }
         finally
         {

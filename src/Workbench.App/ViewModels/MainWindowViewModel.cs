@@ -61,11 +61,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         }
         catch (DatabaseInitializationException)
         {
-            home.SetStartupError("Could not initialize the local Workbench database. Your existing data was not changed.");
+            home.SetStartupError(LocalizationService.Current["Home.DatabaseInitFailed"]);
         }
         catch (Exception)
         {
-            home.SetStartupError("Could not start AI Game Workbench.");
+            home.SetStartupError(LocalizationService.Current["Home.StartFailed"]);
         }
     }
 
@@ -187,7 +187,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              workerExecutionRepository: _services.WorkerExecutionRepository,
              canonicalWorkerLaunch: _services.CanonicalWorkerLaunch,
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
-             openProjectOverview: () => ShowProjectOverviewAsync(result));
+             openProjectOverview: () => ShowProjectOverviewAsync(result),
+             acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);
@@ -207,6 +208,21 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             () => ShowThreeColumnWorkspaceAsync(result));
         CurrentPage = explorer;
         await explorer.InitializeAsync();
+    }
+
+    private Task<AuthorityDecision> AcceptAuthorityConfirmationAsync(
+        AuthorityConfirmationDraft draft,
+        CancellationToken cancellationToken)
+    {
+        var principal = new UserPrincipalRef(_services.UserPrincipalProvider.GetCurrent().Value);
+        return _services.B1AuthorityCommands.AuthorAcceptedStateAsync(
+            new AuthorAcceptedStateCommand(
+                new ProjectRef(draft.ProjectId),
+                principal,
+                new DecidingAuthorityRef.UserPrincipal(principal),
+                [],
+                draft.Contributions),
+            cancellationToken);
     }
 
     private async Task ShowManualWorkAsync(ProjectOpenResult result, AssignmentRef assignmentRef)

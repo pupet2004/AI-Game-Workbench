@@ -26,16 +26,29 @@ public sealed partial class RecentProjectItemViewModel : ViewModelBase
     public string LastOpenedAtText => Project.LastOpenedAt.LocalDateTime.ToString("g");
 
     public ProjectType Type => Project.Type;
+    public string TypeLabel => Project.Type switch
+    {
+        ProjectType.Generic => LocalizationService.Current["Project.TypeGeneric"],
+        _ => Project.Type.ToString()
+    };
 
     public ProjectAvailability Availability { get; }
 
     public bool IsAvailable => Availability == ProjectAvailability.Available;
 
-    public string GitLabel => string.IsNullOrWhiteSpace(Project.GitRoot) ? "No Git" : "Git";
+    public string GitLabel => string.IsNullOrWhiteSpace(Project.GitRoot)
+        ? LocalizationService.Current["Project.NoGit"]
+        : LocalizationService.Current["Project.Git"];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(EntryStatusLabel))]
+    [NotifyPropertyChangedFor(nameof(EntryStatusLabel), nameof(ProjectStateLabel), nameof(ProjectWorldActionLabel), nameof(HasProjectWorld), nameof(TypeLabel))]
     public partial ProjectWorldEntryStatus? EntryStatus { get; set; }
 
     public string EntryStatusLabel => EntryStatus?.DisplayLabel ?? LocalizationService.Current["Status.Unavailable"];
+
+    public string ProjectStateLabel => EntryStatusLabel;
+    public bool HasProjectWorld => EntryStatus?.Kind == ProjectWorldEntryKind.ProjectWorldReady;
+    public string ProjectWorldActionLabel => HasProjectWorld
+        ? LocalizationService.Current["Project.OpenWorld"]
+        : LocalizationService.Current["Project.OpenSetup"];
 }

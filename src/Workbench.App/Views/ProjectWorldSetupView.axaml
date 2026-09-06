@@ -32,11 +32,11 @@
                     <TextBlock Text="{Binding [ProjectSetup.Role]}" />
                     <ComboBox ItemsSource="{Binding AvailableRoleKinds}" SelectedItem="{Binding SelectedRoleKind}" />
                     <TextBlock Text="{Binding [ProjectSetup.Responsibility]}" />
-                    <TextBox Text="{Binding ResponsibilityObligation}" PlaceholderText="What responsibility exists?" />
+                    <TextBox Text="{Binding ResponsibilityObligation}" PlaceholderText="{Binding [ProjectSetup.ResponsibilityPlaceholder]}" />
                     <TextBlock Text="{Binding [ProjectSetup.Expected]}" />
-                    <TextBox Text="{Binding ResponsibilityExpectedOutcome}" PlaceholderText="What should this responsibility produce?" />
+                    <TextBox Text="{Binding ResponsibilityExpectedOutcome}" PlaceholderText="{Binding [ProjectSetup.ExpectedPlaceholder]}" />
                     <TextBlock Text="{Binding [ProjectSetup.FirstAssignment]}" />
-                    <TextBox Text="{Binding InitialAssignment}" PlaceholderText="What is the first bounded piece of work?" />
+                    <TextBox Text="{Binding InitialAssignment}" PlaceholderText="{Binding [ProjectSetup.AssignmentPlaceholder]}" />
                     <Button Content="{Binding [ProjectSetup.Preview]}" Command="{Binding PreviewInitializationCommand}"
                             IsEnabled="{Binding CanPreview}" HorizontalAlignment="Left" />
                     <Border Padding="12" Background="#12000000" IsVisible="{Binding IsPreviewVisible}">

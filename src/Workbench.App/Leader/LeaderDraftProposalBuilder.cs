@@ -1,4 +1,5 @@
 using Workbench.Core.Tasks;
+using Workbench.Core.Continuity;
 using Workbench.Storage.Tasks;
 using Workbench.Storage.Memory;
 using System.Text.Json;
@@ -53,6 +54,7 @@ public sealed record LeaderStructuredResponse(
 
     public IReadOnlyList<SummaryDelta> SummaryDeltas { get; init; } = [];
     public string? SummaryDeltaError { get; init; }
+    public AuthorityConfirmationDraft? AuthorityConfirmation { get; init; }
 
     public static bool TryParse(string? text, Guid projectId, out LeaderStructuredResponse result)
     {
@@ -81,6 +83,14 @@ public sealed record LeaderStructuredResponse(
                         profile.TryGetProperty("providerHint", out var provider) ? provider.GetString() : null,
                         profile.TryGetProperty("modelHint", out var model) ? model.GetString() : null,
                         profile.TryGetProperty("runtimeHint", out var runtime) ? runtime.GetString() : null));
+            }
+
+            AuthorityConfirmationDraft? authorityConfirmation = null;
+            if (root.TryGetProperty("authority_confirmation", out var authority) && authority.ValueKind != JsonValueKind.Null)
+            {
+                if (authority.ValueKind != JsonValueKind.Object || proposal is not null)
+                    throw new JsonException();
+                authorityConfirmation = ParseAuthorityConfirmation(authority, projectId);
             }
 
             var visibleResponse = response.GetString() ?? string.Empty;
@@ -113,7 +123,8 @@ public sealed record LeaderStructuredResponse(
             result = new LeaderStructuredResponse(visibleResponse, proposal, memoryCommands, memoryCommandError)
             {
                 SummaryDeltas = summaryDeltas,
-                SummaryDeltaError = summaryDeltaError
+                SummaryDeltaError = summaryDeltaError,
+                AuthorityConfirmation = authorityConfirmation
             };
             return true;
         }
@@ -207,6 +218,21 @@ public sealed record LeaderStructuredResponse(
             OptionalDateTimeOffset(library, "occurred_at")));
     }
 
+    private static AuthorityConfirmationDraft ParseAuthorityConfirmation(JsonElement authority, Guid projectId)
+    {
+        var title = RequiredString(authority, "title");
+        var contributions = authority.GetProperty("contributions").EnumerateArray()
+            .Select(item => new AcceptedContributionInstruction(
+                RequiredString(item, "statement"),
+                new ContributionScopeTarget.Project(new ProjectRef(projectId)),
+                null,
+                null))
+            .ToArray();
+        if (contributions.Length == 0)
+            throw new JsonException();
+        return new AuthorityConfirmationDraft(projectId, title, contributions);
+    }
+
     private static IReadOnlyList<SummaryDelta> ParseSummaryDeltas(JsonElement summary)
     {
         if (summary.ValueKind == JsonValueKind.Null) return [];
@@ -297,7 +323,7 @@ public static class LeaderResponseSchema
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["response", "draft_proposal", "memory_commands", "summary_deltas"],
+          "required": ["response", "draft_proposal", "memory_commands", "authority_confirmation", "summary_deltas"],
           "properties": {
             "response": { "type": "string" },
             "draft_proposal": {
@@ -344,7 +370,7 @@ public static class LeaderResponseSchema
                           "required": ["action", "target_object_id", "target_node_id", "expected_node_revision", "expected_overview_revision", "category", "topic", "local_date", "node_content", "current_overview", "materials", "occurred_at"],
                           "properties": {
                             "action": { "type": "string", "enum": ["CreateNode", "UpdateNode"] },
-                            "target_object_id": { "type": ["string", "null"] },
+                            "target_object_id": { "type": ["string", "null"], "description": "Library Object ID only. For a new object use null. Never use an Assignment ID, Attempt ID, Session ID, or other provenance ID." },
                             "target_node_id": { "type": ["string", "null"] },
                             "expected_node_revision": { "type": ["integer", "null"] },
                             "expected_overview_revision": { "type": ["integer", "null"] },
@@ -371,6 +397,29 @@ public static class LeaderResponseSchema
                         },
                         { "type": "null" }
                       ]
+                    }
+                  }
+                },
+                { "type": "null" }
+              ]
+            },
+            "authority_confirmation": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["title", "contributions"],
+                  "properties": {
+                    "title": { "type": "string" },
+                    "contributions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["statement"],
+                        "properties": { "statement": { "type": "string" } }
+                      }
                     }
                   }
                 },

@@ -230,6 +230,30 @@
                                 Command="{Binding ConfirmDraftCommand}" />
                     </StackPanel>
                 </Border>
+                <Border IsVisible="{Binding HasPendingAuthorityConfirmation}"
+                        Padding="12"
+                        BorderBrush="#D6A84F"
+                        BorderThickness="1"
+                        Background="#211A0A"
+                        CornerRadius="6">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Authority Confirmation" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding PendingAuthorityConfirmation.Title}" FontWeight="SemiBold" />
+                        <TextBlock Text="待确认的项目事实（尚未进入 AcceptedProjectState）" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding PendingAuthorityConfirmation.Statements}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{Binding AuthorityConfirmationStatusMessage}"
+                                   Foreground="#F2C94C"
+                                   TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="接受" Command="{Binding AcceptAuthorityConfirmationCommand}" />
+                            <Button Content="拒绝" Command="{Binding RejectAuthorityConfirmationCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
                 <Border IsVisible="{Binding HasPendingRotationDecision}"
                         Padding="12"
                         BorderBrush="#84ADFF"

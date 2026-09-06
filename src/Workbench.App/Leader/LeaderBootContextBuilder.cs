@@ -57,7 +57,7 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
             var current = await _epochs.GetCurrentForProjectAsync(project.Id, cancellationToken);
             var plan = current is null ? null : await _continuityPlans!.GetAsync(project.Id, current.Id, cancellationToken);
             var resolved = plan is null
-                ? await BuildInitialAcceptedStateBundleAsync(project.Id, cancellationToken)
+                ? await _memoryApi.BuildInitialContinuityBundleAsync(project.Id, cancellationToken)
                 : await _memoryApi.ResolveContinuityAsync(project.Id, plan, cancellationToken);
             return BuildSelected(project, resolved.Materials, originalUserText);
         }
@@ -66,33 +66,6 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
         var learned = await _memories.GetAsync(project.Id, "Learned", "Active", cancellationToken);
         var predecessor = await _epochs.GetMostRecentArchivedForProjectAsync(project.Id, cancellationToken);
         return Build(project, formal, learned, predecessor?.HandoffSummary, originalUserText);
-    }
-
-    private async Task<ResolvedContinuityBundle> BuildInitialAcceptedStateBundleAsync(Guid projectId, CancellationToken cancellationToken)
-    {
-        AcceptedProjectState accepted;
-        try
-        {
-            accepted = await _memoryApi!.GetAcceptedProjectStateAsync(projectId, cancellationToken);
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
-        {
-            // Legacy/unmanaged projects may not have a B1 governance root yet.
-            return new ResolvedContinuityBundle(projectId, [], 0, []);
-        }
-        if (accepted.CurrentContributions.Count == 0)
-        {
-            return new ResolvedContinuityBundle(projectId, [], 0, []);
-        }
-
-        var content = ProjectContinuityMaterialService.FormatAcceptedState(accepted);
-        return new ResolvedContinuityBundle(projectId,
-            [ProjectContinuityMaterialService.CreateAcceptedStateMaterial(
-                projectId,
-                $"accepted-state:{projectId}",
-                accepted,
-                content)],
-            Encoding.UTF8.GetByteCount(content), []);
     }
 
     internal static AgentRequest BuildSelected(
@@ -269,19 +242,27 @@ public sealed class LeaderBootContextBuilder : ILeaderBootContextBuilder
         builder.AppendLine("LEADER DELEGATION CONTRACT");
         builder.AppendLine("You are the Project Leader. You may directly discuss, plan, analyze, audit, and perform very small read-only judgments.");
         builder.AppendLine("When you decide real work should be handed to a Worker, you must propose it through draft_proposal and wait for user confirmation.");
+        builder.AppendLine("Use draft_proposal only for delegated Worker work. Use authority_confirmation only when asking the user to accept project facts into Authority / AcceptedProjectState.");
+        builder.AppendLine("Never encode Authority confirmation as a Worker task. Authority confirmation must not create a Task, TaskRevision, WorkerExecution, AgentSession, or provider run.");
         builder.AppendLine("Before confirmation and a real Worker Session, do not claim a Worker started, executed, or returned results.");
         builder.AppendLine("Do not execute delegated work yourself and describe your result as a Worker result. Ordinary turns must set draft_proposal to null.");
         builder.AppendLine("WORKER SCOPE: In Workbench, a Worker is a Workbench-managed execution bound to an Assignment and Attempt.");
         builder.AppendLine("Determine Worker status only from Workbench Assignment, Attempt, Execution, routing, and Handoff state.");
         builder.AppendLine("Do not infer Workbench Workers from runtime-local sub-agents, helper threads, tool calls, or collaboration participants in your current Agent session.");
+        builder.AppendLine("Persisted Project World and persisted Library projection are the current source of truth for project and Library state.");
+        builder.AppendLine("Workspace files are artifacts or source materials only. If a workspace artifact contains stale status, persisted Workbench state takes precedence.");
+        builder.AppendLine("A persisted Library projection means the Library update is already present in Library; do not report it as pending_confirmation merely because a workspace artifact contains that stale status.");
+        builder.AppendLine("Library Proposal/Recommendation content remains non-authoritative unless an AuthorityDecision explicitly supports it; Library acceptance does not make it AcceptedProjectState.");
         builder.AppendLine("If no Workbench-managed execution exists, report that there is no active Workbench Worker, even when runtime-local collaborators are present.");
         builder.AppendLine();
         builder.AppendLine("LIBRARY PROPOSAL CONTRACT");
         builder.AppendLine("Library is the project's long-lived factual evolution archive: what is true, implemented, structured, or materially present.");
         builder.AppendLine("Use stage closure as a judgment point, not an automatic trigger. Do not propose Library updates for every important sentence.");
         builder.AppendLine("Before proposing, you may read relevant Daily Summary or source material. Daily Summary never automatically becomes Library.");
-        builder.AppendLine("You decide whether to update Current Overview, update an existing Timeline Node, or create a new Timeline Node.");
-        builder.AppendLine("Put an explicit proposal in memory_commands.library_proposal. It remains pending until user confirmation; never claim the Library changed before confirmation.");
+         builder.AppendLine("You decide whether to update Current Overview, update an existing Timeline Node, or create a new Timeline Node.");
+         builder.AppendLine("LIBRARY TARGET ID CONTRACT: target_object_id means a Project Library Object ID only. Use null when creating a new Library Object. Never place an Assignment ID, Attempt ID, Session ID, Worker ID, or other provenance identity in target_object_id.");
+         builder.AppendLine("For CreateNode, a non-null target_object_id means append the new Timeline Node under that existing project-owned Library Object. A non-null target must already exist in the Library.");
+         builder.AppendLine("Put an explicit proposal in memory_commands.library_proposal. It remains pending until user confirmation; never claim the Library changed before confirmation.");
         builder.AppendLine("Keep reasons, tradeoffs, and discussion in Daily Summary or source. Library contains factual state and typed source references, not copied source bodies.");
         builder.AppendLine("Ordinary turns set memory_commands to null. New Brain, review completion, Worker completion, message count, idle time, and Daily Summary changes are not automatic Library triggers.");
     }

@@ -13,7 +13,7 @@
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
             <StackPanel>
                 <TextBlock Text="Worker" FontSize="18" FontWeight="SemiBold" Foreground="#FFFFFF" />
-                <TextBlock Text="{Binding Session.ExternalSessionId, StringFormat=Session: {0}}" Foreground="#8A8A8A" />
+                <TextBlock Text="{Binding Session.ExternalSessionId, StringFormat=会话：{0}}" Foreground="#8A8A8A" />
                 <TextBlock Text="{Binding StatusText, StringFormat=状态：{0}}" Foreground="#FFFFFF" FontSize="13" FontWeight="SemiBold" />
             </StackPanel>
             <Button Grid.Column="1" Content="隐藏窗口" Click="OnCloseClick" HorizontalAlignment="Right" ToolTip.Tip="隐藏窗口，Worker 继续运行" />

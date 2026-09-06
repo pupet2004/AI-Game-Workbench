@@ -10,9 +10,17 @@
             <TextBlock Text="{Binding [Home.Description]}"
                        TextWrapping="Wrap" Opacity="0.75" MaxWidth="760" />
             <TextBlock Text="{Binding [Home.PickerHint]}" TextWrapping="Wrap" Opacity="0.75" MaxWidth="760" />
-            <Grid ColumnDefinitions="*,Auto">
+            <Border Padding="14" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="8" Background="#111827">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding [Home.ProjectFirstTitle]}" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding [Home.ProjectFirstDescription]}" TextWrapping="Wrap" Opacity="0.85" />
+                </StackPanel>
+            </Border>
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                 <TextBlock Text="{Binding [Home.RecentProjects]}" FontSize="20" />
-                <Button Grid.Column="1" Content="{Binding [Home.Settings]}" Command="{Binding ShowSettingsCommand}" />
+                <Button Grid.Column="1" Content="{Binding [Home.Open]}" Command="{Binding OpenProjectFolderCommand}" IsEnabled="{Binding CanOpenProjects}" />
+                <Button Grid.Column="2" Content="{Binding [Home.Create]}" Command="{Binding CreateProjectCommand}" IsEnabled="{Binding CanOpenProjects}" />
+                <Button Grid.Column="3" Content="{Binding [Home.Settings]}" Command="{Binding ShowSettingsCommand}" />
             </Grid>
             <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
             <Border IsVisible="{Binding HasProjectDetails}" Padding="12" BorderBrush="#555" BorderThickness="1" CornerRadius="8" Background="#171717">
@@ -45,9 +53,11 @@
                                 CommandParameter="{Binding}">
                             <StackPanel Spacing="3">
                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding Type}" />
+                                <TextBlock Text="{Binding TypeLabel}" />
                                 <TextBlock Text="{Binding GitLabel}" />
                                 <TextBlock Text="{Binding EntryStatusLabel}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding ProjectStateLabel}" />
+                                <TextBlock Text="{Binding ProjectWorldActionLabel}" Opacity="0.75" />
                                 <TextBlock Text="{Binding RootPath}" TextWrapping="Wrap" />
                                 <TextBlock Text="{Binding $parent[UserControl].DataContext[Home.Unavailable]}" IsVisible="{Binding !IsAvailable}" Foreground="IndianRed" />
                             </StackPanel>
@@ -55,14 +65,6 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="{Binding [Home.Open]}"
-                        Command="{Binding OpenProjectFolderCommand}"
-                        IsEnabled="{Binding CanOpenProjects}" />
-                <Button Content="{Binding [Home.Create]}"
-                        Command="{Binding CreateProjectCommand}"
-                        IsEnabled="{Binding CanOpenProjects}" />
-            </StackPanel>
             <TextBlock Text="{Binding [Home.Opening]}" IsVisible="{Binding IsBusy}" />
         </StackPanel>
     </ScrollViewer>

@@ -109,6 +109,7 @@ public interface IWorkerRoutingStore
     Task<IReadOnlyList<WorkerSessionRecord>> ListSessionsAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<WorkerSessionRecord?> GetSessionAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default);
     Task AppendHandoffAsync(WorkerHandoff handoff, CancellationToken cancellationToken = default);
+    Task<WorkerHandoff?> GetLatestHandoffAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default) => Task.FromResult<WorkerHandoff?>(null);
     Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default);
     Task OverrideStatusAsync(WorkerStatusOverride status, CancellationToken cancellationToken = default);
     Task AppendProgressAsync(WorkerProgressSnapshot progress, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -169,6 +170,16 @@ public sealed class TaskEventWorkerRoutingStore : IWorkerRoutingStore
             : JsonSerializer.Serialize(handoff);
         return _events.AppendAsync(new StoredTaskEvent(Guid.NewGuid(), handoff.ProjectId, handoff.TaskId, null,
             "WorkerToLeaderHandoff", payload, handoff.CreatedAt), cancellationToken);
+    }
+
+    public async Task<WorkerHandoff?> GetLatestHandoffAsync(Guid projectId, Guid taskId, AgentSessionId sessionId, CancellationToken cancellationToken = default)
+    {
+        var events = await _events.ListAsync(projectId, taskId, 200, cancellationToken);
+        return events.Where(item => item.Type == "WorkerToLeaderHandoff")
+            .Select(TryDeserializeHandoff)
+            .Where(item => item?.WorkerSessionId == sessionId)
+            .OrderByDescending(item => item!.CreatedAt)
+            .FirstOrDefault();
     }
 
     public Task AppendRemovalAsync(WorkerRemoval removal, CancellationToken cancellationToken = default) =>

@@ -4,6 +4,10 @@ using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
 using Workbench.App.Continuity;
 using Workbench.Core.Continuity;
+using Workbench.Core.Tasks;
+using Workbench.Storage.Tasks;
+using Workbench.Storage.Workers;
+using Workbench.App.Worker;
 
 namespace Workbench.App.Memory;
 
@@ -12,8 +16,146 @@ public sealed class ProjectContinuityMaterialService(
     LeaderSessionEpochRepository epochs,
     LeaderMessageRepository messages,
     ProjectLibraryEvolutionRepository library,
-    B1ProjectionService? b1Projections = null)
+    B1ProjectionService? b1Projections = null,
+    TaskRepository? tasks = null,
+    TaskEventRepository? taskEvents = null)
 {
+    private const int InitialBundleMaxUtf8Bytes = 24000;
+    private const int InitialLibraryMaxUtf8Bytes = 12000;
+    private const int InitialWorkMaxUtf8Bytes = 8000;
+    private const int InitialAssignmentMaxUtf8Bytes = 4000;
+    private readonly TaskRepository? _tasks = tasks;
+    private readonly TaskEventRepository? _taskEvents = taskEvents;
+
+    public async Task<ResolvedContinuityBundle> BuildInitialBundleAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        var materials = new List<ResolvedContinuityMaterial>();
+        var total = 0;
+
+        if (b1Projections is not null)
+        {
+            try
+            {
+                var accepted = await b1Projections.GetAcceptedProjectStateAsync(new ProjectRef(projectId), cancellationToken);
+                if (accepted.CurrentContributions.Count > 0)
+                {
+                    var content = FormatAcceptedState(accepted);
+                    AddBounded(materials, ref total, CreateAcceptedStateMaterial(projectId, $"accepted-state:{projectId}", accepted, content), InitialBundleMaxUtf8Bytes);
+                }
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+            {
+            }
+        }
+
+        var libraryTotal = 0;
+        foreach (var node in await library.ListTimelineMetadataAsync(projectId, cancellationToken))
+        {
+            if (libraryTotal >= InitialLibraryMaxUtf8Bytes) break;
+            try
+            {
+                var material = await ReadAsync(projectId, new ContinuityMaterialSelection(0, ContinuityMaterialKind.LibraryTimelineNode, $"library-timeline:{node.NodeId}", InitialLibraryMaxUtf8Bytes - libraryTotal), cancellationToken);
+                var content = $"PERSISTED LIBRARY PROJECTION (CURRENT LIBRARY STATE; NOT ACCEPTEDPROJECTSTATE)\n{material.Content}";
+                material = material with { Content = content, Utf8Bytes = Encoding.UTF8.GetByteCount(content) };
+                if (AddBounded(materials, ref total, material, InitialBundleMaxUtf8Bytes, InitialLibraryMaxUtf8Bytes - libraryTotal))
+                    libraryTotal += material.Utf8Bytes;
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        if (_taskEvents is not null)
+        {
+            var work = await BuildLatestWorkerMaterialAsync(projectId, cancellationToken);
+            if (work is not null)
+                AddBounded(materials, ref total, work, InitialBundleMaxUtf8Bytes, InitialWorkMaxUtf8Bytes);
+        }
+
+        if (_tasks is not null)
+        {
+            var assignment = await BuildAssignmentMaterialAsync(projectId, cancellationToken);
+            if (assignment is not null)
+                AddBounded(materials, ref total, assignment, InitialBundleMaxUtf8Bytes, InitialAssignmentMaxUtf8Bytes);
+        }
+
+        return new ResolvedContinuityBundle(projectId, materials, total, []);
+    }
+
+    private async Task<ResolvedContinuityMaterial?> BuildLatestWorkerMaterialAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        var reports = await _taskEvents!.ListForProjectAsync(projectId, "WorkerFinalReportReceived", 100, cancellationToken);
+        var handoffs = await _taskEvents.ListForProjectAsync(projectId, "WorkerToLeaderHandoff", 100, cancellationToken);
+        var report = reports.OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.EventId).FirstOrDefault();
+        var handoff = report is null
+            ? handoffs.OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.EventId).FirstOrDefault()
+            : handoffs.Where(item => item.TaskId == report.TaskId)
+                .OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.EventId).FirstOrDefault();
+        if (report is null && handoff is null) return null;
+
+        var builder = new StringBuilder();
+        builder.AppendLine("LATEST COMPLETED WORK (LEGACY WORKER READ MODEL)");
+        if (report is not null)
+        {
+            builder.AppendLine($"FinalReportEventId: {report.EventId}");
+            builder.AppendLine($"TaskId: {report.TaskId}");
+            AppendEventPayload(builder, "FinalReport", report.Payload);
+        }
+        if (handoff is not null)
+        {
+            builder.AppendLine($"HandoffEventId: {handoff.EventId}");
+            builder.AppendLine($"TaskId: {handoff.TaskId}");
+            AppendEventPayload(builder, "Handoff", handoff.Payload);
+        }
+        return new(ContinuityMaterialKind.LegacyWorkerCompletion, $"legacy-worker-completion:{report?.EventId ?? handoff!.EventId}", "Latest Worker FinalReport / Handoff", builder.ToString().TrimEnd(), Encoding.UTF8.GetByteCount(builder.ToString()));
+    }
+
+    private async Task<ResolvedContinuityMaterial?> BuildAssignmentMaterialAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        var tasks = await _tasks!.ListAsync(projectId, cancellationToken);
+        if (tasks.Count == 0) return null;
+        var builder = new StringBuilder("CURRENT ASSIGNMENT / WORK HISTORY\n");
+        foreach (var task in tasks.OrderByDescending(item => item.UpdatedAt).Take(8))
+            builder.Append("- ").Append(task.Title).Append(" | status=").Append(task.Status).Append(" | task=").Append(task.TaskId).Append(" | revision=").AppendLine(task.CurrentRevisionId.ToString());
+        var content = builder.ToString().TrimEnd();
+        return new(ContinuityMaterialKind.AssignmentStatus, $"assignment-status:{projectId}", "Current Assignment Status", content, Encoding.UTF8.GetByteCount(content));
+    }
+
+    private static void AppendEventPayload(StringBuilder builder, string label, string payload)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(payload);
+            var root = json.RootElement;
+            builder.Append(label).Append(": ");
+            if (root.TryGetProperty("Message", out var message) && message.ValueKind == JsonValueKind.String)
+                builder.AppendLine(message.GetString());
+            else
+                builder.AppendLine(payload);
+            if (root.TryGetProperty("ValidationSummary", out var validation) && validation.ValueKind == JsonValueKind.String)
+                builder.Append("ValidationSummary: ").AppendLine(validation.GetString());
+        }
+        catch (JsonException)
+        {
+            builder.Append(label).Append(": ").AppendLine(payload);
+        }
+    }
+
+    private static bool AddBounded(
+        List<ResolvedContinuityMaterial> materials,
+        ref int total,
+        ResolvedContinuityMaterial material,
+        int totalBudget,
+        int? materialBudget = null)
+    {
+        if (material.Utf8Bytes > (materialBudget ?? totalBudget) || total + material.Utf8Bytes > totalBudget)
+            return false;
+        materials.Add(material);
+        total += material.Utf8Bytes;
+        return true;
+    }
     public async Task<ContinuityMaterialCatalog> ListAsync(
         Guid projectId,
         Guid epochId,

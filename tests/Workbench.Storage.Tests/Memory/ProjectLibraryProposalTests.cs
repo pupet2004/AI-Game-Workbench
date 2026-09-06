@@ -27,6 +27,42 @@ public sealed class ProjectLibraryProposalTests
     }
 
     [Fact]
+    public async Task Create_node_with_non_library_target_is_rejected_before_pending_proposal_is_persisted()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var assignmentId = Guid.NewGuid();
+        var draft = fixture.CreateNodeDraft() with { TargetObjectId = assignmentId };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Proposals.CreateProposalAsync(draft));
+
+        Assert.Contains("Library Object", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await fixture.Proposals.GetPendingAsync(fixture.Project.Id));
+        Assert.Equal(0L, await fixture.CountAsync("project_library_proposals"));
+    }
+
+    [Fact]
+    public async Task Create_node_with_existing_library_object_target_can_be_accepted_as_append()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var libraryObject = await fixture.Library.CreateObjectAsync(fixture.Project.Id, "Design", "Relics", T0);
+        var draft = fixture.CreateNodeDraft() with
+        {
+            TargetObjectId = libraryObject.Id,
+            CurrentOverview = null,
+            ExpectedOverviewRevision = null
+        };
+
+        var proposal = await fixture.Proposals.CreateProposalAsync(draft);
+        await fixture.Proposals.AcceptAsync(fixture.Project.Id, proposal.Id);
+
+        Assert.Equal(LibraryProposalStatus.Accepted,
+            (await fixture.Proposals.GetAsync(fixture.Project.Id, proposal.Id))!.Status);
+        var node = Assert.Single(await fixture.Library.GetTimelineAsync(fixture.Project.Id, libraryObject.Id));
+        Assert.Equal(draft.NodeContent, node.Content);
+    }
+
+    [Fact]
     public async Task Reject_is_idempotent_and_writes_no_library_or_other_memory_state()
     {
         await using var fixture = await Fixture.CreateAsync();
