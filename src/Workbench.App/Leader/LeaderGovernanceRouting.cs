@@ -9,7 +9,8 @@ namespace Workbench.App.Leader;
 public sealed record LeaderLibraryProposalDraftSuggestion(
     string Category,
     string Topic,
-    string NodeContent);
+    string NodeContent,
+    string? SourceRef);
 
 public sealed record LeaderGovernanceRouteSuggestion(
     LeaderEvolutionCandidate Candidate,
@@ -86,7 +87,8 @@ public static class LeaderGovernanceRouteSuggestionBuilder
         var draft = new AuthorityConfirmationDraft(
             projectId,
             $"Confirm {candidate.Object} project rule change",
-            [new AcceptedContributionInstruction(statement, new ContributionScopeTarget.Project(new ProjectRef(projectId)), null, null)]);
+            [new AcceptedContributionInstruction(statement, new ContributionScopeTarget.Project(new ProjectRef(projectId)), null, null)],
+            candidate.SourceRef);
         return new(candidate, LeaderEvolutionRouteHint.AuthorityConfirmation, true, "This is an ephemeral draft. User acceptance must still use the existing Authority path.", draft, null);
     }
 
@@ -95,7 +97,8 @@ public static class LeaderGovernanceRouteSuggestionBuilder
         var draft = new LeaderLibraryProposalDraftSuggestion(
             candidate.ImpactClass.ToString(),
             candidate.Object,
-            BuildChangeStatement(candidate));
+            BuildChangeStatement(candidate),
+            candidate.SourceRef);
         return new(candidate, LeaderEvolutionRouteHint.LibraryProposal, true, "This is an ephemeral draft. It has not been submitted to the Library.", null, draft);
     }
 

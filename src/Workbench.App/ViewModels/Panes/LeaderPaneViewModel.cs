@@ -1790,6 +1790,80 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task SubmitGovernanceDraftAsync(CancellationToken cancellationToken = default)
+    {
+        var preview = PreparedGovernanceDraft;
+        if (preview is null || !preview.Suggestion.CanPrepareDraft)
+            return;
+
+        if (preview.AuthorityConfirmation is { } authority)
+        {
+            PendingAuthorityConfirmation = authority;
+            AuthorityConfirmationStatusMessage = "Ready for final Authority acceptance. No project state has changed.";
+            PreparedGovernanceDraft = null;
+            NotifyAllState();
+            return;
+        }
+
+        if (preview.LibraryProposal is { } library)
+        {
+            await SubmitEvolutionLibraryProposalAsync(library, cancellationToken);
+            return;
+        }
+
+        PreparedGovernanceDraft = null;
+        NotifyAllState();
+    }
+
+    private async Task SubmitEvolutionLibraryProposalAsync(
+        LeaderLibraryProposalDraftSuggestion suggestion,
+        CancellationToken cancellationToken)
+    {
+        if (_projectMemoryApi is null || _conversation.Session is null)
+        {
+            MemoryCommandStatus = "Library proposal submission is unavailable.";
+            NotifyAllState();
+            return;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var draft = new ProjectLibraryProposalDraft(
+            Guid.NewGuid(),
+            _project.Id,
+            _conversation.Session.Id.Value,
+            LibraryProposalAction.CreateNode,
+            null,
+            null,
+            null,
+            null,
+            suggestion.Category,
+            suggestion.Topic,
+            DateOnly.FromDateTime(now.LocalDateTime),
+            suggestion.NodeContent,
+            null,
+            string.IsNullOrWhiteSpace(suggestion.SourceRef)
+                ? []
+                : [new LibraryMaterialReferenceDraft("EvolutionCandidate", suggestion.SourceRef, "Evolution candidate source")],
+            now,
+            OccurredAt: now);
+
+        try
+        {
+            await _projectMemoryApi.CreateLibraryProposalAsync(draft, cancellationToken);
+            PreparedGovernanceDraft = null;
+            MemoryCommandStatus = "Library proposal created. Final acceptance is still required.";
+            if (_refreshLibraryPane is not null)
+                await _refreshLibraryPane(cancellationToken);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            MemoryCommandStatus = $"Library proposal submission failed: {exception.Message}";
+        }
+
+        NotifyAllState();
+    }
+
+    [RelayCommand]
     private async Task AcceptAuthorityConfirmationAsync(CancellationToken cancellationToken = default)
     {
         var draft = PendingAuthorityConfirmation;

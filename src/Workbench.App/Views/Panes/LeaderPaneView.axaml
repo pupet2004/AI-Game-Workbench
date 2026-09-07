@@ -118,9 +118,16 @@
                                 <TextBlock Text="Governance draft preview · not submitted" FontWeight="SemiBold" Foreground="#5B4300" />
                                 <TextBlock Text="{Binding PreparedGovernanceDraft.Title}" FontWeight="SemiBold" Foreground="#5B4300" />
                                 <TextBlock Text="{Binding PreparedGovernanceDraft.Body}" TextWrapping="Wrap" Foreground="#5B4300" />
-                                <Button Content="Clear draft preview"
-                                        HorizontalAlignment="Left"
-                                        Command="{Binding ClearPreparedGovernanceDraftCommand}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Create Authority Confirmation"
+                                            IsVisible="{Binding PreparedGovernanceDraft.IsAuthorityConfirmation}"
+                                            Command="{Binding SubmitGovernanceDraftCommand}" />
+                                    <Button Content="Create Library Proposal"
+                                            IsVisible="{Binding PreparedGovernanceDraft.IsLibraryProposal}"
+                                            Command="{Binding SubmitGovernanceDraftCommand}" />
+                                    <Button Content="Clear draft preview"
+                                            Command="{Binding ClearPreparedGovernanceDraftCommand}" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </StackPanel>

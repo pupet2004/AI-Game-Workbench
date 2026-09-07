@@ -9,7 +9,8 @@ namespace Workbench.App.Leader;
 public sealed record AuthorityConfirmationDraft(
     Guid ProjectId,
     string Title,
-    IReadOnlyList<AcceptedContributionInstruction> Contributions)
+    IReadOnlyList<AcceptedContributionInstruction> Contributions,
+    string? SourceRef = null)
 {
     public IReadOnlyList<string> Statements => Contributions.Select(value => value.Statement).ToArray();
 }

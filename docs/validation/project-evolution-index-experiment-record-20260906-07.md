@@ -2,7 +2,7 @@
 
 日期：2026-09-06 至 2026-09-07  
 范围：Workbench Project Evolution Index、Leader Evolution Candidate、Governance Gateway  
-状态：实验轮完成；代码和文档已提交；自动治理提交仍未开启。
+状态：Phase 4 Governance Closure 已完成；自动接受仍未开启。
 
 ## 实验问题
 
@@ -206,7 +206,7 @@ Library Object
 - 明确执行措辞与 Candidate 的稳定区分；
 - `CharacterOrObject`、`Content`、`Architecture` 的统一路由准确率；
 - Candidate 的去重、过期、拒绝和持久化策略；
-- Candidate 到真实 Library Proposal / Authority Confirmation 的自动关联。
+- Candidate 到真实 Library Proposal / Authority Confirmation 的自动关联已经以显式用户提交完成；自动关联和自动接受仍未开启。
 
 因此当前产品边界冻结为：
 
@@ -219,10 +219,50 @@ Leader Evolution Candidate
     ↓
 Impact Classification
     ↓
-Governance Route Suggestion
+    Governance Route Suggestion
+    ↓
+    用户显式提交
+    ↓
+    现有 Library Proposal / Authority Confirmation
+    ↓
+    现有最终接受流程
 ```
 
-到此停止。`Governance Route Suggestion` 仍是只读建议，不自动提交 Library Proposal，不自动写入 Authority，不自动创建 Worker。
+`Governance Route Suggestion` 仍是建议。只有用户明确点击提交，才会创建现有 Library Proposal 或显示现有 Authority Confirmation 待确认卡片；最终项目状态仍必须通过现有 Library Accept 或 Authority Accept。Candidate 不自动提交、不自动接受，也不创建 Worker。
+
+## Phase 4：Governance Closure
+
+Phase 4 补上了“建议之后”的显式用户动作，但没有新增 Evolution 治理系统：
+
+```text
+Candidate
+  ↓
+Policy-validated Governance Draft Preview
+  ↓ 用户点击提交
+Existing Library Proposal / Authority Confirmation
+  ↓ 用户最终接受
+Library Projection / AcceptedProjectState
+  ↓
+Deterministic Evolution Index observes the result
+```
+
+实现边界：
+
+- WorldRule Candidate 的提交只把 Authority draft 放入既有 `PendingAuthorityConfirmation`；提交动作本身不调用 B1，不产生 `AuthorityDecision`；
+- CharacterOrObject / Content Candidate 的提交创建既有 pending `ProjectLibraryProposal`；提交动作本身不更新 Library projection；
+- Authority 最终仍调用既有 `AuthorAcceptedStateAsync` 路径；Library 最终仍调用既有 `AcceptLibraryProposalAsync` / 编辑接受路径；
+- `RoutingConflict`、`Architecture`、`ProjectStructure`、`Unclassified` 和任何不安全建议不可提交；
+- Candidate 不创建 Task、Assignment、Worker Draft 或 Worker Execution；
+- Library 草稿通过 `EvolutionCandidate` material reference 保留 Candidate `SourceRef`；Authority draft 保留 source ref 供当前 UI 和后续 provenance 扩展使用；
+- 没有新增 `EvolutionApproval`、`EvolutionDecision`、Evolution truth table、Event Store、Memory table 或 Object Registry。
+
+确定性验证覆盖：
+
+1. Authority：提交后只有待确认卡片，AuthorityDecision 保持为空；最终接受后才生成 AuthorityDecision 和 AcceptedProjectState；
+2. Library：提交后只有 pending proposal，Library object/timeline 保持为空；最终接受后才生成 Library projection；
+3. 不安全路由：提交命令不产生 Authority、Library 或 Worker 副作用。
+
+新增测试位于 `tests/Workbench.App.Tests/LeaderGovernanceRoutingTests.cs`。
 
 ## 代码与文档变更
 
@@ -248,8 +288,8 @@ Governance Route Suggestion
 
 ## 最终验证
 
-- focused tests：53 通过；
-- 完整 `Workbench.App.Tests`：574 通过、3 跳过、0 失败；
+- focused governance tests：7 通过；
+- 完整 solution tests：Workbench.App.Tests 577 通过、3 跳过、0 失败；其他测试项目全部通过（Runtime 1 跳过）；
 - solution build：0 警告、0 错误；
 - `git diff --check`：通过；
 - 真实 GPT-5.6-sol 压力测试：完成，使用隔离临时项目和数据库；
