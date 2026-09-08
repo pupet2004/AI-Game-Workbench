@@ -23,9 +23,11 @@ if ($running.Count -gt 0) { throw 'Workbench.App is already running from this re
 if (-not $Resume) {
     if (Test-Path -LiteralPath $run) { Remove-Item -LiteralPath $run -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $run | Out-Null
-    $project = Join-Path $run '零刻'
+    $baselineProject = Get-ChildItem -LiteralPath $baseline -Directory | Select-Object -First 1
+    if ($null -eq $baselineProject) { throw "Demo baseline project directory is missing: $baseline" }
+    $project = Join-Path $run $baselineProject.Name
     New-Item -ItemType Directory -Force -Path $project | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $baseline '零刻') -Force | Copy-Item -Destination $project -Recurse -Force
+    Get-ChildItem -LiteralPath $baselineProject.FullName -Force | Copy-Item -Destination $project -Recurse -Force
     Get-ChildItem -LiteralPath $baseline -Filter 'workbench.db*' -File | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $run $_.Name) -Force
     }
@@ -34,7 +36,11 @@ if (-not $Resume) {
 }
 
 $db = Join-Path $run 'workbench.db'
-$project = Join-Path $run '零刻'
+$project = if ($Resume) {
+    $runProject = Get-ChildItem -LiteralPath $run -Directory | Select-Object -First 1
+    if ($null -eq $runProject) { throw "Demo project directory is missing from run: $run" }
+    $runProject.FullName
+} else { $project }
 $projectFile = Join-Path $repo 'src\Workbench.App\Workbench.App.csproj'
 $runtime = Join-Path $repo ('artifacts\local\demo-run-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 if (-not $NoBuild) {
@@ -53,7 +59,7 @@ if (-not (Test-Path -LiteralPath $exe)) {
 # only this disposable run database before opening the copied project so all
 # persisted Truth, Library, Summary, Candidate, and Worker rows stay attached
 # to the run's project identity.
-$relocation = Start-Process -FilePath $exe -ArgumentList @('--relocate-demo-project-auto', ('"' + $project + '"'), ('"' + $db + '"')) -WorkingDirectory (Split-Path -Parent $exe) -Wait -PassThru -WindowStyle Hidden
+$relocation = Start-Process -FilePath $exe -ArgumentList @('--relocate-demo-project-auto', ('"' + $project + '"'), ('"' + $db + '"')) -WorkingDirectory (Split-Path -Parent $exe) -Wait -PassThru
 if ($relocation.ExitCode -ne 0) { throw "Demo run relocation failed: $($relocation.ExitCode)" }
 
 $oldDb = $env:WORKBENCH_DATABASE_PATH
@@ -63,7 +69,7 @@ try {
     $env:WORKBENCH_DATABASE_PATH = $db
     $env:WORKBENCH_OPEN_PROJECT_PATH = $project
     $env:WORKBENCH_DEMO_RUN_DIRECTORY = $run
-    Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe)
+    Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -WindowStyle Normal
 } finally {
     $env:WORKBENCH_DATABASE_PATH = $oldDb
     $env:WORKBENCH_OPEN_PROJECT_PATH = $oldProject

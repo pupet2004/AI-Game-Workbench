@@ -46,7 +46,7 @@ $exe = Join-Path $runtime 'Workbench.App.exe'
 if (-not (Test-Path -LiteralPath $exe)) { $exe = Join-Path $repo 'src\Workbench.App\bin\Debug\net10.0-windows\Workbench.App.exe' }
 if (-not (Test-Path -LiteralPath $exe)) { throw "Workbench executable not found: $exe" }
 
-$relocation = Start-Process -FilePath $exe -ArgumentList @('--relocate-demo-project-auto', ('"' + $projectTarget + '"'), ('"' + $databaseTarget + '"')) -WorkingDirectory (Split-Path -Parent $exe) -Wait -PassThru -WindowStyle Hidden
+$relocation = Start-Process -FilePath $exe -ArgumentList @('--relocate-demo-project-auto', ('"' + $projectTarget + '"'), ('"' + $databaseTarget + '"')) -WorkingDirectory (Split-Path -Parent $exe) -Wait -PassThru
 if ($relocation.ExitCode -ne 0) { throw "Baseline relocation failed: $($relocation.ExitCode)" }
 
 $manifest = [ordered]@{
