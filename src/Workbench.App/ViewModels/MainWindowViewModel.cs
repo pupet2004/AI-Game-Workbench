@@ -58,6 +58,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             await _localization.InitializeAsync(cancellationToken);
             _localization.AdoptAsCurrent();
             await home.LoadAsync(cancellationToken);
+            if (Environment.GetEnvironmentVariable("WORKBENCH_OPEN_PROJECT_PATH") is { Length: > 0 } projectPath &&
+                Directory.Exists(projectPath))
+            {
+                await home.OpenPathAsync(projectPath, cancellationToken);
+            }
         }
         catch (DatabaseInitializationException)
         {

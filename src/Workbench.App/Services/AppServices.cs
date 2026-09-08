@@ -227,7 +227,10 @@ public sealed class AppServices : IAsyncDisposable
         IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null,
         IReadOnlyList<ConfiguredAgentRuntimeFactory>? configuredRuntimeFactories = null) =>
         CreateForDatabasePath(
-            DatabasePathProvider.GetDefaultDatabasePath(),
+            Environment.GetEnvironmentVariable("WORKBENCH_DATABASE_PATH")
+                is { Length: > 0 } configuredDatabasePath
+                ? configuredDatabasePath
+                : DatabasePathProvider.GetDefaultDatabasePath(),
             TimeProvider.System,
             runtimeFactory: runtimeFactory,
             additionalRuntimeFactories: additionalRuntimeFactories,

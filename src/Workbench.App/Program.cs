@@ -2,6 +2,7 @@
 using System;
 
 using Workbench.App.SingleInstance;
+using Workbench.App.Demo;
 
 namespace Workbench.App;
 
@@ -18,6 +19,26 @@ sealed class Program
         if (args.Length == 1 && string.Equals(args[0], "--reset-local-data", StringComparison.Ordinal))
         {
             Workbench.Storage.Database.DatabasePathProvider.ResetDefaultData();
+            return;
+        }
+
+        if (args.Length >= 2 && string.Equals(args[0], "--bootstrap-demo", StringComparison.Ordinal))
+        {
+            var projectRoot = Path.GetFullPath(args[1]);
+            var databasePath = args.Length >= 3
+                ? Path.GetFullPath(args[2])
+                : Path.Combine(Path.GetDirectoryName(projectRoot)!, "workbench.db");
+            DemoBootstrapper.RunAsync(projectRoot, databasePath).GetAwaiter().GetResult();
+            return;
+        }
+
+        if (args.Length >= 3 && string.Equals(args[0], "--relocate-demo-project", StringComparison.Ordinal))
+        {
+            var projectRoot = Path.GetFullPath(args[1]);
+            var databasePath = Path.GetFullPath(args[2]);
+            var projectName = args.Length >= 4 ? args[3] : "零刻";
+            DemoBootstrapper.RelocateProjectAsync(projectRoot, databasePath, projectName)
+                .GetAwaiter().GetResult();
             return;
         }
 
