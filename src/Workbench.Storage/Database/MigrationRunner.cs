@@ -145,6 +145,14 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration027B1WorkerBridge.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration028ProjectEvolutionCandidates.Version)
+        {
+            await ApplyAsync(connection, Migration028ProjectEvolutionCandidates.ApplyAsync, cancellationToken);
+        }
+        if (currentVersion < Migration029EvolutionCandidateConsideredRefs.Version)
+        {
+            await ApplyAsync(connection, Migration029EvolutionCandidateConsideredRefs.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

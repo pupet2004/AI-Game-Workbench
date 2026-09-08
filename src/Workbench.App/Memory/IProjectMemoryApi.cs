@@ -20,6 +20,7 @@ public interface IProjectMemoryApi
     Task<ContinuityMaterialCatalog> ListContinuityMaterialsAsync(Guid projectId, Guid sourceEpochId, CancellationToken cancellationToken = default);
     Task<ResolvedContinuityBundle> ResolveContinuityAsync(Guid projectId, LeaderEpochContinuityPlan plan, CancellationToken cancellationToken = default);
     Task<ResolvedContinuityBundle> BuildInitialContinuityBundleAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectEvolutionCandidate>> ListEvolutionCandidatesAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<ProjectLibraryProposal> CreateLibraryProposalAsync(ProjectLibraryProposalDraft draft, CancellationToken cancellationToken = default);
     Task<ProjectLibraryProposal?> GetLibraryProposalAsync(Guid projectId, Guid proposalId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ProjectLibraryProposal>> GetPendingLibraryProposalsAsync(Guid projectId, CancellationToken cancellationToken = default);

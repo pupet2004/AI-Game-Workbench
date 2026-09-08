@@ -44,6 +44,31 @@ public sealed class LeaderDraftProposalTests
     }
 
     [Fact]
+    public void Authority_confirmation_parser_removes_pending_projection_language()
+    {
+        const string json = """
+            {
+              "response": "请确认。",
+              "draft_proposal": null,
+              "memory_commands": null,
+              "authority_confirmation": {
+                "title": "因果编号职责边界",
+                "contributions": [{
+                  "statement": "因果编号只负责标识和追踪因果链。该规则拟作为正式世界规则，待用户确认后才进入 Accepted Project State。"
+                }]
+              },
+              "summary_deltas": null,
+              "evolution_candidates": []
+            }
+            """;
+
+        Assert.True(LeaderStructuredResponse.TryParse(json, Guid.NewGuid(), out var parsed));
+        Assert.Equal(
+            "因果编号只负责标识和追踪因果链。",
+            parsed.AuthorityConfirmation!.Statements.Single());
+    }
+
+    [Fact]
     public void Evolution_candidate_schema_is_closed_bounded_and_nullable_only_at_before_after()
     {
         using var document = JsonDocument.Parse(LeaderResponseSchema.Json);

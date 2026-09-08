@@ -51,6 +51,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly ILeaderReviewUserResponseBinder? _responseBinder;
     private readonly GitSnapshot? _git;
     private readonly ProjectSummaryRepository? _projectSummaryRepository;
+    private readonly ProjectEvolutionCandidateRepository? _evolutionCandidates;
     private readonly IAgentHost _agentHost;
     private readonly SynchronizationContext? _leaderContext;
     private CancellationTokenSource? _activeTurnCancellation;
@@ -79,8 +80,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         Func<CancellationToken, Task>? refreshLibraryPane = null,
         ILeaderReviewUserResponseBinder? responseBinder = null,
         GitSnapshot? git = null,
-        ProjectSummaryRepository? projectSummaryRepository = null,
-        IAgentHost? agentHost = null,
+         ProjectSummaryRepository? projectSummaryRepository = null,
+         ProjectEvolutionCandidateRepository? evolutionCandidateRepository = null,
+         IAgentHost? agentHost = null,
         WorkerExecutionRepository? workerExecutionRepository = null,
         CanonicalWorkerLaunchService? canonicalWorkerLaunch = null,
         Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? acceptAuthorityConfirmation = null)
@@ -109,6 +111,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _responseBinder = responseBinder;
         _git = git;
         _projectSummaryRepository = projectSummaryRepository;
+        _evolutionCandidates = evolutionCandidateRepository;
         _agentHost = agentHost ?? new InProcessAgentHost(runtimeRegistry);
         _leaderContext = SynchronizationContext.Current;
         _agentHost.EventReceived += OnAgentHostEvent;
@@ -329,6 +332,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await _sessionManager.LoadAsync(_project.Id, cancellationToken);
+        await RestoreEvolutionCandidatesAsync(cancellationToken);
         await RestorePendingDraftConfirmationAsync(cancellationToken);
         if (History is not null)
         {
@@ -411,6 +415,35 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         }
 
         NotifyAllState();
+    }
+
+    private async Task RestoreEvolutionCandidatesAsync(CancellationToken cancellationToken)
+    {
+        if (_evolutionCandidates is null) return;
+
+        EvolutionCandidates.Clear();
+        GovernanceSuggestions.Clear();
+        foreach (var stored in await _evolutionCandidates.ListAsync(_project.Id, cancellationToken: cancellationToken))
+        {
+            if (!Enum.TryParse<LeaderEvolutionImpactClass>(stored.ImpactClass, out var impactClass) ||
+                !Enum.TryParse<LeaderEvolutionRouteHint>(stored.RouteHint, out var routeHint))
+                continue;
+            var candidate = new LeaderEvolutionCandidate(
+                stored.Object,
+                stored.ObjectKind,
+                stored.ChangeType,
+                stored.Before,
+                stored.After,
+                impactClass,
+                routeHint,
+                stored.Reason,
+                stored.SourceRef,
+                stored.CandidateId);
+            EvolutionCandidates.Add(candidate);
+            GovernanceSuggestions.Add(LeaderGovernanceRouteSuggestionBuilder.Create(_project.Id, candidate));
+        }
+        OnPropertyChanged(nameof(HasEvolutionCandidates));
+        OnPropertyChanged(nameof(HasGovernanceSuggestions));
     }
 
     private async Task RestorePendingDraftConfirmationAsync(CancellationToken cancellationToken)
@@ -637,11 +670,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _conversation.IsBusy = true;
         _conversation.Activities.Clear();
         _conversation.ChangedFiles.Clear();
-        EvolutionCandidates.Clear();
-        GovernanceSuggestions.Clear();
         PreparedGovernanceDraft = null;
-        OnPropertyChanged(nameof(HasEvolutionCandidates));
-        OnPropertyChanged(nameof(HasGovernanceSuggestions));
         _conversation.ApprovalError = null;
         MemoryCommandStatus = null;
         NotifyAllState();
@@ -869,8 +898,20 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             summaryDeltas = suppressSummaryDeltas ? [] : structured.SummaryDeltas;
                             foreach (var candidate in structured.EvolutionCandidates)
                             {
-                                EvolutionCandidates.Add(candidate);
-                                GovernanceSuggestions.Add(LeaderGovernanceRouteSuggestionBuilder.Create(_project.Id, candidate));
+                                var candidateId = Guid.NewGuid();
+                                var persistedCandidate = candidate with { CandidateId = candidateId };
+                                if (_evolutionCandidates is not null)
+                                {
+                                    await _evolutionCandidates.SaveAsync(
+                                        new ProjectEvolutionCandidate(
+                                            candidateId, _project.Id, _conversation.Epoch?.Id, resultId,
+                                            candidate.SourceRef, candidate.Object, candidate.ObjectKind, candidate.ChangeType,
+                                            candidate.Before, candidate.After, candidate.ImpactClass.ToString(), candidate.RouteHint.ToString(),
+                                            candidate.Reason, ProjectEvolutionCandidateStatus.Observed, _timeProvider.GetUtcNow()),
+                                        cancellationToken);
+                                }
+                                EvolutionCandidates.Add(persistedCandidate);
+                                GovernanceSuggestions.Add(LeaderGovernanceRouteSuggestionBuilder.Create(_project.Id, persistedCandidate));
                             }
                             OnPropertyChanged(nameof(HasEvolutionCandidates));
                             OnPropertyChanged(nameof(HasGovernanceSuggestions));
@@ -892,7 +933,9 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                             }
                             if (!hasEvolutionCandidate && structured.AuthorityConfirmation is not null)
                             {
-                                PendingAuthorityConfirmation = structured.AuthorityConfirmation;
+                                PendingAuthorityConfirmation = await EnrichAuthorityCandidateSourceAsync(
+                                    structured.AuthorityConfirmation,
+                                    cancellationToken);
                                 AuthorityConfirmationStatusMessage = null;
                             }
                             // A semantic Evolution Candidate is a governance observation,
@@ -1380,6 +1423,25 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         try
         {
+            var materials = command.Materials;
+            if (_evolutionCandidates is not null &&
+                !materials.Any(item => string.Equals(item.MaterialKind, "EvolutionCandidate", StringComparison.Ordinal)))
+            {
+                var governanceText = $"{command.Category} {command.Topic} {command.NodeContent} {command.CurrentOverview}";
+                var candidate = EvolutionCandidateGovernanceSourceResolver.Resolve(
+                    await _evolutionCandidates.ListAsync(_project.Id, cancellationToken: cancellationToken),
+                    LeaderEvolutionRouteHint.LibraryProposal,
+                    governanceText);
+                if (candidate is not null)
+                {
+                    materials = materials
+                        .Append(new LibraryMaterialReferenceDraft(
+                            "EvolutionCandidate",
+                            candidate.EvidenceRef,
+                            "Evolution candidate source"))
+                        .ToArray();
+                }
+            }
             var draft = new ProjectLibraryProposalDraft(
                 Guid.NewGuid(),
                 _project.Id,
@@ -1394,7 +1456,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 command.LocalDate,
                 command.NodeContent,
                 command.CurrentOverview,
-                command.Materials,
+                materials,
                 _timeProvider.GetUtcNow(),
                 OccurredAt: command.OccurredAt);
             await _projectMemoryApi.CreateLibraryProposalAsync(draft, cancellationToken);
@@ -1405,6 +1467,23 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         {
             MemoryCommandStatus = LocalizationService.Current["Dynamic.LibraryProposalProcessingFailed"];
         }
+    }
+
+    private async Task<AuthorityConfirmationDraft> EnrichAuthorityCandidateSourceAsync(
+        AuthorityConfirmationDraft draft,
+        CancellationToken cancellationToken)
+    {
+        if (_evolutionCandidates is null ||
+            !string.IsNullOrWhiteSpace(draft.SourceRef) &&
+            !string.Equals(draft.SourceRef, "current_user_message", StringComparison.Ordinal))
+            return draft;
+
+        var governanceText = $"{draft.Title} {string.Join(' ', draft.Statements)}";
+        var candidate = EvolutionCandidateGovernanceSourceResolver.Resolve(
+            await _evolutionCandidates.ListAsync(_project.Id, cancellationToken: cancellationToken),
+            LeaderEvolutionRouteHint.AuthorityConfirmation,
+            governanceText);
+        return candidate is null ? draft : draft with { SourceRef = candidate.EvidenceRef };
     }
 
     public async Task RespondToQuestionAsync(

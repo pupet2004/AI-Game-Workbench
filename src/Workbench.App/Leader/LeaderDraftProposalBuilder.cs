@@ -69,7 +69,8 @@ public sealed record LeaderEvolutionCandidate(
     LeaderEvolutionImpactClass ImpactClass,
     LeaderEvolutionRouteHint RouteHint,
     string Reason,
-    string SourceRef);
+    string SourceRef,
+    Guid? CandidateId = null);
 
 public sealed record LeaderStructuredResponse(
     string Response,
@@ -262,7 +263,7 @@ public sealed record LeaderStructuredResponse(
         var title = RequiredString(authority, "title");
         var contributions = authority.GetProperty("contributions").EnumerateArray()
             .Select(item => new AcceptedContributionInstruction(
-                RequiredString(item, "statement"),
+                AuthorityContributionCanonicalizer.Canonicalize(RequiredString(item, "statement")),
                 new ContributionScopeTarget.Project(new ProjectRef(projectId)),
                 null,
                 null))

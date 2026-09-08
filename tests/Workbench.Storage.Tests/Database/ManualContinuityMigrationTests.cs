@@ -41,7 +41,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(27L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(29L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(B1Tables, await StringsAsync(connection,
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'b1_%' AND name NOT GLOB 'b1_worker_*' ORDER BY name;"));
         Assert.Contains("activation_source_claim_id", await StringsAsync(connection,
@@ -115,9 +115,17 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = fixture.Database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(27L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(29L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(beforeRows, await ReadLegacySnapshotAsync(after));
-        var schemaDeltaKeys = new[] { "index|ix_library_nodes_object_occurred", "table|project_library_timeline_nodes", "table|worker_executions" };
+        var schemaDeltaKeys = new[]
+        {
+            "index|ix_library_nodes_object_occurred",
+            "table|project_library_timeline_nodes",
+            "table|worker_executions",
+            "table|project_evolution_candidates",
+            "index|ix_project_evolution_candidates_project_time",
+            "index|ux_project_evolution_candidates_identity"
+        };
         var expectedSchema = beforeSchema
             .Where(entry => !schemaDeltaKeys.Contains(entry.Key, StringComparer.Ordinal))
             .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
@@ -148,7 +156,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(27L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(29L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(before, await ReadV11BoundedSnapshotAsync(after));
         Assert.Equal("ok", await ScalarAsync<string>(after, "PRAGMA quick_check;"));
         Assert.Equal(0L, await ScalarAsync<long>(after, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));

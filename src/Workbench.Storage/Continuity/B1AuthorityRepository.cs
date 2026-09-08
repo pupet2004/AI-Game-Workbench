@@ -113,21 +113,23 @@ public sealed class B1AuthorityRepository(WorkbenchDatabase database)
         for (var ordinal = 0; ordinal < decision.ConsideredRefs.Count; ordinal++)
         {
             var item = decision.ConsideredRefs[ordinal];
-            (string Kind, string? Claim, string? Handoff, string? Evidence) columns = item switch
+            (string Kind, string? Claim, string? Handoff, string? Evidence, string? EvolutionCandidate) columns = item switch
             {
-                ConsideredRef.Claim value => ("Claim", Id(value.ClaimRef.Value), null, null),
-                ConsideredRef.Handoff value => ("Handoff", null, Id(value.HandoffRef.Value), null),
-                ConsideredRef.Evidence value => ("Evidence", null, null, value.EvidenceRef.Value),
+                ConsideredRef.Claim value => ("Claim", Id(value.ClaimRef.Value), null, null, null),
+                ConsideredRef.Handoff value => ("Handoff", null, Id(value.HandoffRef.Value), null, null),
+                ConsideredRef.Evidence value => ("Evidence", null, null, value.EvidenceRef.Value, null),
+                ConsideredRef.EvolutionCandidate value => ("EvolutionCandidate", null, null, null, Id(value.CandidateId)),
                 _ => throw Corrupt("Unknown considered reference kind.")
             };
             var command = Command(connection, transaction, """
                 INSERT INTO b1_decision_considered_refs(
-                    decision_id,project_id,ordinal,ref_kind,claim_id,handoff_id,evidence_ref)
-                VALUES($decision,$project,$ordinal,$kind,$claim,$handoff,$evidence);
+                    decision_id,project_id,ordinal,ref_kind,claim_id,handoff_id,evidence_ref,evolution_candidate_id)
+                VALUES($decision,$project,$ordinal,$kind,$claim,$handoff,$evidence,$candidate);
                 """, ("$decision", Id(decision.DecisionRef.Value)),
                 ("$project", Id(decision.ProjectRef.Value)), ("$ordinal", ordinal),
                 ("$kind", columns.Kind), ("$claim", columns.Claim),
-                ("$handoff", columns.Handoff), ("$evidence", columns.Evidence));
+                ("$handoff", columns.Handoff), ("$evidence", columns.Evidence),
+                ("$candidate", columns.EvolutionCandidate));
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -518,7 +520,7 @@ public sealed class B1AuthorityRepository(WorkbenchDatabase database)
     {
         var result = new Dictionary<AuthorityDecisionRef, List<ConsideredRef>>();
         var command = Command(c, tx, """
-            SELECT decision_id,ref_kind,claim_id,handoff_id,evidence_ref FROM b1_decision_considered_refs
+            SELECT decision_id,ref_kind,claim_id,handoff_id,evidence_ref,evolution_candidate_id FROM b1_decision_considered_refs
             WHERE project_id=$project ORDER BY decision_id,ordinal;
             """, ("$project", Id(project.Value)));
         await using var reader = await command.ExecuteReaderAsync(ct);
@@ -531,6 +533,7 @@ public sealed class B1AuthorityRepository(WorkbenchDatabase database)
                 "Claim" => new ConsideredRef.Claim(new(GuidValue(reader, 2))),
                 "Handoff" => new ConsideredRef.Handoff(new(GuidValue(reader, 3))),
                 "Evidence" => new ConsideredRef.Evidence(new(reader.GetString(4))),
+                "EvolutionCandidate" => new ConsideredRef.EvolutionCandidate(GuidValue(reader, 5)),
                 _ => throw Corrupt("Unknown considered reference kind.")
             });
         }

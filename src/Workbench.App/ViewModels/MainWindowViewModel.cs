@@ -182,6 +182,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              projectMemoryApi: _services.ProjectMemoryApi,
              responseBinder: _services.LeaderReviewUserResponseBinder,
              projectSummaryRepository: _services.ProjectSummaryRepository,
+             evolutionCandidateRepository: _services.ProjectEvolutionCandidateRepository,
              acceptedStateReader: _services.LibraryAcceptedStateReader,
              agentHost: _services.AgentHost,
              workerExecutionRepository: _services.WorkerExecutionRepository,
@@ -220,7 +221,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
                 new ProjectRef(draft.ProjectId),
                 principal,
                 new DecidingAuthorityRef.UserPrincipal(principal),
-                [],
+                draft.ConsideredRefs,
                 draft.Contributions),
             cancellationToken);
     }

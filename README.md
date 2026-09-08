@@ -28,6 +28,7 @@ The canonical source is this repository. See [Canonical Source and Documentation
 - [Alpha known limitations](docs/alpha-known-limitations.md)
 - [Release record](docs/releases/v0.1.0-alpha.20260827.md)
 - [Current working-tree validation](docs/validation/current-working-tree-20260904.md)
+- [Core continuity governance loop live verification](docs/validation/core-continuity-governance-loop-live-verified-20260908.md)
 
 ## Windows Alpha Package
 

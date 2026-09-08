@@ -76,12 +76,13 @@ public sealed class B1ClaimHandoffContractTests
     }
 
     [Fact]
-    public void Considered_ref_distinguishes_claim_handoff_and_evidence()
+    public void Considered_ref_distinguishes_claim_handoff_evidence_and_evolution_candidate()
     {
         Assert.IsType<ConsideredRef.Claim>(new ConsideredRef.Claim(ClaimRef()));
         Assert.IsType<ConsideredRef.Handoff>(new ConsideredRef.Handoff(HandoffRef()));
         Assert.IsType<ConsideredRef.Evidence>(new ConsideredRef.Evidence(new EvidenceRef("ci:run/1")));
-        Assert.Equal(["Claim", "Evidence", "Handoff"], CaseNames<ConsideredRef>());
+        Assert.IsType<ConsideredRef.EvolutionCandidate>(new ConsideredRef.EvolutionCandidate(Guid.NewGuid()));
+        Assert.Equal(["Claim", "Evidence", "EvolutionCandidate", "Handoff"], CaseNames<ConsideredRef>());
     }
 
     [Fact]

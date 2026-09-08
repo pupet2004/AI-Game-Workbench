@@ -432,7 +432,8 @@ public sealed class WorkerSessionRouter(
     TaskRevisionRepository? taskRevisions = null,
     TaskEventRepository? taskEvents = null,
     B1WorkerExecutionBridgeService? b1WorkerExecutionBridge = null,
-    B1NonAuthoritativeCommandService? b1RoutingCommands = null)
+    B1NonAuthoritativeCommandService? b1RoutingCommands = null,
+    WorkerCompletionSummaryConsumer? completionSummaryConsumer = null)
 {
     private readonly IAgentHost _agentHost = agentHost ?? new InProcessAgentHost(runtimes);
     private readonly ConcurrentDictionary<AgentSessionId, Task> _intentTails = new();
@@ -802,6 +803,16 @@ public sealed class WorkerSessionRouter(
                         var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
                             eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, finalReport.Message, ValidationSummary = validationSummary }), time.GetUtcNow(), cancellationToken);
                         canPublishHandoff = transition == AssignmentStateTransitionResult.Applied;
+                        if (transition == AssignmentStateTransitionResult.Applied && completionSummaryConsumer is not null)
+                        {
+                            await completionSummaryConsumer.ConsumeAsync(
+                                request.Project.Id,
+                                request.TaskId,
+                                eventId,
+                                JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, finalReport.Message, ValidationSummary = validationSummary }),
+                                time.GetUtcNow(),
+                                cancellationToken);
+                        }
                     }
                     else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
                     {

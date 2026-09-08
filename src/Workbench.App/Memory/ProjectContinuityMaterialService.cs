@@ -18,7 +18,8 @@ public sealed class ProjectContinuityMaterialService(
     ProjectLibraryEvolutionRepository library,
     B1ProjectionService? b1Projections = null,
     TaskRepository? tasks = null,
-    TaskEventRepository? taskEvents = null)
+    TaskEventRepository? taskEvents = null,
+    ProjectSummaryRepository? summaries = null)
 {
     private const int InitialBundleMaxUtf8Bytes = 24000;
     private const int InitialLibraryMaxUtf8Bytes = 12000;
@@ -26,6 +27,7 @@ public sealed class ProjectContinuityMaterialService(
     private const int InitialAssignmentMaxUtf8Bytes = 4000;
     private readonly TaskRepository? _tasks = tasks;
     private readonly TaskEventRepository? _taskEvents = taskEvents;
+    private readonly ProjectSummaryRepository? _summaries = summaries;
 
     public async Task<ResolvedContinuityBundle> BuildInitialBundleAsync(
         Guid projectId,
@@ -79,6 +81,53 @@ public sealed class ProjectContinuityMaterialService(
             var assignment = await BuildAssignmentMaterialAsync(projectId, cancellationToken);
             if (assignment is not null)
                 AddBounded(materials, ref total, assignment, InitialBundleMaxUtf8Bytes, InitialAssignmentMaxUtf8Bytes);
+        }
+
+        var candidates = await memory.ListEvolutionCandidatesAsync(projectId, cancellationToken);
+        if (candidates.Count > 0)
+        {
+            var builder = new StringBuilder("RECENT EVOLUTION CANDIDATES (NON-AUTHORITATIVE)\n");
+            foreach (var candidate in candidates.Take(8))
+            {
+                builder.AppendLine($"CandidateId: {candidate.CandidateId}");
+                builder.AppendLine($"Object: {candidate.Object}");
+                builder.AppendLine($"Before: {candidate.Before ?? "(new)"}");
+                builder.AppendLine($"After: {candidate.After ?? "(removed)"}");
+                builder.AppendLine($"Impact: {candidate.ImpactClass}");
+                builder.AppendLine($"Route: {candidate.RouteHint}");
+                builder.AppendLine($"Status: {candidate.Status}");
+                builder.AppendLine($"Source: {candidate.SourceRef}");
+                builder.AppendLine($"Reason: {candidate.Reason}");
+                builder.AppendLine();
+            }
+            var content = builder.ToString().TrimEnd();
+            AddBounded(materials, ref total, new(ContinuityMaterialKind.EvolutionCandidate, $"evolution-candidates:{projectId}", "Recent Evolution Candidates", content, Encoding.UTF8.GetByteCount(content), projectId), InitialWorkMaxUtf8Bytes);
+        }
+
+        if (_summaries is not null)
+        {
+            var summaries = await _summaries.QueryAsync(new SummaryQuery(projectId, 8), cancellationToken);
+            if (summaries.Count > 0)
+            {
+                var builder = new StringBuilder("RECENT PROJECT SUMMARY (DURABLE; NON-AUTHORITATIVE)\n");
+                foreach (var summary in summaries.OrderBy(item => item.OccurredAt))
+                {
+                    builder.AppendLine(FormatProjectSummary(summary));
+                    builder.AppendLine();
+                }
+                var content = builder.ToString().TrimEnd();
+                AddBounded(materials, ref total, new(ContinuityMaterialKind.ProjectSummary, $"project-summary:{projectId}", "Recent Project Summary", content, Encoding.UTF8.GetByteCount(content), projectId), InitialWorkMaxUtf8Bytes);
+            }
+        }
+
+        var pendingProposals = await memory.GetPendingLibraryProposalsAsync(projectId, cancellationToken);
+        if (pendingProposals.Count > 0)
+        {
+            var builder = new StringBuilder("PENDING GOVERNANCE (NOT YET ACCEPTED)\n");
+            foreach (var proposal in pendingProposals.Take(8))
+                builder.Append("- Library Proposal ").Append(proposal.Id).Append(" | ").Append(proposal.Draft.Topic).Append(" | ").AppendLine(proposal.Draft.NodeContent);
+            var content = builder.ToString().TrimEnd();
+            AddBounded(materials, ref total, new(ContinuityMaterialKind.GovernancePending, $"governance-pending:{projectId}", "Pending Governance", content, Encoding.UTF8.GetByteCount(content)), InitialWorkMaxUtf8Bytes);
         }
 
         return new ResolvedContinuityBundle(projectId, materials, total, []);
@@ -244,6 +293,21 @@ public sealed class ProjectContinuityMaterialService(
                 node.Utf8Bytes));
         }
 
+        if (_summaries is not null)
+        {
+            var summaries = await _summaries.QueryAsync(new SummaryQuery(projectId, 50), cancellationToken);
+            foreach (var summary in summaries.Take(50))
+            {
+                materials.Add(new(
+                    $"project-summary:{summary.EntryId}",
+                    ContinuityMaterialKind.ProjectSummary,
+                    projectId,
+                    $"{summary.Kind}: {summary.Text}",
+                    summary.OccurredAt,
+                    Encoding.UTF8.GetByteCount(summary.Text)));
+            }
+        }
+
         return new ContinuityMaterialCatalog(projectId, epochId, materials);
     }
 
@@ -338,6 +402,18 @@ public sealed class ProjectContinuityMaterialService(
             return new(selection.Kind, selection.Reference, day.ToString("yyyy-MM-dd"), daily.Content, Encoding.UTF8.GetByteCount(daily.Content));
         }
 
+        if (selection.Kind == ContinuityMaterialKind.ProjectSummary &&
+            selection.Reference.StartsWith("project-summary:", StringComparison.Ordinal) &&
+            Guid.TryParse(selection.Reference[16..], out var summaryId) &&
+            _summaries is not null)
+        {
+            var summary = (await _summaries.QueryAsync(new SummaryQuery(projectId, 200), cancellationToken))
+                .SingleOrDefault(item => item.EntryId == summaryId)
+                ?? throw new InvalidOperationException();
+            var content = FormatProjectSummary(summary);
+            return new(selection.Kind, selection.Reference, $"{summary.Kind}: {summary.Text}", content, Encoding.UTF8.GetByteCount(content), projectId);
+        }
+
         if (selection.Kind == ContinuityMaterialKind.BrainHandoff &&
             selection.Reference.StartsWith("handoff:", StringComparison.Ordinal) &&
             Guid.TryParse(selection.Reference[8..], out var handoffEpoch))
@@ -386,6 +462,20 @@ public sealed class ProjectContinuityMaterialService(
 
     private static string OverviewLabel(string category, string topic, Guid objectId, int revision) =>
         $"Library Overview · {category} / {topic} · Object {objectId} · revision {revision}";
+
+    private static string FormatProjectSummary(StoredSummaryEntry summary)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"SummaryEntryId: {summary.EntryId}");
+        builder.AppendLine($"ResultId: {summary.ResultId}");
+        builder.AppendLine($"OccurredAt: {summary.OccurredAt:O}");
+        builder.AppendLine($"Kind: {summary.Kind}");
+        builder.AppendLine($"Text: {summary.Text}");
+        builder.AppendLine("Sources:");
+        foreach (var source in summary.SourceRefs)
+            builder.AppendLine($"- {source.SourceKind}: {source.SourceLocator}");
+        return builder.ToString().TrimEnd();
+    }
 
     private static string TimelineLabel(
         string category,

@@ -125,6 +125,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
     private readonly ProjectLibraryEvolutionRepository? _evolutionLibrary;
     private readonly IProjectMemoryApi? _projectMemoryApi;
     private readonly ProjectSummaryRepository? _projectSummaryRepository;
+    private readonly ProjectEvolutionCandidateRepository? _evolutionCandidates;
     private readonly LibraryAcceptedStateReader? _acceptedStateReader;
     private IReadOnlyList<LibrarySummaryEntryView> _summarySearchEntries = [];
     private IReadOnlyList<LibraryProjectionSearchEntry> _libraryProjectionSearchEntries = [];
@@ -140,8 +141,9 @@ public partial class LibraryPaneViewModel : ViewModelBase
         ProjectLibraryRepository? library = null,
         ProjectLibraryEvolutionRepository? evolutionLibrary = null,
         IProjectMemoryApi? projectMemoryApi = null,
-        ProjectSummaryRepository? projectSummaryRepository = null,
-        LibraryAcceptedStateReader? acceptedStateReader = null)
+         ProjectSummaryRepository? projectSummaryRepository = null,
+         ProjectEvolutionCandidateRepository? evolutionCandidateRepository = null,
+         LibraryAcceptedStateReader? acceptedStateReader = null)
     {
         Result = result;
         _focus = focus;
@@ -154,6 +156,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
         _evolutionLibrary = evolutionLibrary;
         _projectMemoryApi = projectMemoryApi;
         _projectSummaryRepository = projectSummaryRepository;
+        _evolutionCandidates = evolutionCandidateRepository;
         _acceptedStateReader = acceptedStateReader;
     }
 
@@ -558,18 +561,18 @@ public partial class LibraryPaneViewModel : ViewModelBase
         LibraryProposalStatusMessage = null;
     }
 
-    public async Task AcceptLibraryProposalAsync(CancellationToken cancellationToken = default)
+    public async Task AcceptLibraryProposalAsync(ProjectLibraryProposal? selectedProposal = null, CancellationToken cancellationToken = default)
     {
-        var proposal = ResolveLibraryProposal();
+        var proposal = ResolveLibraryProposal(selectedProposal);
         if (proposal is null) return;
         await ConfirmLibraryProposalAsync(
             token => _projectMemoryApi!.AcceptLibraryProposalAsync(Result.Project.Id, proposal.Id, token),
             cancellationToken);
     }
 
-    public async Task EditAndAcceptLibraryProposalAsync(CancellationToken cancellationToken = default)
+    public async Task EditAndAcceptLibraryProposalAsync(ProjectLibraryProposal? selectedProposal = null, CancellationToken cancellationToken = default)
     {
-        var proposal = ResolveLibraryProposal();
+        var proposal = ResolveLibraryProposal(selectedProposal);
         if (proposal is null) return;
         var edit = new LibraryProposalEdit(ProposalEditContent, ProposalEditOverview, proposal.Draft.Materials);
         await ConfirmLibraryProposalAsync(
@@ -577,9 +580,9 @@ public partial class LibraryPaneViewModel : ViewModelBase
             cancellationToken);
     }
 
-    public async Task RejectLibraryProposalAsync(CancellationToken cancellationToken = default)
+    public async Task RejectLibraryProposalAsync(ProjectLibraryProposal? selectedProposal = null, CancellationToken cancellationToken = default)
     {
-        var proposal = ResolveLibraryProposal();
+        var proposal = ResolveLibraryProposal(selectedProposal);
         if (proposal is null) return;
         if (_projectMemoryApi is null)
         {
@@ -593,13 +596,13 @@ public partial class LibraryPaneViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private Task AcceptLibraryProposal() => AcceptLibraryProposalAsync();
+    private Task AcceptLibraryProposal(ProjectLibraryProposal? selectedProposal) => AcceptLibraryProposalAsync(selectedProposal);
 
     [RelayCommand]
-    private Task EditAndAcceptLibraryProposal() => EditAndAcceptLibraryProposalAsync();
+    private Task EditAndAcceptLibraryProposal(ProjectLibraryProposal? selectedProposal) => EditAndAcceptLibraryProposalAsync(selectedProposal);
 
     [RelayCommand]
-    private Task RejectLibraryProposal() => RejectLibraryProposalAsync();
+    private Task RejectLibraryProposal(ProjectLibraryProposal? selectedProposal) => RejectLibraryProposalAsync(selectedProposal);
 
     public async Task LoadMemoryAsync(CancellationToken cancellationToken=default)
     {
@@ -794,9 +797,9 @@ public partial class LibraryPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasPendingLibraryProposals));
     }
 
-    private ProjectLibraryProposal? ResolveLibraryProposal()
+    private ProjectLibraryProposal? ResolveLibraryProposal(ProjectLibraryProposal? selectedProposal = null)
     {
-        var proposal = SelectedLibraryProposal;
+        var proposal = selectedProposal ?? SelectedLibraryProposal;
         if (proposal is null && PendingLibraryProposals.Count == 1)
         {
             proposal = PendingLibraryProposals[0];
@@ -871,6 +874,7 @@ public partial class LibraryPaneViewModel : ViewModelBase
             await LoadLibraryAsync(cancellationToken);
         }
     }
+
 
     private async Task<LibraryTimelineNodeView> CreateTimelineNodeViewAsync(ProjectLibraryTimelineNode node, CancellationToken cancellationToken)
     {

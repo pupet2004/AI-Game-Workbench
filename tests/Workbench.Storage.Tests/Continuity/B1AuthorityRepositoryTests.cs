@@ -3,6 +3,7 @@ using Workbench.Core.Continuity;
 using Workbench.Core.Projects;
 using Workbench.Storage.Continuity;
 using Workbench.Storage.Database;
+using Workbench.Storage.Memory;
 using Workbench.Storage.Tests.Database;
 
 namespace Workbench.Storage.Tests.Continuity;
@@ -142,6 +143,23 @@ public sealed class B1AuthorityRepositoryTests
     {
         await using var f = await Fixture.CreateAsync();
         var initial = await f.CommitInitialSpineAsync();
+        var candidateId = Guid.NewGuid();
+        await new ProjectEvolutionCandidateRepository(f.Database).SaveAsync(new(
+            candidateId,
+            f.ProjectRef.Value,
+            null,
+            null,
+            "current_user_message",
+            "因果编号",
+            "WorldRule",
+            "ConstraintRevision",
+            null,
+            "因果编号只负责标识和追踪因果链。",
+            "WorldRule",
+            "AuthorityConfirmation",
+            "用户明确了一条正式规则。",
+            ProjectEvolutionCandidateStatus.Observed,
+            At));
         var assignment = initial.AssignmentDelegationEffect!.Assignment;
         var revision = initial.AssignmentDelegationEffect.InitialRevision;
         var claimRepository = new B1ClaimHandoffRepository(f.Database);
@@ -167,14 +185,15 @@ public sealed class B1AuthorityRepositoryTests
 
         var validated = f.Evaluator.Evaluate(state,
             new AuthorAcceptedStateCommand(f.ProjectRef, f.Principal, f.Authority,
-                [new ConsideredRef.Claim(claim.ClaimRef), new ConsideredRef.Evidence(new("evidence:decision"))],
+                [new ConsideredRef.Claim(claim.ClaimRef), new ConsideredRef.Evidence(new("evidence:decision")), new ConsideredRef.EvolutionCandidate(candidateId)],
                 [new("accepted", new ContributionScopeTarget.Project(f.ProjectRef), null, claim.ClaimRef)]),
             new(Guid.NewGuid()), At.AddMinutes(1));
         await f.CommitAsync(validated);
 
         state = await f.Repository.LoadProjectStateAsync(f.ProjectRef);
         var decision = state.AuthorityDecisions[^1];
-        Assert.Equal(2, decision.ConsideredRefs.Count);
+        Assert.Equal(3, decision.ConsideredRefs.Count);
+        Assert.Contains(new ConsideredRef.EvolutionCandidate(candidateId), decision.ConsideredRefs);
         Assert.Equal(claim.ClaimRef, Assert.Single(decision.AcceptedStateContributions).SourceClaimRef);
         Assert.Equal([new EvidenceRef("evidence:claim")],
             state.Claims.Single(item => item.ClaimRef == claim.ClaimRef).EvidenceRefs);

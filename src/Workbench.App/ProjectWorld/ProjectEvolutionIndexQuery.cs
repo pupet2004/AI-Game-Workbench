@@ -11,6 +11,7 @@ namespace Workbench.App.ProjectWorld;
 public enum ProjectEvolutionCategory
 {
     Authority,
+    Candidate,
     Assignment,
     Worker,
     Handoff,
@@ -36,7 +37,8 @@ public sealed class ProjectEvolutionIndexQuery(
     B1AuthorityRepository authority,
     ProjectLibraryEvolutionRepository library,
     TaskRepository tasks,
-    TaskEventRepository taskEvents)
+    TaskEventRepository taskEvents,
+    ProjectEvolutionCandidateRepository candidates)
 {
     private const int MaxRecords = 200;
 
@@ -47,6 +49,21 @@ public sealed class ProjectEvolutionIndexQuery(
         if (projectId == Guid.Empty) throw new ArgumentException("Project identity is required.", nameof(projectId));
 
         var records = new List<ProjectEvolutionRecord>();
+        foreach (var candidate in await candidates.ListAsync(projectId, cancellationToken: cancellationToken))
+        {
+            var change = candidate.Before is null && candidate.After is null
+                ? candidate.ChangeType
+                : $"{candidate.Before ?? "(new)"} → {candidate.After ?? "(removed)"}";
+            records.Add(new(
+                candidate.CandidateId,
+                candidate.CreatedAt,
+                ProjectEvolutionCategory.Candidate,
+                $"evolution-candidate:{candidate.CandidateId}",
+                "EvolutionCandidateObserved",
+                $"{candidate.Object}: {change}",
+                [$"EvolutionCandidate:{candidate.CandidateId}", $"Source:{candidate.SourceRef}"],
+                candidate.Status.ToString()));
+        }
         B1ProjectState? state = null;
         try
         {

@@ -571,8 +571,13 @@ public sealed class ProjectLibraryEvolutionRepository(WorkbenchDatabase database
         {
             throw new InvalidOperationException("The target Library Object is not owned by this project.");
         }
-        if (!string.Equals(libraryObject.CategoryKey, categoryKey, StringComparison.Ordinal) ||
-            !string.Equals(libraryObject.TopicKey, topicKey, StringComparison.Ordinal))
+        if (draft.Action == LibraryProposalAction.CreateNode && draft.TargetObjectId is not null)
+        {
+            categoryKey = libraryObject.CategoryKey;
+            topicKey = libraryObject.TopicKey;
+        }
+        else if (!string.Equals(libraryObject.CategoryKey, categoryKey, StringComparison.Ordinal) ||
+                 !string.Equals(libraryObject.TopicKey, topicKey, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The proposal identity does not match the target Library Object.");
         }

@@ -264,6 +264,7 @@ public sealed class B1AuthorityEvaluator
                     GetAttemptAssignment(state, item.AttemptRef);
                     break;
                 case ConsideredRef.Evidence:
+                case ConsideredRef.EvolutionCandidate:
                     break;
                 default:
                     Fail(B1FailureCode.InvalidDecisionShape, "Unknown considered-reference kind.");

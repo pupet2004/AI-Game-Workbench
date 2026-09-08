@@ -83,12 +83,12 @@ public static class LeaderGovernanceRouteSuggestionBuilder
 
     private static LeaderGovernanceRouteSuggestion CreateAuthority(Guid projectId, LeaderEvolutionCandidate candidate)
     {
-        var statement = BuildChangeStatement(candidate);
+        var statement = BuildAcceptedChangeStatement(candidate);
         var draft = new AuthorityConfirmationDraft(
             projectId,
             $"Confirm {candidate.Object} project rule change",
             [new AcceptedContributionInstruction(statement, new ContributionScopeTarget.Project(new ProjectRef(projectId)), null, null)],
-            candidate.SourceRef);
+            CandidateSourceRef(candidate));
         return new(candidate, LeaderEvolutionRouteHint.AuthorityConfirmation, true, "This is an ephemeral draft. User acceptance must still use the existing Authority path.", draft, null);
     }
 
@@ -98,7 +98,7 @@ public static class LeaderGovernanceRouteSuggestionBuilder
             candidate.ImpactClass.ToString(),
             candidate.Object,
             BuildChangeStatement(candidate),
-            candidate.SourceRef);
+            CandidateSourceRef(candidate));
         return new(candidate, LeaderEvolutionRouteHint.LibraryProposal, true, "This is an ephemeral draft. It has not been submitted to the Library.", null, draft);
     }
 
@@ -108,4 +108,25 @@ public static class LeaderGovernanceRouteSuggestionBuilder
             : candidate.After is not null
                 ? $"{candidate.Object}: {candidate.After}"
                 : $"{candidate.Object}: {candidate.ChangeType}";
+
+    private static string BuildAcceptedChangeStatement(LeaderEvolutionCandidate candidate)
+    {
+        var after = candidate.After;
+        if (string.IsNullOrWhiteSpace(after))
+            return BuildChangeStatement(candidate);
+
+        try
+        {
+            return $"{candidate.Object}: {AuthorityContributionCanonicalizer.Canonicalize(after)}";
+        }
+        catch (ArgumentException)
+        {
+            return $"{candidate.Object}: {candidate.ChangeType}";
+        }
+    }
+
+    private static string CandidateSourceRef(LeaderEvolutionCandidate candidate) =>
+        candidate.CandidateId is { } id
+            ? $"workbench:evolution-candidate/{id:N}"
+            : candidate.SourceRef;
 }

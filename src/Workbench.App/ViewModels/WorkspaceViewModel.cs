@@ -58,6 +58,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          IProjectMemoryApi? projectMemoryApi = null,
          ILeaderReviewUserResponseBinder? responseBinder = null,
          ProjectSummaryRepository? projectSummaryRepository = null,
+         ProjectEvolutionCandidateRepository? evolutionCandidateRepository = null,
          LibraryAcceptedStateReader? acceptedStateReader = null,
          IAgentHost? agentHost = null,
          WorkerExecutionRepository? workerExecutionRepository = null,
@@ -97,6 +98,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
              evolutionLibrary: projectLibraryEvolutionRepository,
              projectMemoryApi: projectMemoryApi,
              projectSummaryRepository: projectSummaryRepository,
+             evolutionCandidateRepository: evolutionCandidateRepository,
              acceptedStateReader: acceptedStateReader);
         LeaderPane = new LeaderPaneViewModel(
             result.Project,
@@ -120,8 +122,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             refreshLibraryPane: LibraryPane.LoadLibraryAsync,
             responseBinder: responseBinder,
             git: result.Git,
-            projectSummaryRepository: projectSummaryRepository,
-            agentHost: agentHost,
+             projectSummaryRepository: projectSummaryRepository,
+             evolutionCandidateRepository: evolutionCandidateRepository,
+             agentHost: agentHost,
             workerExecutionRepository: workerExecutionRepository,
             canonicalWorkerLaunch: canonicalWorkerLaunch,
             acceptAuthorityConfirmation: acceptAuthorityConfirmation);

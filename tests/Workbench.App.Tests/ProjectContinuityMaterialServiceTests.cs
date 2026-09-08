@@ -40,6 +40,28 @@ public sealed class ProjectContinuityMaterialServiceTests
             System.Text.Json.JsonSerializer.Serialize(new { WorkerSessionId = workerSessionId, Message = "Chapter 1 completed; chapter-01.md produced.", ValidationSummary = "green" }), now));
         await events.AppendAsync(new Workbench.Storage.Workers.StoredTaskEvent(Guid.NewGuid(), project.Id, taskId, null, "WorkerToLeaderHandoff",
             System.Text.Json.JsonSerializer.Serialize(new { ProjectId = project.Id, TaskId = taskId, WorkerSessionId = workerSessionId, WorkerLabel = "Worker", Status = Workbench.Runtime.Agents.AgentSessionStatus.Completed, Message = "Chapter 1 completed; chapter-01.md produced.", CreatedAt = now, Kind = Workbench.App.Worker.WorkerHandoffKind.FinalReport, ValidationSummary = "green", SourceEventId = reportId, TaskRevisionId = revision.Id }), now));
+        var summary = Assert.Single(await context.Services.ProjectSummaryRepository.AppendAsync(
+            project.Id,
+            reportId,
+            [new SummaryDelta(now, SummaryDeltaKind.Change, "Chapter 1 completed; chapter-01.md produced.", [new SummarySourceRef("WorkerFinalReport", reportId.ToString())])],
+            now));
+        var candidateId = Guid.NewGuid();
+        await context.Services.ProjectEvolutionCandidateRepository.SaveAsync(new(
+            candidateId,
+            project.Id,
+            null,
+            reportId,
+            "current_user_message",
+            "因果编号职责边界",
+            "WorldRule",
+            "ConstraintRevision",
+            null,
+            "因果编号只负责标识和追踪因果链。",
+            "WorldRule",
+            "AuthorityConfirmation",
+            "用户明确了一条正式规则。",
+            ProjectEvolutionCandidateStatus.Observed,
+            now));
 
         var bundle = await context.Services.ProjectMemoryApi.BuildInitialContinuityBundleAsync(project.Id);
 
@@ -47,11 +69,24 @@ public sealed class ProjectContinuityMaterialServiceTests
         Assert.Contains(bundle.Materials, item => item.Kind == ContinuityMaterialKind.LibraryTimelineNode && item.Content.Contains("时间礼仪课", StringComparison.Ordinal) && item.Content.Contains("chapter-01.md", StringComparison.Ordinal));
         Assert.Contains(bundle.Materials, item => item.Kind == ContinuityMaterialKind.LegacyWorkerCompletion && item.Content.Contains("Chapter 1 completed", StringComparison.Ordinal));
         Assert.Contains(bundle.Materials, item => item.Kind == ContinuityMaterialKind.AssignmentStatus && item.Content.Contains("Chapter 1 delivery", StringComparison.Ordinal));
+        var summaryMaterial = Assert.Single(bundle.Materials, item => item.Kind == ContinuityMaterialKind.ProjectSummary);
+        Assert.Contains("chapter-01.md produced", summaryMaterial.Content, StringComparison.Ordinal);
+        Assert.Contains($"SummaryEntryId: {summary.EntryId}", summaryMaterial.Content, StringComparison.Ordinal);
+        Assert.Contains($"ResultId: {reportId}", summaryMaterial.Content, StringComparison.Ordinal);
+        Assert.Contains($"WorkerFinalReport: {reportId}", summaryMaterial.Content, StringComparison.Ordinal);
+        var candidateMaterial = Assert.Single(bundle.Materials, item => item.Kind == ContinuityMaterialKind.EvolutionCandidate);
+        Assert.Contains($"CandidateId: {candidateId}", candidateMaterial.Content, StringComparison.Ordinal);
+        Assert.Contains("Impact: WorldRule", candidateMaterial.Content, StringComparison.Ordinal);
+        Assert.Contains("Route: AuthorityConfirmation", candidateMaterial.Content, StringComparison.Ordinal);
+        Assert.Contains("Source: current_user_message", candidateMaterial.Content, StringComparison.Ordinal);
         Assert.True(bundle.Utf8Bytes <= 24_000);
 
         var boot = LeaderBootContextBuilder.BuildSelected(project, bundle.Materials, "根据当前 Project World 继续。").Text;
         Assert.Contains("PERSISTED LIBRARY PROJECTION", boot, StringComparison.Ordinal);
         Assert.Contains("chapter-01.md", boot, StringComparison.Ordinal);
+        Assert.Contains($"SummaryEntryId: {summary.EntryId}", boot, StringComparison.Ordinal);
+        Assert.Contains($"WorkerFinalReport: {reportId}", boot, StringComparison.Ordinal);
+        Assert.Contains($"CandidateId: {candidateId}", boot, StringComparison.Ordinal);
         Assert.Contains("时间礼仪课", boot, StringComparison.Ordinal);
         Assert.Contains("Workspace files are artifacts or source materials only", boot, StringComparison.Ordinal);
         Assert.Contains("do not report it as pending_confirmation", boot, StringComparison.Ordinal);

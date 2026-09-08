@@ -28,6 +28,17 @@ public abstract record ConsideredRef
     public sealed record Claim(ClaimRef ClaimRef) : ConsideredRef;
     public sealed record Handoff(HandoffRef HandoffRef) : ConsideredRef;
     public sealed record Evidence(EvidenceRef EvidenceRef) : ConsideredRef;
+    public sealed record EvolutionCandidate : ConsideredRef
+    {
+        public EvolutionCandidate(Guid candidateId)
+        {
+            if (candidateId == Guid.Empty)
+                throw new ArgumentException("Evolution Candidate identity is required.", nameof(candidateId));
+            CandidateId = candidateId;
+        }
+
+        public Guid CandidateId { get; }
+    }
 }
 
 public abstract record ClaimPayload

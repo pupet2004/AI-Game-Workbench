@@ -89,6 +89,19 @@ public sealed class LeaderPaneViewTests
     }
 
     [Fact]
+    public void Leader_status_and_governance_area_is_height_bounded_and_scrollable()
+    {
+        var markup = ReadLeaderView();
+
+        Assert.Contains("x:Name=\"LeaderStatusScrollViewer\"", markup, StringComparison.Ordinal);
+        Assert.Contains("MaxHeight=\"360\"", markup, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
+        Assert.True(
+            markup.IndexOf("x:Name=\"LeaderStatusScrollViewer\"", StringComparison.Ordinal) <
+            markup.IndexOf("Evolution Candidates · experimental", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Light_status_cards_use_an_explicit_dark_foreground()
     {
         var markup = ReadLeaderView();

@@ -72,6 +72,15 @@ public sealed class ProjectLibraryProposalUiTests
         Assert.Equal(LibraryProposalStatus.Accepted,
             (await context.Services.ProjectMemoryApi.GetLibraryProposalAsync(workspace.Result.Project.Id, created.Id))!.Status);
         Assert.Empty(workspace.LibraryPane.PendingLibraryProposals);
+
+        var reopenedDatabase = new Workbench.Storage.Database.WorkbenchDatabase(context.DatabasePath);
+        await reopenedDatabase.InitializeAsync();
+        var reopenedProposal = await new ProjectLibraryProposalService(reopenedDatabase)
+            .GetAsync(workspace.Result.Project.Id, created.Id);
+        Assert.Equal(LibraryProposalStatus.Accepted, reopenedProposal!.Status);
+        var reopenedLibrary = new ProjectLibraryEvolutionRepository(reopenedDatabase);
+        var libraryObject = Assert.Single(await reopenedLibrary.ListObjectsAsync(workspace.Result.Project.Id));
+        Assert.Single(await reopenedLibrary.GetTimelineAsync(workspace.Result.Project.Id, libraryObject.Id));
     }
 
     [Fact]
@@ -103,6 +112,33 @@ public sealed class ProjectLibraryProposalUiTests
     }
 
     [Fact]
+    public async Task Accept_create_node_under_existing_object_allows_node_topic_to_differ()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var workspace = await context.CreateWorkspaceForNewProjectAsync();
+        var first = await context.Services.ProjectMemoryApi.CreateLibraryProposalAsync(Draft(workspace.Result.Project.Id));
+        await context.Services.ProjectMemoryApi.AcceptLibraryProposalAsync(workspace.Result.Project.Id, first.Id);
+        var objectId = Assert.Single(await context.Services.ProjectLibraryEvolutionRepository.ListObjectsAsync(workspace.Result.Project.Id)).Id;
+        var secondDraft = Draft(workspace.Result.Project.Id) with
+        {
+            ProposalId = Guid.NewGuid(),
+            TargetObjectId = objectId,
+            ExpectedOverviewRevision = 1,
+            Topic = "A different timeline entry"
+        };
+        var second = await context.Services.ProjectMemoryApi.CreateLibraryProposalAsync(secondDraft);
+
+        await context.Services.ProjectMemoryApi.AcceptLibraryProposalAsync(workspace.Result.Project.Id, second.Id);
+
+        Assert.Equal(LibraryProposalStatus.Accepted,
+            (await context.Services.ProjectMemoryApi.GetLibraryProposalAsync(workspace.Result.Project.Id, second.Id))!.Status);
+        var reopenedDatabase = new Workbench.Storage.Database.WorkbenchDatabase(context.DatabasePath);
+        await reopenedDatabase.InitializeAsync();
+        var library = new ProjectLibraryEvolutionRepository(reopenedDatabase);
+        Assert.Equal(2, (await library.GetTimelineAsync(workspace.Result.Project.Id, objectId)).Count);
+    }
+
+    [Fact]
     public async Task Daily_summary_write_does_not_create_a_library_proposal()
     {
         await using var context = await AppTestContext.CreateAsync();
@@ -128,6 +164,10 @@ public sealed class ProjectLibraryProposalUiTests
         Assert.Contains("ProposalEditContent", markup, StringComparison.Ordinal);
         Assert.Contains("Materials", markup, StringComparison.Ordinal);
         Assert.Contains("LibraryProposalStatusMessage", markup, StringComparison.Ordinal);
+        Assert.True(
+            markup.IndexOf("[Library.Accept]", StringComparison.Ordinal) <
+            markup.IndexOf("[Library.ProposedContent]", StringComparison.Ordinal),
+            "Library confirmation actions must remain visible before long proposal details.");
     }
 
     private static ProjectLibraryProposalDraft Draft(Guid projectId) => new(

@@ -13,4 +13,17 @@ public sealed record AuthorityConfirmationDraft(
     string? SourceRef = null)
 {
     public IReadOnlyList<string> Statements => Contributions.Select(value => value.Statement).ToArray();
+
+    public IReadOnlyList<ConsideredRef> ConsideredRefs
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(SourceRef)) return [];
+            const string prefix = "workbench:evolution-candidate/";
+            return SourceRef.StartsWith(prefix, StringComparison.Ordinal) &&
+                   Guid.TryParse(SourceRef[prefix.Length..], out var candidateId)
+                ? [new ConsideredRef.EvolutionCandidate(candidateId)]
+                : [new ConsideredRef.Evidence(new EvidenceRef(SourceRef))];
+        }
+    }
 }

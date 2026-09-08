@@ -17,7 +17,13 @@
                 <Button Grid.Column="2" Content="{Binding [Leader.Focus]}" Command="{Binding FocusCommand}" />
             </Grid>
 
-            <StackPanel Grid.Row="1" Margin="0,0,0,12" Spacing="6">
+            <ScrollViewer x:Name="LeaderStatusScrollViewer"
+                          Grid.Row="1"
+                          Margin="0,0,0,12"
+                          MaxHeight="360"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="6">
                 <Border IsVisible="{Binding ShowRotationMessage}"
                         Padding="8"
                         Background="#FFF8E7"
@@ -133,6 +139,7 @@
                     </StackPanel>
                 </Border>
             </StackPanel>
+            </ScrollViewer>
 
             <views:LeaderAgentSurfaceView Grid.Row="2"
                                           Margin="0,0,0,4"

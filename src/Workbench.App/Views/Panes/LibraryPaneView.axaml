@@ -41,6 +41,8 @@
                         <ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Draft.Action}" FontWeight="SemiBold" /><TextBlock Text="{Binding Draft.Category}" /><TextBlock Text="{Binding Draft.Topic}" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
                     </ListBox>
                     <StackPanel IsVisible="{Binding SelectedLibraryProposal}" Spacing="4">
+                        <WrapPanel><Button Content="{Binding [Library.Accept]}" Command="{Binding AcceptLibraryProposalCommand}" CommandParameter="{Binding SelectedLibraryProposal}" /><Button Content="{Binding [Library.EditAccept]}" Command="{Binding EditAndAcceptLibraryProposalCommand}" CommandParameter="{Binding SelectedLibraryProposal}" /><Button Content="{Binding [Library.Reject]}" Command="{Binding RejectLibraryProposalCommand}" CommandParameter="{Binding SelectedLibraryProposal}" /></WrapPanel>
+                        <TextBlock Text="{Binding LibraryProposalStatusMessage}" IsVisible="{Binding LibraryProposalStatusMessage}" TextWrapping="Wrap" Foreground="#B42318" />
                         <TextBlock Text="{Binding [Library.Action]}" FontWeight="SemiBold" /><TextBlock Text="{Binding SelectedLibraryProposal.Draft.Action}" />
                         <TextBlock Text="{Binding [Library.TargetObject]}" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding SelectedLibraryProposal.Draft.TargetObjectId}" /><TextBlock Text="{Binding SelectedLibraryProposal.Draft.TargetNodeId}" />
@@ -51,8 +53,6 @@
                         <TextBox Text="{Binding ProposalEditOverview, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding [Library.MaterialsSources]}" FontWeight="SemiBold" />
                         <ItemsControl ItemsSource="{Binding SelectedLibraryProposal.Draft.Materials}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding MaterialKind}" /><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding Reference}" TextWrapping="Wrap" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                        <WrapPanel><Button Content="{Binding [Library.Accept]}" Command="{Binding AcceptLibraryProposalCommand}" /><Button Content="{Binding [Library.EditAccept]}" Command="{Binding EditAndAcceptLibraryProposalCommand}" /><Button Content="{Binding [Library.Reject]}" Command="{Binding RejectLibraryProposalCommand}" /></WrapPanel>
-                        <TextBlock Text="{Binding LibraryProposalStatusMessage}" IsVisible="{Binding LibraryProposalStatusMessage}" TextWrapping="Wrap" Foreground="#B42318" />
                     </StackPanel>
                 </StackPanel>
             </Border>
