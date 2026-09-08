@@ -57,28 +57,55 @@
 
 ## 四、阶段 1：确认新 Leader 能恢复项目
 
-### 发给 Leader 的提示词
+这一阶段拆成两个短回合。先展示项目当前是什么，再展示项目最近怎么变化。不要把 Evolution 放进第一轮，避免一次查询同时展开所有来源。
+
+### A. Current World：Truth + Library
+
+#### 发给 Leader 的提示词
 
 ```text
-你先告诉我，你现在理解这个项目是什么：
-1. 当前有哪些正式设定？
-2. Library 里有哪些长期内容？
-3. 最近完成过什么 Worker 工作？
-4. 最近项目发生过哪些重要变化？
+先告诉我这个项目当前有哪些正式 Truth，以及有哪些长期 Library 内容。
 
-请区分正式 Truth、Library 内容、Worker 结果、Summary 和仍待治理的内容。不要修改任何正式状态。
+只回答当前 Project World：
+1. AcceptedProjectState 中有哪些正式规则？
+2. Library 中有哪些长期内容？
+
+不要展开最近 Worker、Summary、Evolution 或旧聊天历史，也不要修改任何正式状态。
 ```
 
-### 预期
+#### 预期
 
-Leader 应该能从恢复上下文回答，而不是要求读取旧聊天：
+Leader 应该快速回答：
 
-- 现有正式项目规则；
-- 已存在的 Library 内容；
-- 最近 Worker 的 FinalReport / Handoff；
-- 最近的 Summary 或 Evolution 信息。
+- 当前正式 Truth；
+- 当前 Library 内容；
+- Truth 与 Library 的区别。
 
-这一阶段只观察，不接受任何变化。
+向观众强调：这是“项目现在是什么”，不是项目历史。此时只观察，不接受任何变化。
+
+### B. Recent Continuity：Worker + Summary + Evolution
+
+#### 发给 Leader 的提示词
+
+```text
+现在再告诉我项目最近发生了什么：
+1. 最近完成过哪些 Worker 工作？请指出 Artifact、FinalReport 和 Handoff。
+2. 最近有哪些 durable Summary？它们分别总结了什么？
+3. 最近有哪些重要 Evolution 或治理变化？这些变化为什么发生？
+
+请区分 Worker 结果、Summary、待治理 Candidate、Library 变化和已经进入正式 Truth 的变化。不要修改任何状态。
+```
+
+#### 预期
+
+Leader 应该从恢复上下文回答：
+
+- 最近 Worker 的 Artifact / FinalReport / Handoff；
+- durable Summary 及其来源；
+- 最近的 Evolution、治理状态和变化原因；
+- 哪些已经接受，哪些仍然只是 Candidate 或 Proposal。
+
+向观众强调：这是“项目最近怎么变成这样”。这一轮结束后再进入 Authority Candidate，不要在恢复阶段接受任何变化。
 
 ## 五、阶段 2：制造 Authority Candidate
 
