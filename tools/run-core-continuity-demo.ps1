@@ -34,7 +34,7 @@ if (-not $Resume) {
 }
 
 $db = Join-Path $run 'workbench.db'
-$project = Join-Path $run 'project'
+$project = Join-Path $run '零刻'
 $projectFile = Join-Path $repo 'src\Workbench.App\Workbench.App.csproj'
 $runtime = Join-Path $repo ('artifacts\local\demo-run-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 if (-not $NoBuild) {
