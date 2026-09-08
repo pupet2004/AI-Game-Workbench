@@ -42,6 +42,15 @@ sealed class Program
             return;
         }
 
+        if (args.Length >= 3 && string.Equals(args[0], "--relocate-demo-project-auto", StringComparison.Ordinal))
+        {
+            var projectRoot = Path.GetFullPath(args[1]);
+            var databasePath = Path.GetFullPath(args[2]);
+            DemoBootstrapper.RelocateDemoProjectAutoAsync(projectRoot, databasePath)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         if (!SingleInstanceCoordinator.TryAcquirePrimary(out var instance))
         {
             return;

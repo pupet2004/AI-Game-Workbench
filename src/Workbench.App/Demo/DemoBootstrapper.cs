@@ -9,6 +9,40 @@ namespace Workbench.App.Demo;
 
 public static class DemoBootstrapper
 {
+    public static async Task RelocateDemoProjectAutoAsync(
+        string projectRoot,
+        string databasePath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+
+        var normalizedProjectRoot = Path.GetFullPath(projectRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        await using var services = AppServices.CreateForDatabasePath(databasePath);
+        await services.InitializeAsync(cancellationToken);
+        var projects = await services.ProjectRepository.GetRecentAsync(100, cancellationToken);
+        var project = projects.FirstOrDefault(value =>
+            string.Equals(value.Name, "零刻", StringComparison.Ordinal) &&
+            (IsDemoBaselineProject(value.RootPath) || PathsEqual(value.RootPath, normalizedProjectRoot)))
+            ?? projects.FirstOrDefault(value => IsDemoBaselineProject(value.RootPath))
+            ?? projects.FirstOrDefault(value => PathsEqual(value.RootPath, normalizedProjectRoot));
+        if (project is null)
+        {
+            throw new InvalidOperationException(
+                "Demo baseline project was not found in the copied database. " +
+                "Expected a project root under artifacts\\demo-baseline.");
+        }
+
+        await services.ProjectRepository.UpsertAsync(
+            project with
+            {
+                RootPath = normalizedProjectRoot,
+                LastOpenedAt = services.TimeProvider.GetUtcNow()
+            },
+            cancellationToken);
+    }
+
     public static async Task RelocateProjectAsync(
         string projectRoot,
         string databasePath,
@@ -85,4 +119,18 @@ public static class DemoBootstrapper
             JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
             cancellationToken);
     }
+
+    private static bool IsDemoBaselineProject(string rootPath)
+    {
+        var normalized = rootPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        return normalized.Contains(
+            $"{Path.DirectorySeparatorChar}artifacts{Path.DirectorySeparatorChar}demo-baseline{Path.DirectorySeparatorChar}",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
 }

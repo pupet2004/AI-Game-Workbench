@@ -41,10 +41,20 @@ if (-not $NoBuild) {
     New-Item -ItemType Directory -Force -Path $runtime | Out-Null
     & dotnet build $projectFile --configuration Debug --nologo --output $runtime
     if ($LASTEXITCODE -ne 0) { throw "Workbench build failed: $LASTEXITCODE" }
+} else {
+    $runtime = Join-Path $repo 'artifacts\local\demo-bootstrap'
 }
 $exe = Join-Path $runtime 'Workbench.App.exe'
-if (-not (Test-Path -LiteralPath $exe)) { $exe = Join-Path $repo 'src\Workbench.App\bin\Debug\net10.0-windows\Workbench.App.exe' }
-if (-not (Test-Path -LiteralPath $exe)) { throw "Workbench executable not found: $exe" }
+if (-not (Test-Path -LiteralPath $exe)) {
+    throw "Workbench executable not found: $exe. Run without -NoBuild first."
+}
+
+# The copied database still points at the frozen baseline project root. Update
+# only this disposable run database before opening the copied project so all
+# persisted Truth, Library, Summary, Candidate, and Worker rows stay attached
+# to the run's project identity.
+$relocation = Start-Process -FilePath $exe -ArgumentList @('--relocate-demo-project-auto', ('"' + $project + '"'), ('"' + $db + '"')) -WorkingDirectory (Split-Path -Parent $exe) -Wait -PassThru -WindowStyle Hidden
+if ($relocation.ExitCode -ne 0) { throw "Demo run relocation failed: $($relocation.ExitCode)" }
 
 $oldDb = $env:WORKBENCH_DATABASE_PATH
 $oldProject = $env:WORKBENCH_OPEN_PROJECT_PATH
