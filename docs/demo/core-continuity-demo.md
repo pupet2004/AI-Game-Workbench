@@ -112,7 +112,7 @@ Leader 应该从恢复上下文回答：
 ### 发给 Leader 的提示词
 
 ```text
-我确定一条正式规则：因果编号只负责标识和追踪同一次时间旅行产生的因果链，不参与风险评分，也不能阻止任何人的时间旅行。
+我确定一条新的正式规则：每次时间旅行必须在出发前生成一个全局唯一、不可复用的因果编号；同一个编号只能对应一次实际穿越，不能复制到另一条穿越上。这条规则仍然只用于标识和追踪因果链，不参与风险评分，也不能阻止任何人的时间旅行。
 
 请正常回答，并在确实需要治理时提出 Evolution Candidate。不要直接修改正式状态，等待用户确认。
 ```
@@ -162,7 +162,7 @@ Candidate 出现后，确认 Accepted Project State 仍然没有变化。Candida
 ### 预期
 
 - Authority Confirmation 消失或显示已接受；
-- AcceptedProjectState 出现新的因果编号正式规则；
+- AcceptedProjectState 出现新的因果编号唯一性正式规则；
 - Accepted contribution 的文字应该是“当前正式规则”，不能仍然写“待用户确认”；
 - provenance / source 中能看到 Candidate 或其来源引用；
 - Library 不应因为这一步被污染。
