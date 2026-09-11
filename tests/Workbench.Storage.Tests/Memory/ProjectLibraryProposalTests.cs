@@ -27,6 +27,29 @@ public sealed class ProjectLibraryProposalTests
     }
 
     [Fact]
+    public async Task Candidate_enters_and_leaves_working_set_with_library_proposal()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var candidate = new ProjectEvolutionCandidate(
+            Guid.NewGuid(), fixture.Project.Id, null, Guid.NewGuid(), "message:1", "Traveller slang", "Content", "Create", null, "逆潮", "Medium", "LibraryProposal", "chosen recurring detail", ProjectEvolutionCandidateStatus.Observed, T0);
+        await fixture.Candidates.SaveAsync(candidate);
+        var draft = fixture.CreateNodeDraft() with
+        {
+            Materials = [new LibraryMaterialReferenceDraft("EvolutionCandidate", candidate.EvidenceRef, "candidate source")]
+        };
+
+        var proposal = await fixture.Proposals.CreateProposalAsync(draft);
+        Assert.Equal(ProjectEvolutionCandidateStatus.GovernancePending,
+            (await fixture.Candidates.GetAsync(fixture.Project.Id, candidate.CandidateId))!.Status);
+        Assert.Single(await fixture.Candidates.ListActiveAsync(fixture.Project.Id));
+
+        await fixture.Proposals.AcceptAsync(fixture.Project.Id, proposal.Id);
+        Assert.Equal(ProjectEvolutionCandidateStatus.Accepted,
+            (await fixture.Candidates.GetAsync(fixture.Project.Id, candidate.CandidateId))!.Status);
+        Assert.Single(await fixture.Candidates.ListAsync(fixture.Project.Id));
+    }
+
+    [Fact]
     public async Task Create_node_with_non_library_target_is_rejected_before_pending_proposal_is_persisted()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -231,7 +254,8 @@ public sealed class ProjectLibraryProposalTests
             Project project,
             ProjectRepository projects,
             ProjectLibraryEvolutionRepository library,
-            ProjectLibraryProposalService proposals)
+            ProjectLibraryProposalService proposals,
+            ProjectEvolutionCandidateRepository candidates)
         {
             Temporary = temporary;
             Database = database;
@@ -239,6 +263,7 @@ public sealed class ProjectLibraryProposalTests
             Projects = projects;
             Library = library;
             Proposals = proposals;
+            Candidates = candidates;
         }
 
         public TemporaryDatabase Temporary { get; }
@@ -247,6 +272,7 @@ public sealed class ProjectLibraryProposalTests
         public ProjectRepository Projects { get; }
         public ProjectLibraryEvolutionRepository Library { get; }
         public ProjectLibraryProposalService Proposals { get; }
+        public ProjectEvolutionCandidateRepository Candidates { get; }
 
         public static async Task<Fixture> CreateAsync()
         {
@@ -262,7 +288,8 @@ public sealed class ProjectLibraryProposalTests
                 project,
                 projects,
                 new ProjectLibraryEvolutionRepository(database),
-                new ProjectLibraryProposalService(database, new FixedTimeProvider(T0.AddHours(1))));
+                new ProjectLibraryProposalService(database, new FixedTimeProvider(T0.AddHours(1))),
+                new ProjectEvolutionCandidateRepository(database));
         }
 
         public ProjectLibraryProposalDraft CreateNodeDraft() => new(

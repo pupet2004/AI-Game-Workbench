@@ -41,7 +41,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(29L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(30L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(B1Tables, await StringsAsync(connection,
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'b1_%' AND name NOT GLOB 'b1_worker_*' ORDER BY name;"));
         Assert.Contains("activation_source_claim_id", await StringsAsync(connection,
@@ -115,7 +115,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = fixture.Database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(29L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(30L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(beforeRows, await ReadLegacySnapshotAsync(after));
         var schemaDeltaKeys = new[]
         {
@@ -124,7 +124,15 @@ public sealed class ManualContinuityMigrationTests
             "table|worker_executions",
             "table|project_evolution_candidates",
             "index|ix_project_evolution_candidates_project_time",
-            "index|ux_project_evolution_candidates_identity"
+            "index|ux_project_evolution_candidates_identity",
+            "table|canonical_worker_completions",
+            "index|ix_canonical_worker_completions_project_status",
+            "index|ux_canonical_completion_claim_result",
+            "index|ux_canonical_completion_planned_claim_result",
+            "index|ux_canonical_completion_claim_validation",
+            "index|ux_canonical_completion_planned_claim_validation",
+            "index|ux_canonical_completion_handoff",
+            "index|ux_canonical_completion_planned_handoff"
         };
         var expectedSchema = beforeSchema
             .Where(entry => !schemaDeltaKeys.Contains(entry.Key, StringComparer.Ordinal))
@@ -156,7 +164,7 @@ public sealed class ManualContinuityMigrationTests
 
         await using var after = database.CreateConnection();
         await after.OpenAsync();
-        Assert.Equal(29L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
+        Assert.Equal(30L, await ScalarAsync<long>(after, "PRAGMA user_version;"));
         Assert.Equal(before, await ReadV11BoundedSnapshotAsync(after));
         Assert.Equal("ok", await ScalarAsync<string>(after, "PRAGMA quick_check;"));
         Assert.Equal(0L, await ScalarAsync<long>(after, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));

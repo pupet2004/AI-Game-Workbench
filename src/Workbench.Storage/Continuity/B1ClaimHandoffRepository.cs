@@ -130,6 +130,86 @@ public sealed class B1ClaimHandoffRepository(WorkbenchDatabase database)
             cancellationToken);
     }
 
+    public Task<Handoff> RecordCanonicalHandoffAndSelectAsync(
+        ProjectRef projectRef,
+        UserPrincipalRef authenticatedOperatorRef,
+        Guid canonicalCompletionId,
+        Handoff handoff,
+        IReadOnlyList<Claim> claims,
+        HandoffRef? expectedStored,
+        CancellationToken cancellationToken = default)
+    {
+        if (canonicalCompletionId == Guid.Empty)
+            throw new ArgumentException("Canonical completion identity is required.", nameof(canonicalCompletionId));
+        ArgumentNullException.ThrowIfNull(handoff);
+        ArgumentNullException.ThrowIfNull(claims);
+        return InTransactionAsync(
+            async (connection, transaction) =>
+            {
+                await RequireBootstrapOperatorAsync(
+                    connection, transaction, projectRef, authenticatedOperatorRef, cancellationToken);
+                foreach (var claim in claims)
+                {
+                    ArgumentNullException.ThrowIfNull(claim);
+                    await EnsureClaimCoreAsync(
+                        connection,
+                        transaction,
+                        new RecordClaimCommand(
+                            projectRef,
+                            authenticatedOperatorRef,
+                            claim.ClaimRef,
+                            claim.ClaimantRef,
+                            claim.SourceSessionBindingRef,
+                            claim.Payload,
+                            claim.EvidenceRefs,
+                            claim.CreatedAt),
+                        cancellationToken);
+                }
+
+                var storedHandoff = await EnsureHandoffCoreAsync(
+                    connection,
+                    transaction,
+                    new CreateHandoffCommand(projectRef, authenticatedOperatorRef, handoff),
+                    cancellationToken);
+                await SelectHandoffIdempotentlyCoreAsync(
+                    connection,
+                    transaction,
+                    new SelectContinuationHandoffCommand(
+                        projectRef,
+                        authenticatedOperatorRef,
+                        handoff.AttemptRef,
+                        expectedStored,
+                        handoff.HandoffRef),
+                    cancellationToken);
+
+                var update = connection.CreateCommand();
+                update.Transaction = transaction;
+                update.CommandText = """
+                    UPDATE canonical_worker_completions
+                    SET result_claim_id=$result, validation_claim_id=$validation,
+                        handoff_id=$handoff, status='GovernanceReady'
+                    WHERE id=$completion AND project_id=$project AND status='PendingBridge';
+                    """;
+                Add(update,
+                    ("$result", handoff.ResultClaimRef.Value.ToString()),
+                    ("$validation", handoff.ValidationClaimRefs.FirstOrDefault().Value == Guid.Empty
+                        ? null
+                        : handoff.ValidationClaimRefs.First().Value.ToString()),
+                    ("$handoff", handoff.HandoffRef.Value.ToString()),
+                    ("$completion", canonicalCompletionId.ToString()),
+                    ("$project", projectRef.Value.ToString()));
+                var updated = await update.ExecuteNonQueryAsync(cancellationToken);
+                if (updated == 0 && !await CanonicalCompletionMatchesAsync(
+                        connection, transaction, projectRef, canonicalCompletionId, handoff, cancellationToken))
+                {
+                    throw Failure(B1FailureCode.InvalidReference, "The canonical Worker completion is missing or already points to different B1 objects.");
+                }
+
+                return storedHandoff;
+            },
+            cancellationToken);
+    }
+
     private async Task<T> InTransactionAsync<T>(
         Func<SqliteConnection, SqliteTransaction, Task<T>> operation,
         CancellationToken cancellationToken)
@@ -201,6 +281,25 @@ public sealed class B1ClaimHandoffRepository(WorkbenchDatabase database)
         return await LoadClaimAsync(
                    connection, transaction, command.ProjectRef, command.ClaimRef, cancellationToken)
                ?? throw new InvalidDataException("The inserted Claim could not be reloaded.");
+    }
+
+    private static async Task<Claim> EnsureClaimCoreAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        RecordClaimCommand command,
+        CancellationToken cancellationToken)
+    {
+        await RequireBootstrapOperatorAsync(
+            connection, transaction, command.ProjectRef, command.AuthenticatedOperatorRef, cancellationToken);
+        var existing = await LoadClaimAsync(connection, transaction, command.ProjectRef, command.ClaimRef, cancellationToken);
+        if (existing is not null)
+        {
+            if (!Equivalent(existing, command))
+                throw Failure(B1FailureCode.InvalidReference, "A deterministic canonical Claim identity already contains different facts.");
+            return existing;
+        }
+
+        return await RecordClaimCoreAsync(connection, transaction, command, cancellationToken);
     }
 
     private static async Task<Handoff> CreateHandoffCoreAsync(
@@ -288,6 +387,95 @@ public sealed class B1ClaimHandoffRepository(WorkbenchDatabase database)
                    connection, transaction, command.ProjectRef, handoff.HandoffRef, cancellationToken)
                ?? throw new InvalidDataException("The inserted Handoff could not be reloaded.");
     }
+
+    private static async Task<Handoff> EnsureHandoffCoreAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CreateHandoffCommand command,
+        CancellationToken cancellationToken)
+    {
+        await RequireBootstrapOperatorAsync(
+            connection, transaction, command.ProjectRef, command.AuthenticatedOperatorRef, cancellationToken);
+        var existing = await LoadHandoffAsync(
+            connection, transaction, command.ProjectRef, command.Handoff.HandoffRef, cancellationToken);
+        if (existing is not null)
+        {
+            if (!Equivalent(existing, command.Handoff))
+                throw Failure(B1FailureCode.InvalidReference, "A deterministic canonical Handoff identity already contains different facts.");
+            return existing;
+        }
+
+        return await CreateHandoffCoreAsync(connection, transaction, command, cancellationToken);
+    }
+
+    private static async Task SelectHandoffIdempotentlyCoreAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        SelectContinuationHandoffCommand command,
+        CancellationToken cancellationToken)
+    {
+        var current = await ReadSelectedHandoffAsync(
+            connection, transaction, command.ProjectRef, command.AttemptRef, cancellationToken);
+        if (current == command.SelectedHandoffRef)
+            return;
+        await SelectHandoffCoreAsync(connection, transaction, command, cancellationToken);
+    }
+
+    private static async Task<HandoffRef?> ReadSelectedHandoffAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ProjectRef projectRef,
+        AttemptRef attemptRef,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT selected_handoff_id FROM b1_attempt_routing WHERE project_id=$project AND attempt_id=$attempt;";
+        Add(command, ("$project", projectRef.Value.ToString()), ("$attempt", attemptRef.Value.ToString()));
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is string text && Guid.TryParse(text, out var id) ? new HandoffRef(id) : null;
+    }
+
+    private static async Task<bool> CanonicalCompletionMatchesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ProjectRef projectRef,
+        Guid completionId,
+        Handoff handoff,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT status,result_claim_id,validation_claim_id,handoff_id
+            FROM canonical_worker_completions
+            WHERE id=$completion AND project_id=$project;
+            """;
+        Add(command, ("$completion", completionId.ToString()), ("$project", projectRef.Value.ToString()));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return false;
+        var validation = handoff.ValidationClaimRefs.Count == 0 ? null : handoff.ValidationClaimRefs[0].Value.ToString();
+        return string.Equals(reader.GetString(0), "GovernanceReady", StringComparison.Ordinal) &&
+            string.Equals(reader.GetString(1), handoff.ResultClaimRef.Value.ToString(), StringComparison.Ordinal) &&
+            string.Equals(reader.IsDBNull(2) ? null : reader.GetString(2), validation, StringComparison.Ordinal) &&
+            string.Equals(reader.GetString(3), handoff.HandoffRef.Value.ToString(), StringComparison.Ordinal);
+    }
+
+    private static bool Equivalent(Claim existing, RecordClaimCommand requested) =>
+        existing.ProjectRef == requested.ProjectRef &&
+        Equals(existing.ClaimantRef, requested.ClaimantRef) &&
+        existing.SourceSessionBindingRef == requested.SourceSessionBindingRef &&
+        Equals(existing.Payload, requested.Payload) &&
+        existing.EvidenceRefs.SequenceEqual(requested.EvidenceRefs);
+
+    private static bool Equivalent(Handoff existing, Handoff requested) =>
+        existing.AttemptRef == requested.AttemptRef &&
+        existing.ResultClaimRef == requested.ResultClaimRef &&
+        existing.ValidationClaimRefs.SequenceEqual(requested.ValidationClaimRefs) &&
+        existing.UnresolvedIssueClaimRefs.SequenceEqual(requested.UnresolvedIssueClaimRefs) &&
+        existing.ProposedContributionClaimRefs.SequenceEqual(requested.ProposedContributionClaimRefs) &&
+        existing.ProposedAssignmentRevisionClaimRefs.SequenceEqual(requested.ProposedAssignmentRevisionClaimRefs) &&
+        existing.EvidenceRefs.SequenceEqual(requested.EvidenceRefs);
 
     private static async Task SelectHandoffCoreAsync(
         SqliteConnection connection,

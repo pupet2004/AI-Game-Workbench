@@ -25,7 +25,7 @@ public sealed class EvolutionCandidateConsideredRefsMigrationTests
 
         await using var verified = database.CreateConnection();
         await verified.OpenAsync();
-        Assert.Equal(29L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
+        Assert.Equal(30L, await ScalarAsync<long>(verified, "PRAGMA user_version;"));
         Assert.Equal("因果编号只用于追踪。", await ScalarAsync<string>(verified, "SELECT statement FROM b1_accepted_state_contributions WHERE id='c';"));
     }
 

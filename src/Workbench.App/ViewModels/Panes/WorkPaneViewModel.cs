@@ -10,6 +10,10 @@ using Workbench.Runtime.Runtime;
 using Workbench.App.AgentHost;
 using CoreProject = Workbench.Core.Projects.Project;
 using Workbench.App.ProjectWorld;
+using Workbench.App.Continuity;
+using Workbench.Core.Continuity;
+using Workbench.Core.Workers;
+using Workbench.Storage.Workers;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -27,9 +31,12 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
     private readonly Func<Workbench.Runtime.Providers.ProviderAccountId, CancellationToken, Task<bool>>? _releaseRuntimeForExternalCli;
     private readonly IAgentHost? _agentHost;
     private readonly Func<WorkerSessionCardViewModel, Task>? _openHostedSurface;
+    private readonly WorkerExecutionRepository? _workerExecutions;
+    private readonly CanonicalWorkerLaunchService? _canonicalWorkerLaunch;
+    private readonly Func<HandoffRef, Task>? _openGuidedDecision;
     private CancellationTokenSource? _monitorCancellation;
     private WorkerSessionCardViewModel? _externalCliWorker;
-    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null, WorkerRemovalService? removalService = null, TaskRevisionRepository? taskRevisions = null, WorkerSessionRouter? workerRouter = null, CoreProject? project = null, Func<CancellationToken, Task>? restoreRuntimeAfterExternalCli = null, Func<Workbench.Runtime.Providers.ProviderAccountId, CancellationToken, Task<bool>>? releaseRuntimeForExternalCli = null, IAgentHost? agentHost = null, Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; _taskRevisions = taskRevisions; _workerRouter = workerRouter; _project = project; _restoreRuntimeAfterExternalCli = restoreRuntimeAfterExternalCli; _releaseRuntimeForExternalCli = releaseRuntimeForExternalCli; _agentHost = agentHost; _openHostedSurface = openHostedSurface; _removalService = removalService ?? (store is not null && runtimes is not null ? new WorkerRemovalService(runtimes, store, TimeProvider.System) : null); if (_agentHost is not null) _agentHost.EventReceived += OnAgentHostEvent; }
+    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null, WorkerRemovalService? removalService = null, TaskRevisionRepository? taskRevisions = null, WorkerSessionRouter? workerRouter = null, CoreProject? project = null, Func<CancellationToken, Task>? restoreRuntimeAfterExternalCli = null, Func<Workbench.Runtime.Providers.ProviderAccountId, CancellationToken, Task<bool>>? releaseRuntimeForExternalCli = null, IAgentHost? agentHost = null, Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null, WorkerExecutionRepository? workerExecutions = null, CanonicalWorkerLaunchService? canonicalWorkerLaunch = null, Func<HandoffRef, Task>? openGuidedDecision = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; _taskRevisions = taskRevisions; _workerRouter = workerRouter; _project = project; _restoreRuntimeAfterExternalCli = restoreRuntimeAfterExternalCli; _releaseRuntimeForExternalCli = releaseRuntimeForExternalCli; _agentHost = agentHost; _openHostedSurface = openHostedSurface; _workerExecutions = workerExecutions; _canonicalWorkerLaunch = canonicalWorkerLaunch; _openGuidedDecision = openGuidedDecision; _removalService = removalService ?? (store is not null && runtimes is not null ? new WorkerRemovalService(runtimes, store, TimeProvider.System) : null); if (_agentHost is not null) _agentHost.EventReceived += OnAgentHostEvent; }
     public ObservableCollection<WorkerSessionCardViewModel> Workers { get; } = [];
     public ObservableCollection<WorkerTranscriptLineViewModel> Transcript { get; } = [];
     public bool HasWorkers => Workers.Count > 0;
@@ -582,15 +589,62 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
             revisionId = revision?.Id ?? revisionId;
             var acceptance = revision is null ? string.Empty : string.Join("\n", revision.Acceptance.Select(item => $"- {item}"));
             var prompt = $"上一轮 Worker 执行因 Agent 对话中断或操作失败而停止。请复用当前会话，检查工作区现状，继续完成原 Assignment。\n\n目标：{revision?.Goal ?? worker.TaskTitle}\n范围：{revision?.Scope ?? "按原 Assignment 继续"}\n验收标准：\n{acceptance}";
+            WorkerStartRequest continuation = new(
+                _project,
+                worker.Record.TaskId,
+                revisionId,
+                worker.TaskTitle,
+                worker.Record.Profile,
+                prompt,
+                worker.Session.Id,
+                worker.WorkerLabel,
+                WaitForCompletion: false);
+            if (revision is not null && _canonicalWorkerLaunch is not null && _workerExecutions is not null && worker.Record.ExecutionId is { } executionId)
+            {
+                var canonical = await _canonicalWorkerLaunch.PrepareAsync(worker.Record.ProjectId, revision, CancellationToken.None);
+                var execution = await _workerExecutions.GetAsync(worker.Record.ProjectId, executionId, CancellationToken.None);
+                if (canonical is not null && execution is not null)
+                {
+                    var identity = WorkerExecutionIdentity.Start(
+                        execution.ExecutionStartRevision,
+                        execution.BaseCommit,
+                        execution.TargetBranch,
+                        execution.ProviderAccount,
+                        execution.ExecutionProfile,
+                        execution.WorkerBranch,
+                        execution.WorkerWorktreePath);
+                    if (execution.CurrentAcknowledgedRevision != execution.ExecutionStartRevision)
+                    {
+                        identity = identity.Acknowledge(
+                            execution.CurrentAcknowledgedRevision,
+                            new TaskRevisionAck(
+                                execution.CurrentAcknowledgedRevision.TaskId,
+                                execution.CurrentAcknowledgedRevision.RevisionId,
+                                execution.CurrentAcknowledgedRevision.RevisionNumber));
+                    }
+                    continuation = continuation with
+                    {
+                        ExecutionId = executionId,
+                        ExecutionIdentity = identity,
+                        B1AssignmentRef = canonical.AssignmentRef,
+                        B1AssignmentRevisionRef = canonical.AssignmentRevisionRef,
+                        B1AttemptRef = canonical.AttemptRef,
+                        B1SessionBindingRef = canonical.SessionBindingRef,
+                        B1LogicalActorRef = canonical.LogicalActorRef,
+                        B1OperatorRef = canonical.OperatorRef,
+                        OnCanonicalCompletion = _openGuidedDecision is null
+                            ? null
+                            : (completion, token) => _openGuidedDecision(completion.Facts.HandoffRef)
+                    };
+                }
+            }
             var runningRecord = worker.Record with
             {
                 Session = worker.Session with { Status = AgentSessionStatus.Running, UpdatedAt = DateTimeOffset.UtcNow },
                 LastActiveAt = DateTimeOffset.UtcNow
             };
             await _store.SaveSessionAsync(runningRecord);
-            var result = await _workerRouter.StartAsync(new WorkerStartRequest(
-                _project, worker.Record.TaskId, revisionId, worker.TaskTitle, worker.Record.Profile, prompt,
-                worker.Session.Id, worker.WorkerLabel, WaitForCompletion: false));
+            var result = await _workerRouter.StartAsync(continuation);
             if (!result.Succeeded) OpenError = result.Error;
             await LoadAsync(worker.Record.ProjectId);
         }

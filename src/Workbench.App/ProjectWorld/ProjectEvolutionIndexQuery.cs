@@ -49,6 +49,8 @@ public sealed class ProjectEvolutionIndexQuery(
         if (projectId == Guid.Empty) throw new ArgumentException("Project identity is required.", nameof(projectId));
 
         var records = new List<ProjectEvolutionRecord>();
+        // Evolution Index is an audit/provenance view. Recovery uses the
+        // active-only query; the index intentionally retains resolved history.
         foreach (var candidate in await candidates.ListAsync(projectId, cancellationToken: cancellationToken))
         {
             var change = candidate.Before is null && candidate.After is null

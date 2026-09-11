@@ -14,12 +14,14 @@ public sealed class ProjectLibraryProposalService
 
     private readonly WorkbenchDatabase _database;
     private readonly ProjectLibraryEvolutionRepository _library;
+    private readonly ProjectEvolutionCandidateRepository _evolutionCandidates;
     private readonly TimeProvider _timeProvider;
 
     public ProjectLibraryProposalService(WorkbenchDatabase database, TimeProvider? timeProvider = null)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _library = new ProjectLibraryEvolutionRepository(database);
+        _evolutionCandidates = new ProjectEvolutionCandidateRepository(database);
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -54,6 +56,13 @@ public sealed class ProjectLibraryProposalService
             command.Parameters.AddWithValue("$payload", payload);
             command.Parameters.AddWithValue("$createdAt", Format(draft.CreatedAt));
             await command.ExecuteNonQueryAsync(cancellationToken);
+            await UpdateCandidateStatusesAsync(
+                connection,
+                transaction,
+                draft.ProjectId,
+                draft.Materials,
+                ProjectEvolutionCandidateStatus.GovernancePending,
+                cancellationToken);
 
             var stored = await ReadAsync(connection, transaction, draft.ProjectId, draft.ProposalId, cancellationToken)
                 ?? throw new InvalidOperationException("The Library Proposal could not be stored.");
@@ -148,6 +157,13 @@ public sealed class ProjectLibraryProposalService
             command.Parameters.AddWithValue("$projectId", projectId.ToString());
             if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
                 throw new InvalidOperationException("The Library Proposal state changed.");
+            await UpdateCandidateStatusesAsync(
+                connection,
+                transaction,
+                projectId,
+                proposal.Draft.Materials,
+                ProjectEvolutionCandidateStatus.Rejected,
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -206,6 +222,13 @@ public sealed class ProjectLibraryProposalService
             command.Parameters.AddWithValue("$projectId", projectId.ToString());
             if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
                 throw new InvalidOperationException("The Library Proposal state changed.");
+            await UpdateCandidateStatusesAsync(
+                connection,
+                transaction,
+                projectId,
+                draft.Materials,
+                ProjectEvolutionCandidateStatus.Accepted,
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -275,6 +298,40 @@ public sealed class ProjectLibraryProposalService
     {
         if (projectId == Guid.Empty) throw new ArgumentException("Project identity is required.", nameof(projectId));
         if (proposalId == Guid.Empty) throw new ArgumentException("Proposal identity is required.", nameof(proposalId));
+    }
+
+    private async Task UpdateCandidateStatusesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid projectId,
+        IReadOnlyList<LibraryMaterialReferenceDraft> materials,
+        ProjectEvolutionCandidateStatus status,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidateId in materials
+                     .Where(material => string.Equals(material.MaterialKind, "EvolutionCandidate", StringComparison.Ordinal))
+                     .Select(material => ParseCandidateId(material.Reference))
+                     .Where(id => id is not null)
+                     .Select(id => id!.Value)
+                     .Distinct())
+        {
+            await _evolutionCandidates.TryUpdateStatusAsync(
+                connection,
+                transaction,
+                projectId,
+                candidateId,
+                status,
+                cancellationToken);
+        }
+    }
+
+    private static Guid? ParseCandidateId(string reference)
+    {
+        const string prefix = "workbench:evolution-candidate/";
+        return reference.StartsWith(prefix, StringComparison.Ordinal) &&
+               Guid.TryParse(reference[prefix.Length..], out var candidateId)
+            ? candidateId
+            : null;
     }
 
     private static JsonSerializerOptions CreateJsonOptions()

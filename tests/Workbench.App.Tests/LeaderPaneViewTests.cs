@@ -98,7 +98,7 @@ public sealed class LeaderPaneViewTests
         Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
         Assert.True(
             markup.IndexOf("x:Name=\"LeaderStatusScrollViewer\"", StringComparison.Ordinal) <
-            markup.IndexOf("Evolution Candidates · experimental", StringComparison.Ordinal));
+            markup.IndexOf("<views:LeaderAgentSurfaceView Grid.Row=\"2\"", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class LeaderPaneViewTests
         var markup = ReadLeaderView();
 
         Assert.Equal(3, CountOccurrences(markup, "Background=\"#F5F6F8\""));
-        Assert.Equal(9, CountOccurrences(markup, "Foreground=\"#101828\""));
+        Assert.Equal(8, CountOccurrences(markup, "Foreground=\"#101828\""));
         Assert.Contains("Background=\"#FFF8E7\"", markup, StringComparison.Ordinal);
         Assert.Contains("Foreground=\"#101828\"", markup, StringComparison.Ordinal);
     }

@@ -34,7 +34,8 @@ public sealed record WorkerStartRequest(
     AttemptRef? B1AttemptRef = null,
     SessionBindingRef? B1SessionBindingRef = null,
     LogicalActorRef? B1LogicalActorRef = null,
-    UserPrincipalRef? B1OperatorRef = null);
+    UserPrincipalRef? B1OperatorRef = null,
+    Func<StoredCanonicalWorkerCompletion, CancellationToken, Task>? OnCanonicalCompletion = null);
 
 public sealed record WorkerStartResult(bool Succeeded, AgentSession? WorkerSession, string? Error);
 
@@ -433,7 +434,8 @@ public sealed class WorkerSessionRouter(
     TaskEventRepository? taskEvents = null,
     B1WorkerExecutionBridgeService? b1WorkerExecutionBridge = null,
     B1NonAuthoritativeCommandService? b1RoutingCommands = null,
-    WorkerCompletionSummaryConsumer? completionSummaryConsumer = null)
+    WorkerCompletionSummaryConsumer? completionSummaryConsumer = null,
+    CanonicalWorkerCompletionBridgeService? canonicalWorkerCompletionBridge = null)
 {
     private readonly IAgentHost _agentHost = agentHost ?? new InProcessAgentHost(runtimes);
     private readonly ConcurrentDictionary<AgentSessionId, Task> _intentTails = new();
@@ -441,6 +443,7 @@ public sealed class WorkerSessionRouter(
     private readonly TaskEventRepository? _taskEvents = taskEvents;
     private readonly B1WorkerExecutionBridgeService? _b1WorkerExecutionBridge = b1WorkerExecutionBridge;
     private readonly B1NonAuthoritativeCommandService? _b1RoutingCommands = b1RoutingCommands;
+    private readonly CanonicalWorkerCompletionBridgeService? _canonicalWorkerCompletionBridge = canonicalWorkerCompletionBridge;
 
     public async Task<int> ReconcileCompletedAssignmentsAsync(
         Guid projectId,
@@ -765,6 +768,7 @@ public sealed class WorkerSessionRouter(
                     }
                     var isFinalReport = payload?.Kind == WorkerHandoffKind.FinalReport;
                     WorkerCompletionVerification? verification = null;
+                    var evidenceRefs = new List<EvidenceRef>();
                     if (isFinalReport && effectiveRevision is not null && executions is not null && executionId.HasValue)
                     {
                         var execution = await executions.GetAsync(request.Project.Id, executionId.Value, cancellationToken);
@@ -781,9 +785,10 @@ public sealed class WorkerSessionRouter(
                             }
                             if (_b1WorkerExecutionBridge is not null && request.B1AssignmentRef is not null && request.B1AttemptRef is not null)
                             {
+                                var verificationEvidenceRef = new EvidenceRef($"workbench:worker-execution/{execution.ExecutionId:N}/verification");
                                 await _b1WorkerExecutionBridge.RecordVerificationEvidenceAsync(
                                     new ProjectRef(request.Project.Id),
-                                    new EvidenceRef($"workbench:worker-execution/{execution.ExecutionId:N}/verification"),
+                                    verificationEvidenceRef,
                                     execution.ExecutionId,
                                     execution.TaskId,
                                     effectiveRevision.Id,
@@ -791,6 +796,7 @@ public sealed class WorkerSessionRouter(
                                     verification.Result.ToString(),
                                     verification,
                                     cancellationToken);
+                                evidenceRefs.Add(verificationEvidenceRef);
                             }
                         }
                     }
@@ -803,16 +809,6 @@ public sealed class WorkerSessionRouter(
                         var transition = await assignments.TryTransitionAsync(request.Project.Id, request.TaskId, TaskLifecycleStatus.Working, TaskLifecycleStatus.Reviewing,
                             eventId, "WorkerFinalReportReceived", JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, finalReport.Message, ValidationSummary = validationSummary }), time.GetUtcNow(), cancellationToken);
                         canPublishHandoff = transition == AssignmentStateTransitionResult.Applied;
-                        if (transition == AssignmentStateTransitionResult.Applied && completionSummaryConsumer is not null)
-                        {
-                            await completionSummaryConsumer.ConsumeAsync(
-                                request.Project.Id,
-                                request.TaskId,
-                                eventId,
-                                JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, finalReport.Message, ValidationSummary = validationSummary }),
-                                time.GetUtcNow(),
-                                cancellationToken);
-                        }
                     }
                     else if (isTypedHandoff && payload!.Kind == WorkerHandoffKind.NeedsLeaderDecision && assignments is not null)
                     {
@@ -835,14 +831,109 @@ public sealed class WorkerSessionRouter(
                         await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, nextState, CancellationToken.None);
                     }
 
+                    if (isFinalReport &&
+                        canPublishHandoff &&
+                        assignments is not null &&
+                        _canonicalWorkerCompletionBridge is not null &&
+                        effectiveRevision is not null &&
+                        executionId.HasValue &&
+                        request.B1AttemptRef is { } attemptRef &&
+                        request.B1SessionBindingRef is { } sessionBindingRef &&
+                        request.B1LogicalActorRef is { } actorRef &&
+                        request.B1OperatorRef is { } operatorRef)
+                    {
+                        try
+                        {
+                            var facts = _canonicalWorkerCompletionBridge.CreateFacts(
+                                new ProjectRef(request.Project.Id),
+                                eventId,
+                                request.TaskId,
+                                effectiveRevision.Id,
+                                executionId.Value,
+                                attemptRef,
+                                sessionBindingRef,
+                                actorRef,
+                                payload!.Message,
+                                validationSummary,
+                                evidenceRefs,
+                                time.GetUtcNow());
+                            var canonical = await _canonicalWorkerCompletionBridge.BridgeAsync(
+                                facts,
+                                operatorRef,
+                                cancellationToken: cancellationToken);
+                            if (request.OnCanonicalCompletion is not null)
+                            {
+                                try { await request.OnCanonicalCompletion(canonical, cancellationToken); }
+                                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                                catch { }
+                            }
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            // Execution is complete even when Governance material needs a later retry.
+                        }
+                    }
+
+                    if (isFinalReport &&
+                        canPublishHandoff &&
+                        completionSummaryConsumer is not null)
+                    {
+                        try
+                        {
+                            await completionSummaryConsumer.ConsumeAsync(
+                                request.Project.Id,
+                                request.TaskId,
+                                eventId,
+                                JsonSerializer.Serialize(new { WorkerSessionId = session.Id.Value, payload!.Message, ValidationSummary = validationSummary }),
+                                time.GetUtcNow(),
+                                cancellationToken);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            // Summary projection is secondary to the canonical completion.
+                        }
+                    }
+
                     if (!canPublishHandoff || string.IsNullOrWhiteSpace(finalText)) continue;
                     var handoff = new WorkerHandoff(request.Project.Id, request.TaskId, session.Id, request.WorkerLabel, completed.Result.FinalStatus,
                         payload?.Message ?? finalText, time.GetUtcNow(),
                         payload?.Kind ?? WorkerHandoffKind.NeedsLeaderDecision,
                         validationSummary, eventId, request.TaskRevisionId);
-                    await store.AppendHandoffAsync(handoff, cancellationToken);
+                    try
+                    {
+                        await store.AppendHandoffAsync(handoff, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        // Legacy history must not rewrite a completed Execution as failed.
+                    }
                     if (isFinalReport && reviews is not null)
-                        await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
+                    {
+                        try
+                        {
+                            await reviews.TryReviewAsync(request.Project.Id, request.TaskId, eventId, cancellationToken);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            // Legacy review orchestration can be recovered independently.
+                        }
+                    }
                     if (request.OnHandoff is not null)
                     {
                         try { await request.OnHandoff(handoff, cancellationToken); }
@@ -861,9 +952,10 @@ public sealed class WorkerSessionRouter(
             }
             catch
             {
-                if (executions is not null && executionId.HasValue)
+                if (!completionObserved && executions is not null && executionId.HasValue)
                     try { await executions.UpdateStateAsync(request.Project.Id, request.TaskId, executionId.Value, WorkerExecutionState.Failed, CancellationToken.None); } catch { }
-                try { await store.OverrideStatusAsync(new WorkerStatusOverride(request.Project.Id, request.TaskId, session.Id, AgentSessionStatus.Failed, time.GetUtcNow(), "Worker turn failed before completion"), CancellationToken.None); } catch { }
+                if (!completionObserved)
+                    try { await store.OverrideStatusAsync(new WorkerStatusOverride(request.Project.Id, request.TaskId, session.Id, AgentSessionStatus.Failed, time.GetUtcNow(), "Worker turn failed before completion"), CancellationToken.None); } catch { }
                 throw;
             }
             finally

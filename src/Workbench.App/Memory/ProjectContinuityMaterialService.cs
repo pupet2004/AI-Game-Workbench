@@ -41,7 +41,9 @@ public sealed class ProjectContinuityMaterialService(
             try
             {
                 var accepted = await b1Projections.GetAcceptedProjectStateAsync(new ProjectRef(projectId), cancellationToken);
-                if (accepted.CurrentContributions.Count > 0)
+                if (accepted.CurrentContributions.Count > 0 ||
+                    accepted.Assignments.Count > 0 ||
+                    accepted.RevisionDispositions.Count > 0)
                 {
                     var content = FormatAcceptedState(accepted);
                     AddBounded(materials, ref total, CreateAcceptedStateMaterial(projectId, $"accepted-state:{projectId}", accepted, content), InitialBundleMaxUtf8Bytes);
@@ -516,6 +518,23 @@ public sealed class ProjectContinuityMaterialService(
         var builder = new StringBuilder();
         builder.AppendLine("CURRENT AUTHORITY STATE (USER-ACCEPTED)");
         builder.AppendLine($"ProjectId: {state.ProjectRef.Value}");
+        foreach (var assignment in state.Assignments.Values.OrderBy(value => value.AssignmentRef.Value))
+        {
+            var revision = state.CurrentEffectiveRevisionRefs.TryGetValue(assignment.AssignmentRef, out var revisionRef) &&
+                           state.Revisions.TryGetValue(revisionRef, out var currentRevision)
+                ? currentRevision.Contract.WorkContract
+                : "unresolved";
+            var disposition = state.RevisionDispositions.TryGetValue(revisionRef, out var dispositionRecord)
+                ? dispositionRecord.Disposition.ToString()
+                : "Active";
+            builder.Append("Assignment ").Append(assignment.AssignmentRef.Value).Append(" | ")
+                .Append(disposition).Append(" | ").AppendLine(revision);
+            if (state.Responsibilities.TryGetValue(assignment.ResponsibilityRef, out var responsibility))
+            {
+                builder.Append("  Obligation: ").AppendLine(responsibility.Contract.Obligation);
+                builder.Append("  ExpectedOutcome: ").AppendLine(responsibility.Contract.ExpectedOutcome);
+            }
+        }
         foreach (var contribution in state.CurrentContributions)
         {
             builder.Append("- ").AppendLine(contribution.Statement);

@@ -70,6 +70,128 @@ public sealed class ProjectEvolutionCandidateRepository(WorkbenchDatabase databa
         return result;
     }
 
+    /// <summary>
+    /// Returns only unresolved candidates. History remains available through
+    /// <see cref="ListAsync"/> for audit and provenance views.
+    /// </summary>
+    public async Task<IReadOnlyList<ProjectEvolutionCandidate>> ListActiveAsync(
+        Guid projectId,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId == Guid.Empty) throw new ArgumentException("Project identity is required.", nameof(projectId));
+        if (limit is < 1 or > 200) throw new ArgumentOutOfRangeException(nameof(limit));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id,project_id,epoch_id,result_id,source_ref,object_name,object_kind,change_type,
+                   before_text,after_text,impact_class,route_hint,reason,status,created_at
+            FROM project_evolution_candidates
+            WHERE project_id=$project AND status IN ('Observed','GovernancePending')
+            ORDER BY created_at DESC,id DESC LIMIT $limit;
+            """;
+        Add(command, ("$project", projectId.ToString()), ("$limit", limit));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<ProjectEvolutionCandidate>();
+        while (await reader.ReadAsync(cancellationToken)) result.Add(Read(reader));
+        return result;
+    }
+
+    public async Task<ProjectEvolutionCandidate> UpdateStatusAsync(
+        Guid projectId,
+        Guid candidateId,
+        ProjectEvolutionCandidateStatus status,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId == Guid.Empty) throw new ArgumentException("Project identity is required.", nameof(projectId));
+        if (candidateId == Guid.Empty) throw new ArgumentException("Candidate identity is required.", nameof(candidateId));
+        if (!Enum.IsDefined(status)) throw new ArgumentOutOfRangeException(nameof(status));
+
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var updated = await UpdateStatusAsync(connection, transaction, projectId, candidateId, status, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return updated;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<bool> TryUpdateStatusAsync(
+        Guid projectId,
+        Guid candidateId,
+        ProjectEvolutionCandidateStatus status,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId == Guid.Empty) throw new ArgumentException("Project identity is required.", nameof(projectId));
+        if (candidateId == Guid.Empty) throw new ArgumentException("Candidate identity is required.", nameof(candidateId));
+        if (!Enum.IsDefined(status)) throw new ArgumentOutOfRangeException(nameof(status));
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var updated = await TryUpdateStatusAsync(connection, transaction, projectId, candidateId, status, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return updated;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    internal async Task<ProjectEvolutionCandidate> UpdateStatusAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid projectId,
+        Guid candidateId,
+        ProjectEvolutionCandidateStatus status,
+        CancellationToken cancellationToken)
+    {
+        var current = await GetCoreAsync(connection, transaction, projectId, candidateId, cancellationToken)
+            ?? throw new InvalidOperationException("The Evolution Candidate is not owned by this project.");
+        if (current.Status == status) return current;
+        if (current.Status is ProjectEvolutionCandidateStatus.Accepted or ProjectEvolutionCandidateStatus.Rejected)
+            throw new InvalidOperationException("A resolved Evolution Candidate cannot change status.");
+
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE project_evolution_candidates
+            SET status=$status
+            WHERE project_id=$project AND id=$id AND status=$current;
+            """;
+        Add(command, ("$status", status.ToString()), ("$project", projectId.ToString()),
+            ("$id", candidateId.ToString()), ("$current", current.Status.ToString()));
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new InvalidOperationException("The Evolution Candidate state changed.");
+        return await GetCoreAsync(connection, transaction, projectId, candidateId, cancellationToken)
+            ?? throw new InvalidOperationException("The updated Evolution Candidate could not be read.");
+    }
+
+    internal async Task<bool> TryUpdateStatusAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid projectId,
+        Guid candidateId,
+        ProjectEvolutionCandidateStatus status,
+        CancellationToken cancellationToken)
+    {
+        var current = await GetCoreAsync(connection, transaction, projectId, candidateId, cancellationToken);
+        if (current is null) return false;
+        await UpdateStatusAsync(connection, transaction, projectId, candidateId, status, cancellationToken);
+        return true;
+    }
+
     public async Task<ProjectEvolutionCandidate?> GetAsync(Guid projectId, Guid candidateId, CancellationToken cancellationToken = default)
     {
         if (projectId == Guid.Empty) throw new ArgumentException("Project identity is required.", nameof(projectId));

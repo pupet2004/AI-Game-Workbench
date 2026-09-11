@@ -58,11 +58,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             await _localization.InitializeAsync(cancellationToken);
             _localization.AdoptAsCurrent();
             await home.LoadAsync(cancellationToken);
-            if (Environment.GetEnvironmentVariable("WORKBENCH_OPEN_PROJECT_PATH") is { Length: > 0 } projectPath &&
-                Directory.Exists(projectPath))
-            {
-                await home.OpenPathAsync(projectPath, cancellationToken);
-            }
         }
         catch (DatabaseInitializationException)
         {
@@ -192,11 +187,15 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              agentHost: _services.AgentHost,
              workerExecutionRepository: _services.WorkerExecutionRepository,
              canonicalWorkerLaunch: _services.CanonicalWorkerLaunch,
+             openGuidedDecision: handoffRef => ShowGuidedDecisionAsync(result, handoffRef),
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result),
              acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
+        await _services.CanonicalWorkerCompletionBridge.RecoverAsync(
+            result.Project.Id,
+            _services.UserPrincipalProvider.GetCurrent());
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);
         await _services.LeaderReviewAutoProceed.RecoverAsync(result.Project.Id);
         await _services.LeaderReviewAskUserGate.RecoverAsync(result.Project.Id);

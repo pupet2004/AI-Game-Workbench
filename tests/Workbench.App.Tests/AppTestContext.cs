@@ -102,7 +102,8 @@ internal sealed class AppTestContext : IAsyncDisposable
             evolutionCandidateRepository: Services.ProjectEvolutionCandidateRepository,
             acceptedStateReader: Services.LibraryAcceptedStateReader,
             agentHost: Services.AgentHost,
-            workerExecutionRepository: Services.WorkerExecutionRepository);
+            workerExecutionRepository: Services.WorkerExecutionRepository,
+            canonicalWorkerLaunch: Services.CanonicalWorkerLaunch);
 
     public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
     {
@@ -110,10 +111,10 @@ internal sealed class AppTestContext : IAsyncDisposable
         return CreateWorkspace(await Services.ProjectOpenService.OpenAsync(folder.Path), debounce);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        await Services.DisposeAsync();
         _directory.Dispose();
-        return ValueTask.CompletedTask;
     }
 }
 

@@ -69,6 +69,8 @@ public sealed class AppServices : IAsyncDisposable
         B1ProjectGovernanceRepository b1ProjectGovernance,
         B1AuthorityRepository b1AuthorityRepository,
         B1WorkerExecutionBridgeService b1WorkerExecutionBridge,
+        CanonicalWorkerCompletionRepository canonicalWorkerCompletions,
+        CanonicalWorkerCompletionBridgeService canonicalWorkerCompletionBridge,
         CanonicalWorkerLaunchService canonicalWorkerLaunch,
         B1EvidenceRepository b1Evidence,
         B1NonAuthoritativeCommandService b1NonAuthoritativeCommands,
@@ -126,6 +128,8 @@ public sealed class AppServices : IAsyncDisposable
         B1ProjectGovernance = b1ProjectGovernance;
         B1AuthorityRepository = b1AuthorityRepository;
         B1WorkerExecutionBridge = b1WorkerExecutionBridge;
+        CanonicalWorkerCompletions = canonicalWorkerCompletions;
+        CanonicalWorkerCompletionBridge = canonicalWorkerCompletionBridge;
         CanonicalWorkerLaunch = canonicalWorkerLaunch;
         B1Evidence = b1Evidence;
         B1NonAuthoritativeCommands = b1NonAuthoritativeCommands;
@@ -195,6 +199,8 @@ public sealed class AppServices : IAsyncDisposable
     public B1ProjectGovernanceRepository B1ProjectGovernance { get; }
     public B1AuthorityRepository B1AuthorityRepository { get; }
     public B1WorkerExecutionBridgeService B1WorkerExecutionBridge { get; }
+    public CanonicalWorkerCompletionRepository CanonicalWorkerCompletions { get; }
+    public CanonicalWorkerCompletionBridgeService CanonicalWorkerCompletionBridge { get; }
     public CanonicalWorkerLaunchService CanonicalWorkerLaunch { get; }
     public B1EvidenceRepository B1Evidence { get; }
     public B1NonAuthoritativeCommandService B1NonAuthoritativeCommands { get; }
@@ -227,10 +233,7 @@ public sealed class AppServices : IAsyncDisposable
         IReadOnlyList<Func<CancellationToken, Task<IAgentRuntime>>>? additionalRuntimeFactories = null,
         IReadOnlyList<ConfiguredAgentRuntimeFactory>? configuredRuntimeFactories = null) =>
         CreateForDatabasePath(
-            Environment.GetEnvironmentVariable("WORKBENCH_DATABASE_PATH")
-                is { Length: > 0 } configuredDatabasePath
-                ? configuredDatabasePath
-                : DatabasePathProvider.GetDefaultDatabasePath(),
+            DatabasePathProvider.GetDefaultDatabasePath(),
             TimeProvider.System,
             runtimeFactory: runtimeFactory,
             additionalRuntimeFactories: additionalRuntimeFactories,
@@ -283,6 +286,7 @@ public sealed class AppServices : IAsyncDisposable
         var workerExecutionRepository = new WorkerExecutionRepository(database);
         var workerRoutingStore = new TaskEventWorkerRoutingStore(taskEvents, workerExecutionRepository);
         var b1AuthorityRepository = new B1AuthorityRepository(database);
+        var canonicalWorkerCompletions = new CanonicalWorkerCompletionRepository(database);
         var b1Evidence = new B1EvidenceRepository(database);
         var b1ProjectGovernance = new B1ProjectGovernanceRepository(database);
         var b1ClaimHandoffRepository = new B1ClaimHandoffRepository(database);
@@ -294,11 +298,17 @@ public sealed class AppServices : IAsyncDisposable
         var b1AuthorityCommands = new B1AuthorityCommandService(
             b1AuthorityRepository,
             b1AuthorityEvaluator,
-            effectiveTimeProvider);
+            effectiveTimeProvider,
+            evolutionCandidates,
+            canonicalWorkerCompletions);
         var b1WorkerExecutionBridge = new B1WorkerExecutionBridgeService(
             new B1WorkerBridgeRepository(database),
             b1AuthorityRepository,
             b1Evidence);
+        var canonicalWorkerCompletionBridge = new CanonicalWorkerCompletionBridgeService(
+            canonicalWorkerCompletions,
+            b1ClaimHandoffRepository,
+            effectiveTimeProvider);
         var leaderReviewOrchestrator = new LeaderReviewOrchestrator(
             new LeaderReviewInputBuilder(projectRepository, new TaskRepository(database), new TaskRevisionRepository(database), taskEvents, b1WorkerExecutionBridge, workerExecutionRepository),
             new LeaderReviewRuntimeAdapter(agentHost), reviewState, typedReviewState, leaderAuthoritySettings, new TaskRepository(database), projectLeaders, leaderEpochs, effectiveRuntimeRegistry, effectiveTimeProvider,
@@ -372,7 +382,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost, new TaskRevisionRepository(database), taskEvents, b1WorkerExecutionBridge, b1NonAuthoritativeCommands, completionSummaryConsumer),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost, new TaskRevisionRepository(database), taskEvents, b1WorkerExecutionBridge, b1NonAuthoritativeCommands, completionSummaryConsumer, canonicalWorkerCompletionBridge),
             workerRoutingStore,
             workerExecutionRepository,
             leaderReviewOrchestrator,
@@ -383,6 +393,8 @@ public sealed class AppServices : IAsyncDisposable
             b1ProjectGovernance,
             b1AuthorityRepository,
             b1WorkerExecutionBridge,
+            canonicalWorkerCompletions,
+            canonicalWorkerCompletionBridge,
             new CanonicalWorkerLaunchService(b1AuthorityRepository, b1NonAuthoritativeCommands, b1ProjectGovernance, effectiveTimeProvider),
             b1Evidence,
             b1NonAuthoritativeCommands,

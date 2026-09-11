@@ -1,12 +1,15 @@
 using Workbench.Core.Continuity;
 using Workbench.Storage.Continuity;
+using Workbench.Storage.Memory;
 
 namespace Workbench.App.Continuity;
 
 public sealed class B1AuthorityCommandService(
     B1AuthorityRepository repository,
     B1AuthorityEvaluator evaluator,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ProjectEvolutionCandidateRepository? evolutionCandidates = null,
+    CanonicalWorkerCompletionRepository? canonicalCompletions = null)
 {
     private const int MaximumConflictRetries = 3;
     private readonly B1AuthorityRepository _repository =
@@ -15,6 +18,8 @@ public sealed class B1AuthorityCommandService(
         evaluator ?? throw new ArgumentNullException(nameof(evaluator));
     private readonly TimeProvider _timeProvider =
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    private readonly ProjectEvolutionCandidateRepository? _evolutionCandidates = evolutionCandidates;
+    private readonly CanonicalWorkerCompletionRepository? _canonicalCompletions = canonicalCompletions;
 
     public Task<AuthorityDecision> EstablishLogicalActorAsync(
         EstablishLogicalActorCommand command,
@@ -112,6 +117,45 @@ public sealed class B1AuthorityCommandService(
             var result = await _repository.TryCommitAsync(validated, cancellationToken);
             if (result is AuthorityCommitResult.Committed committed)
             {
+                if (_evolutionCandidates is not null)
+                {
+                    foreach (var candidateId in committed.Decision.ConsideredRefs
+                                 .OfType<ConsideredRef.EvolutionCandidate>()
+                                 .Select(value => value.CandidateId)
+                                 .Distinct())
+                    {
+                        await _evolutionCandidates.TryUpdateStatusAsync(
+                            projectRef.Value,
+                            candidateId,
+                            ProjectEvolutionCandidateStatus.Accepted,
+                            cancellationToken);
+                    }
+                }
+                if (_canonicalCompletions is not null)
+                {
+                    foreach (var handoff in committed.Decision.ConsideredRefs
+                                 .OfType<ConsideredRef.Handoff>()
+                                 .Select(value => value.HandoffRef)
+                                 .Distinct())
+                    {
+                        try
+                        {
+                            await _canonicalCompletions.MarkGovernedByHandoffAsync(
+                                projectRef.Value,
+                                handoff,
+                                committed.Decision.DecisionRef,
+                                cancellationToken);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch
+                        {
+                            // The Authority Decision is already durable; reconciliation can complete the marker later.
+                        }
+                    }
+                }
                 return committed.Decision;
             }
         }

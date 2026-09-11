@@ -42,6 +42,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly TaskRevisionRepository? _taskRevisions;
     private readonly WorkerExecutionRepository? _workerExecutions;
     private readonly CanonicalWorkerLaunchService? _canonicalWorkerLaunch;
+    private readonly Func<HandoffRef, Task>? _openGuidedDecision;
     private readonly Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? _acceptAuthorityConfirmation;
     private readonly WorkerSessionRouter? _workerSessionRouter;
     private readonly Func<CancellationToken, Task>? _refreshWorkPane;
@@ -85,6 +86,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
          IAgentHost? agentHost = null,
         WorkerExecutionRepository? workerExecutionRepository = null,
         CanonicalWorkerLaunchService? canonicalWorkerLaunch = null,
+        Func<HandoffRef, Task>? openGuidedDecision = null,
         Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? acceptAuthorityConfirmation = null)
     {
         _project = project;
@@ -102,6 +104,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _taskRevisions = taskRevisionRepository;
         _workerExecutions = workerExecutionRepository;
         _canonicalWorkerLaunch = canonicalWorkerLaunch;
+        _openGuidedDecision = openGuidedDecision;
         _acceptAuthorityConfirmation = acceptAuthorityConfirmation;
         _workerSessionRouter = workerSessionRouter;
         _refreshWorkPane = refreshWorkPane;
@@ -423,7 +426,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         EvolutionCandidates.Clear();
         GovernanceSuggestions.Clear();
-        foreach (var stored in await _evolutionCandidates.ListAsync(_project.Id, cancellationToken: cancellationToken))
+        foreach (var stored in await _evolutionCandidates.ListActiveAsync(_project.Id, cancellationToken: cancellationToken))
         {
             if (!Enum.TryParse<LeaderEvolutionImpactClass>(stored.ImpactClass, out var impactClass) ||
                 !Enum.TryParse<LeaderEvolutionRouteHint>(stored.RouteHint, out var routeHint))
@@ -1596,6 +1599,32 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _leaderContext.Post(static state => ((Action)state!).Invoke(), action);
     }
 
+    private Task DispatchAsync(Func<Task> action)
+    {
+        if (_leaderContext is null ||
+            ReferenceEquals(SynchronizationContext.Current, _leaderContext) ||
+            Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        {
+            return action();
+        }
+
+        var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _leaderContext.Post(async state =>
+        {
+            var pair = ((Func<Task> Callback, TaskCompletionSource<object?> Completion))state!;
+            try
+            {
+                await pair.Callback();
+                pair.Completion.TrySetResult(null);
+            }
+            catch (Exception exception)
+            {
+                pair.Completion.TrySetException(exception);
+            }
+        }, (action, completion));
+        return completion.Task;
+    }
+
     public ValueTask DisposeAsync()
     {
         _agentHost.EventReceived -= OnAgentHostEvent;
@@ -1789,7 +1818,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         var request = new WorkerStartRequest(_project, confirmation.TaskId, confirmation.Revision.Id, confirmation.Title,
             profile, confirmation.Goal, null, "Worker",
             (handoff, token) => _sessionManager.IngestWorkerHandoffAsync(handoff, token),
-            WaitForCompletion: false);
+            WaitForCompletion: false,
+            OnCanonicalCompletion: _openGuidedDecision is null
+                ? null
+                : (completion, token) => DispatchAsync(() => _openGuidedDecision(completion.Facts.HandoffRef)));
         if (_canonicalWorkerLaunch is not null && _git is { IsRepository: true, HeadCommit: not null, BranchName: not null })
         {
             var canonical = await _canonicalWorkerLaunch.PrepareAsync(_project.Id, confirmation.Revision, cancellationToken);
@@ -1844,8 +1876,15 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void RejectAuthorityConfirmation()
+    private async Task RejectAuthorityConfirmation(CancellationToken cancellationToken = default)
     {
+        if (PendingAuthorityConfirmation is { } draft)
+        {
+            await MarkAuthorityCandidateStatusesAsync(
+                draft,
+                ProjectEvolutionCandidateStatus.Rejected,
+                cancellationToken);
+        }
         PendingAuthorityConfirmation = null;
         AuthorityConfirmationStatusMessage = null;
         NotifyAllState();
@@ -1877,6 +1916,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         if (preview.AuthorityConfirmation is { } authority)
         {
+            await MarkAuthorityCandidateStatusesAsync(
+                authority,
+                ProjectEvolutionCandidateStatus.GovernancePending,
+                cancellationToken);
             PendingAuthorityConfirmation = authority;
             AuthorityConfirmationStatusMessage = "Ready for final Authority acceptance. No project state has changed.";
             PreparedGovernanceDraft = null;
@@ -1892,6 +1935,25 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
         PreparedGovernanceDraft = null;
         NotifyAllState();
+    }
+
+    private async Task MarkAuthorityCandidateStatusesAsync(
+        AuthorityConfirmationDraft draft,
+        ProjectEvolutionCandidateStatus status,
+        CancellationToken cancellationToken)
+    {
+        if (_evolutionCandidates is null) return;
+        foreach (var candidateId in draft.ConsideredRefs
+                     .OfType<ConsideredRef.EvolutionCandidate>()
+                     .Select(value => value.CandidateId)
+                     .Distinct())
+        {
+            await _evolutionCandidates.TryUpdateStatusAsync(
+                _project.Id,
+                candidateId,
+                status,
+                cancellationToken);
+        }
     }
 
     private async Task SubmitEvolutionLibraryProposalAsync(

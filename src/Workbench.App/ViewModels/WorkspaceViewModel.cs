@@ -17,6 +17,7 @@ using Workbench.App.Worker;
 using Workbench.App.Memory;
 using Workbench.App.AgentHost;
 using Workbench.App.Continuity;
+using Workbench.Core.Continuity;
 
 namespace Workbench.App.ViewModels;
 
@@ -63,6 +64,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          IAgentHost? agentHost = null,
          WorkerExecutionRepository? workerExecutionRepository = null,
          CanonicalWorkerLaunchService? canonicalWorkerLaunch = null,
+         Func<HandoffRef, Task>? openGuidedDecision = null,
          Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null,
          Func<Task>? openProjectOverview = null,
          Func<AuthorityConfirmationDraft, CancellationToken, Task<Workbench.Core.Continuity.AuthorityDecision>>? acceptAuthorityConfirmation = null)
@@ -85,7 +87,10 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             restoreRuntimeAfterExternalCli: restoreRuntimeAfterExternalCli,
             releaseRuntimeForExternalCli: releaseRuntimeForExternalCli,
             agentHost: agentHost,
-            openHostedSurface: openHostedSurface);
+            openHostedSurface: openHostedSurface,
+            workerExecutions: workerExecutionRepository,
+            canonicalWorkerLaunch: canonicalWorkerLaunch,
+            openGuidedDecision: openGuidedDecision);
         LibraryPane = new LibraryPaneViewModel(
             result,
             FocusLibraryAsync,
@@ -127,6 +132,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
              agentHost: agentHost,
             workerExecutionRepository: workerExecutionRepository,
             canonicalWorkerLaunch: canonicalWorkerLaunch,
+            openGuidedDecision: openGuidedDecision,
             acceptAuthorityConfirmation: acceptAuthorityConfirmation);
     }
 

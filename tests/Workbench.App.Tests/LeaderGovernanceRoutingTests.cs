@@ -115,6 +115,7 @@ public sealed class LeaderGovernanceRoutingTests
             context.Services.RuntimeRegistry,
             context.LeaderSessions,
             () => Task.CompletedTask,
+            evolutionCandidateRepository: context.Services.ProjectEvolutionCandidateRepository,
             acceptAuthorityConfirmation: (confirmation, cancellationToken) => context.Services.B1AuthorityCommands.AuthorAcceptedStateAsync(
                 new AuthorAcceptedStateCommand(
                     projectRef,
@@ -135,12 +136,16 @@ public sealed class LeaderGovernanceRoutingTests
         Assert.NotNull(pane.PendingAuthorityConfirmation);
         Assert.Null(pane.PreparedGovernanceDraft);
         Assert.Empty((await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef)).AuthorityDecisions);
+        Assert.Equal(ProjectEvolutionCandidateStatus.GovernancePending,
+            (await context.Services.ProjectEvolutionCandidateRepository.GetAsync(opened.Project.Id, candidateId))!.Status);
 
         await pane.AcceptAuthorityConfirmationCommand.ExecuteAsync(null);
 
         var state = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
         Assert.Contains(new ConsideredRef.EvolutionCandidate(candidateId), state.AuthorityDecisions.Single().ConsideredRefs);
         Assert.Null(pane.PendingAuthorityConfirmation);
+        Assert.Equal(ProjectEvolutionCandidateStatus.Accepted,
+            (await context.Services.ProjectEvolutionCandidateRepository.GetAsync(opened.Project.Id, candidateId))!.Status);
     }
 
     [Fact]
@@ -216,6 +221,22 @@ public sealed class LeaderGovernanceRoutingTests
             "LibraryProposal",
             "这是已经确定且会持续参与主线的剧情方向。",
             ProjectEvolutionCandidateStatus.Observed,
+            context.Time.GetUtcNow()));
+        await context.Services.ProjectEvolutionCandidateRepository.SaveAsync(new(
+            Guid.NewGuid(),
+            project.Id,
+            null,
+            Guid.NewGuid(),
+            "current_user_message",
+            "旧已接受变化",
+            "StoryDirection",
+            "DirectionConfirmed",
+            null,
+            "历史内容",
+            "Content",
+            "LibraryProposal",
+            "已完成治理",
+            ProjectEvolutionCandidateStatus.Accepted,
             context.Time.GetUtcNow()));
         var pane = new LeaderPaneViewModel(
             project,
