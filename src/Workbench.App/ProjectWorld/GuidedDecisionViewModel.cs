@@ -15,13 +15,20 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
     private readonly ProjectOpenResult _result;
     private readonly HandoffRef _handoffRef;
     private readonly Func<Task> _back;
+    private readonly Func<Task>? _afterCommit;
 
-    public GuidedDecisionViewModel(AppServices services, ProjectOpenResult result, HandoffRef handoffRef, Func<Task> back)
+    public GuidedDecisionViewModel(
+        AppServices services,
+        ProjectOpenResult result,
+        HandoffRef handoffRef,
+        Func<Task> back,
+        Func<Task>? afterCommit = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _result = result ?? throw new ArgumentNullException(nameof(result));
         _handoffRef = handoffRef;
         _back = back ?? throw new ArgumentNullException(nameof(back));
+        _afterCommit = afterCommit;
         AvailableDispositions = new(Enum.GetValues<AssignmentDisposition>());
         AvailableContributionModes = new(Enum.GetValues<ContributionDecisionMode>());
     }
@@ -98,6 +105,8 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
                 ? string.Format(LocalizationService.Current["Dynamic.DecisionRecordedNoContribution"], decision.ProjectCommitSequence)
                 : string.Format(LocalizationService.Current["Dynamic.DecisionRecorded"], decision.ProjectCommitSequence);
             IsPreviewVisible = false;
+            if (_afterCommit is not null)
+                await _afterCommit();
         }
         catch (Exception exception) { ErrorMessage = $"{LocalizationService.Current["Dynamic.DecisionFailed"]} {exception.Message}"; }
         finally { IsBusy = false; }

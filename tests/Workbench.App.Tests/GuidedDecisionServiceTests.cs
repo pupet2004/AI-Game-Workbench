@@ -37,6 +37,33 @@ public sealed class GuidedDecisionServiceTests
         Assert.Single(projection.AcceptedProjectState.CurrentContributions);
     }
 
+    [Fact]
+    public async Task Confirm_navigates_to_the_project_overview_after_the_authority_commit()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var returnedToOverview = false;
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services,
+            fixture.Result,
+            fixture.Handoff,
+            () => Task.CompletedTask,
+            () =>
+            {
+                returnedToOverview = true;
+                return Task.CompletedTask;
+            });
+
+        await viewModel.InitializeAsync();
+        viewModel.SelectedDisposition = AssignmentDisposition.Accepted;
+        viewModel.SelectedContributionMode = ContributionDecisionMode.AdoptVerbatim;
+        await viewModel.PreviewDecisionCommand.ExecuteAsync(null);
+        await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
+
+        Assert.True(returnedToOverview);
+        Assert.Contains("recorded", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.False(viewModel.IsPreviewVisible);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly AppTestContext _context;

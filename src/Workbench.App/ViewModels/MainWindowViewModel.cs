@@ -284,20 +284,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _services,
             result,
             handoffRef,
-            async () =>
-            {
-                var assignmentRef = await ResolveAssignmentForHandoffAsync(result, handoffRef);
-                await ShowManualWorkAsync(result, assignmentRef);
-            });
+            back: () => ShowProjectOverviewAsync(result),
+            afterCommit: () => ShowProjectOverviewAsync(result));
         CurrentPage = decision;
         await decision.InitializeAsync();
-    }
-
-    private async Task<AssignmentRef> ResolveAssignmentForHandoffAsync(ProjectOpenResult result, HandoffRef handoffRef)
-    {
-        var state = await _services.B1AuthorityRepository.LoadProjectStateAsync(new ProjectRef(result.Project.Id));
-        var handoff = state.Handoffs.Single(value => value.HandoffRef == handoffRef);
-        return state.Attempts.Single(value => value.AttemptRef == handoff.AttemptRef).AssignmentRef;
     }
 
     public async ValueTask DisposeAsync()
