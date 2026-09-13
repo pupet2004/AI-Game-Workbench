@@ -1,7 +1,9 @@
 # Canonical Acceptance Spine
 
-Status: Phase 1 contract
+Status: Phase 1 certified
 Recorded: 2026-09-13
+
+Certification record: `docs/validation/canonical-acceptance-spine-certification-20260913.md`
 
 The Workbench has one path by which an Agent-produced change can become
 accepted project truth:
