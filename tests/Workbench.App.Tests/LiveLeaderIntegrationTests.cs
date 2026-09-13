@@ -15,23 +15,15 @@ namespace Workbench.App.Tests;
 
 public sealed class LiveLeaderIntegrationTests(ITestOutputHelper output)
 {
-    [Fact(Skip = "Live provider integration is excluded from deterministic suite; run via dedicated live acceptance command.")]
+    [LiveFact("WORKBENCH_RUN_CODEX_INTEGRATION")]
     public async Task Real_codex_completes_two_turn_project_leader_session()
     {
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable("WORKBENCH_RUN_CODEX_INTEGRATION"),
-                "1",
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
         var executable = RequireEnvironmentVariable("WORKBENCH_CODEX_EXECUTABLE");
-        var entryPoint = RequireEnvironmentVariable("WORKBENCH_CODEX_ENTRY");
+        var entryPoint = Environment.GetEnvironmentVariable("WORKBENCH_CODEX_ENTRY");
         var projectRoot = RequireEnvironmentVariable("WORKBENCH_CODEX_CWD");
         var options = new CodexAppServerOptions(
             executable,
-            [entryPoint, "app-server", "--stdio"],
+            BuildCodexArguments(entryPoint),
             projectRoot,
             TimeSpan.FromMinutes(2));
 
@@ -75,17 +67,9 @@ public sealed class LiveLeaderIntegrationTests(ITestOutputHelper output)
         output.WriteLine($"ExternalSessionId: {secondSession.ExternalSessionId}");
     }
 
-    [Fact(Skip = "Live provider integration is excluded from deterministic suite; run via dedicated live acceptance command.")]
+    [LiveFact("WORKBENCH_RUN_M105C_SMOKE")]
     public async Task Real_codex_fresh_epoch_answers_from_certified_project_memory_only()
     {
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable("WORKBENCH_RUN_M105C_SMOKE"),
-                "1",
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
         var projectId = Guid.Parse("105b0000-0000-4000-8000-000000000001");
         await using var services = AppServices.CreateDefault(CodexRuntimeComposition.ConnectAsync);
         await services.InitializeAsync();
@@ -166,4 +150,9 @@ public sealed class LiveLeaderIntegrationTests(ITestOutputHelper output)
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
             ? value
             : throw new InvalidOperationException($"Integration environment variable '{name}' is required.");
+
+    private static IReadOnlyList<string> BuildCodexArguments(string? entryPoint) =>
+        string.IsNullOrWhiteSpace(entryPoint)
+            ? ["app-server", "--stdio"]
+            : [entryPoint, "app-server", "--stdio"];
 }

@@ -4,19 +4,15 @@ using Workbench.App.Tests.Support;
 using Workbench.App.ProjectWorld;
 using Workbench.Core.Continuity;
 using Workbench.Runtime.Providers.OpenCode;
+using Workbench.App.Tests;
 
 namespace Workbench.App.Tests.Continuity;
 
 public sealed class OpenCodeLiveB1AcceptanceTests
 {
-    [Fact(Skip = "Live provider acceptance is excluded from deterministic suite; run via dedicated live acceptance command.")]
+    [LiveFact("WORKBENCH_RUN_OPENCODE_LIVE")]
     public async Task OpenCode_and_DeepSeek_complete_the_B1_participation_and_decision_path()
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("WORKBENCH_RUN_OPENCODE_LIVE"), "1", StringComparison.Ordinal))
-        {
-            return;
-        }
-
         await using var context = await AppTestContext.CreateAsync();
         await using var runtime = await OpenCodeAcpAgentRuntime.ConnectAsync(
             OpenCodeRuntimeComposition.CreateOptions(

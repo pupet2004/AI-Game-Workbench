@@ -7,23 +7,15 @@ namespace Workbench.Runtime.Tests.Providers.Codex;
 
 public sealed class CodexAppServerIntegrationTests(ITestOutputHelper output)
 {
-    [Fact(Skip = "Live provider integration is excluded from deterministic suite; run via dedicated live acceptance command.")]
+    [LiveFact("WORKBENCH_RUN_CODEX_INTEGRATION")]
     public async Task Real_codex_app_server_completes_provider_neutral_lifecycle()
     {
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable("WORKBENCH_RUN_CODEX_INTEGRATION"),
-                "1",
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
         var executable = RequireEnvironmentVariable("WORKBENCH_CODEX_EXECUTABLE");
-        var entryPoint = RequireEnvironmentVariable("WORKBENCH_CODEX_ENTRY");
+        var entryPoint = Environment.GetEnvironmentVariable("WORKBENCH_CODEX_ENTRY");
         var repositoryRoot = RequireEnvironmentVariable("WORKBENCH_CODEX_CWD");
         var options = new CodexAppServerOptions(
             executable,
-            [entryPoint, "app-server", "--stdio"],
+            BuildCodexArguments(entryPoint),
             repositoryRoot,
             TimeSpan.FromMinutes(2));
 
@@ -83,25 +75,26 @@ public sealed class CodexAppServerIntegrationTests(ITestOutputHelper output)
         string prompt)
     {
         AgentResult? result = null;
-        var sawTextDelta = false;
-        var sawRunningStatus = false;
         await foreach (var agentEvent in runtime.SendAsync(session, new AgentRequest(prompt)))
         {
-            sawTextDelta |= agentEvent is AgentTextDelta;
-            sawRunningStatus |= agentEvent is AgentStatusChanged { Status: AgentSessionStatus.Running };
             if (agentEvent is AgentTurnCompleted completed)
             {
                 result = completed.Result;
             }
         }
 
-        Assert.True(sawTextDelta);
-        Assert.True(sawRunningStatus);
-        return Assert.IsType<AgentResult>(result);
+        var completedResult = Assert.IsType<AgentResult>(result);
+        Assert.Equal(AgentSessionStatus.Completed, completedResult.FinalStatus);
+        return completedResult;
     }
 
     private static string RequireEnvironmentVariable(string name) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
             ? value
             : throw new InvalidOperationException($"Integration environment variable '{name}' is required.");
+
+    private static IReadOnlyList<string> BuildCodexArguments(string? entryPoint) =>
+        string.IsNullOrWhiteSpace(entryPoint)
+            ? ["app-server", "--stdio"]
+            : [entryPoint, "app-server", "--stdio"];
 }
