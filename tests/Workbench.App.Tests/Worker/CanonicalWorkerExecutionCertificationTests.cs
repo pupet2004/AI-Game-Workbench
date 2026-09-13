@@ -133,6 +133,77 @@ public sealed class CanonicalWorkerExecutionCertificationTests
         Assert.Empty(await fixture.Repository.ListAsync(fixture.Project.Id));
     }
 
+    [Fact]
+    public async Task C7_restart_reconciles_in_progress_execution_and_preserves_workspace_delta()
+    {
+        await using var fixture = await Fixture.CreateAsync(null);
+        var workspace = fixture.Project.RootPath;
+        var counterPath = Path.Combine(workspace, "src", "counter.js");
+        Directory.CreateDirectory(Path.GetDirectoryName(counterPath)!);
+        await File.WriteAllTextAsync(counterPath, "export function increment(value) { return value + 1; }\n");
+        var baseline = await WorkspaceSnapshot.CaptureAsync(workspace);
+        Assert.NotNull(baseline);
+
+        var assignments = new AssignmentReviewStateRepository(fixture.Services.Database);
+        Assert.Equal(AssignmentStateTransitionResult.Applied, await assignments.TryTransitionAsync(
+            fixture.Project.Id,
+            fixture.TaskId,
+            TaskLifecycleStatus.Draft,
+            TaskLifecycleStatus.ReadyToStart,
+            Guid.NewGuid(),
+            "AssignmentReadyToStart",
+            "{}",
+            fixture.Time.GetUtcNow()));
+        Assert.Equal(AssignmentStateTransitionResult.Applied, await assignments.TryTransitionAsync(
+            fixture.Project.Id,
+            fixture.TaskId,
+            TaskLifecycleStatus.ReadyToStart,
+            TaskLifecycleStatus.Working,
+            Guid.NewGuid(),
+            "WorkerAssignmentStarted",
+            "{}",
+            fixture.Time.GetUtcNow()));
+
+        var sessionId = AgentSessionId.New();
+        var executionId = Guid.NewGuid();
+        await fixture.Repository.CreateAsync(new StoredWorkerExecution(
+            executionId,
+            fixture.Project.Id,
+            fixture.TaskId,
+            fixture.Identity.ExecutionStartRevision,
+            fixture.Identity.CurrentAcknowledgedRevision,
+            fixture.Identity.BaseCommit,
+            fixture.Identity.TargetBranch,
+            fixture.Identity.ProviderAccount,
+            fixture.Identity.ExecutionProfile,
+            fixture.Identity.WorkerBranch,
+            workspace,
+            WorkerExecutionState.Running,
+            sessionId.Value.ToString(),
+            "crashed-thread",
+            workspace,
+            fixture.Time.GetUtcNow(),
+            fixture.Time.GetUtcNow(),
+            baseline!.Serialize()));
+        await File.WriteAllTextAsync(counterPath, "export function increment(value) { return value + 2; }\n");
+
+        var reconciled = await fixture.Services.WorkerSessionRouter.ReconcileInterruptedExecutionsAsync(fixture.Project.Id);
+
+        Assert.Equal(1, reconciled);
+        var execution = await fixture.Repository.GetAsync(fixture.Project.Id, executionId);
+        Assert.NotNull(execution);
+        Assert.Equal(WorkerExecutionState.Interrupted, execution!.State);
+        var recovery = await assignments.GetRecoveryStateAsync(fixture.Project.Id, fixture.TaskId);
+        Assert.Equal(TaskLifecycleStatus.NeedsLeaderDecision, recovery!.Task.Status);
+        var events = await new TaskEventRepository(fixture.Services.Database)
+            .ListAsync(fixture.Project.Id, fixture.TaskId, 100);
+        var crash = Assert.Single(events, item => item.Type == "WorkerExecutionCrashReconciled");
+        Assert.Contains(executionId.ToString(), crash.Payload, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("counter.js", crash.Payload, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(events, item => item.Type == "WorkerFinalReportReceived");
+        Assert.Equal(0, await fixture.Services.WorkerSessionRouter.ReconcileInterruptedExecutionsAsync(fixture.Project.Id));
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(AppTestContext context, FakeAgentRuntime runtime, Workbench.Core.Projects.Project project, StoredTask task, TaskRevision revision, ExecutionProfile profile)

@@ -489,6 +489,82 @@ public sealed class WorkerSessionRouter(
         return repaired;
     }
 
+    public async Task<int> ReconcileInterruptedExecutionsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (executions is null)
+            return 0;
+
+        var candidates = (await executions.ListAsync(projectId, cancellationToken))
+            .Where(item => item.State is
+                WorkerExecutionState.Preparing or
+                WorkerExecutionState.WorkspaceCreating or
+                WorkerExecutionState.WorkspaceCreated or
+                WorkerExecutionState.RuntimeStarting or
+                WorkerExecutionState.Running or
+                WorkerExecutionState.Blocked)
+            .ToArray();
+        var reconciled = 0;
+        foreach (var execution in candidates)
+        {
+            var changedPaths = string.IsNullOrWhiteSpace(execution.WorkspaceBaselineJson)
+                ? null
+                : await WorkspaceSnapshot.ComputeDeltaAsync(
+                    execution.WorkerWorktreePath,
+                    execution.WorkspaceBaselineJson,
+                    cancellationToken);
+            var payload = JsonSerializer.Serialize(new
+            {
+                execution.ExecutionId,
+                PriorState = execution.State,
+                Workspace = execution.WorkerWorktreePath,
+                WorkspaceExists = Directory.Exists(execution.WorkerWorktreePath),
+                BaselineAvailable = !string.IsNullOrWhiteSpace(execution.WorkspaceBaselineJson),
+                ChangedPaths = changedPaths
+            });
+            await executions.UpdateStateAsync(
+                projectId,
+                execution.TaskId,
+                execution.ExecutionId,
+                WorkerExecutionState.Interrupted,
+                cancellationToken);
+
+            var eventId = Guid.NewGuid();
+            var taskState = assignments is null
+                ? null
+                : await assignments.GetRecoveryStateAsync(projectId, execution.TaskId, cancellationToken);
+            if (taskState?.Task.Status == TaskLifecycleStatus.Working && assignments is not null)
+            {
+                await assignments.TryTransitionAsync(
+                    projectId,
+                    execution.TaskId,
+                    TaskLifecycleStatus.Working,
+                    TaskLifecycleStatus.NeedsLeaderDecision,
+                    eventId,
+                    "WorkerExecutionCrashReconciled",
+                    payload,
+                    time.GetUtcNow(),
+                    cancellationToken);
+            }
+            else if (_taskEvents is not null)
+            {
+                await _taskEvents.AppendAsync(new StoredTaskEvent(
+                    eventId,
+                    projectId,
+                    execution.TaskId,
+                    execution.ExecutionId,
+                    "WorkerExecutionCrashReconciled",
+                    payload,
+                    time.GetUtcNow()), cancellationToken);
+            }
+
+            reconciled++;
+        }
+
+        return reconciled;
+    }
+
     /// <summary>
     /// Routes a follow-up direction to an already hosted Worker session.
     /// Active turns use the provider's steer channel when available; all

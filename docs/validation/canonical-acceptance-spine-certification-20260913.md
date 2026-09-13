@@ -70,6 +70,21 @@ It uses a real temporary Git workspace and confirms that Codex:
 This is a single-round live-provider gate. The deterministic certification
 remains the three-round `+1 -> +2 -> +3` regression.
 
+## Crash Recovery Gate
+
+`WorkerSessionRouter.ReconcileInterruptedExecutionsAsync` runs when the
+Workspace loads a project. It reconciles stale in-progress executions left by
+a process crash by:
+
+1. Capturing the workspace delta against the persisted execution baseline.
+2. Moving the execution to `Interrupted`.
+3. Moving a still-`Working` task to `NeedsLeaderDecision`.
+4. Recording a durable `WorkerExecutionCrashReconciled` event.
+5. Leaving Completion, Claims, Handoffs, and AcceptedProjectState untouched.
+
+The reconciliation is idempotent because terminal `Interrupted` executions are
+not selected again.
+
 ## Race Coverage
 
 A regression test covers a Legacy task transition reaching `Reviewing` before
@@ -96,6 +111,5 @@ not claim that every real external provider has completed the same path.
 ## Remaining Gates
 
 - Three consecutive real-provider rounds without state drift.
-- Crash-time workspace/execution reconciliation.
 - Automatic B1 successor task creation and dispatch.
 - Product-shell and UI workflow completion.
