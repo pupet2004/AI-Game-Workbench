@@ -210,7 +210,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             result,
             BackToHomeAsync,
             assignmentRef => ShowManualWorkAsync(result, assignmentRef),
-            () => ShowThreeColumnWorkspaceAsync(result));
+            () => ShowThreeColumnWorkspaceAsync(result),
+            handoffRef => ShowGuidedDecisionAsync(result, handoffRef));
         CurrentPage = explorer;
         await explorer.InitializeAsync();
     }

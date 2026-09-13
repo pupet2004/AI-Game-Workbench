@@ -119,6 +119,28 @@
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding [Explorer.PendingHandoffs]}" FontSize="18" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding PendingHandoffSummary}" />
+                    <TextBlock IsVisible="{Binding !PendingHandoffs.Count}" Text="{Binding [Explorer.NoPendingHandoffs]}" Opacity="0.7" />
+                    <ItemsControl ItemsSource="{Binding PendingHandoffs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:PendingHandoffItemView">
+                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding HandoffRef}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Result}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding ProposedChanges}" TextWrapping="Wrap" Opacity="0.8" />
+                                        <TextBlock Text="{Binding Validation}" TextWrapping="Wrap" Opacity="0.8" />
+                                        <TextBlock Text="{Binding Evidence}" Opacity="0.8" />
+                                        <TextBlock Text="{Binding Status}" Opacity="0.8" />
+                                        <Button Content="{Binding $parent[UserControl].DataContext[Explorer.ReviewHandoff]}"
+                                                Command="{Binding $parent[UserControl].DataContext.ReviewHandoffCommand}"
+                                                CommandParameter="{Binding HandoffRef}"
+                                                IsEnabled="{Binding !$parent[UserControl].DataContext.IsBusy}"
+                                                HorizontalAlignment="Left" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </Border>
 

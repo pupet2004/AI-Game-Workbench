@@ -56,6 +56,23 @@ public sealed class ManualProjectSliceCertificationTests
         var afterHandoff = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
         Assert.Single(afterHandoff.Handoffs);
         Assert.Empty(B1Projector.Build(afterHandoff).AcceptedProjectState.CurrentContributions);
+        HandoffRef? reviewedHandoffRef = null;
+        var explorerWithPendingHandoff = new ProjectWorldExplorerViewModel(
+            context.Services,
+            opened,
+            () => Task.CompletedTask,
+            openGuidedDecision: handoffRef =>
+            {
+                reviewedHandoffRef = handoffRef;
+                return Task.CompletedTask;
+            });
+        await explorerWithPendingHandoff.InitializeAsync();
+        var pending = Assert.Single(explorerWithPendingHandoff.PendingHandoffs);
+        Assert.Equal(afterHandoff.Handoffs[0].HandoffRef, pending.HandoffRef);
+        Assert.Contains("Combat prototype implemented", pending.Result);
+        Assert.Contains("Use card-based combat", pending.ProposedChanges);
+        await explorerWithPendingHandoff.ReviewHandoffCommand.ExecuteAsync(pending.HandoffRef);
+        Assert.Equal(pending.HandoffRef, reviewedHandoffRef);
         // Primary Result and Proposed Project Changes are two distinct typed Claims.
         Assert.Equal(2L, await CountAsync(context.Services, "b1_claims", opened.Project.Id));
         Assert.Equal(1L, await CountAsync(context.Services, "b1_handoffs", opened.Project.Id));
@@ -79,6 +96,7 @@ public sealed class ManualProjectSliceCertificationTests
             opened,
             () => Task.CompletedTask);
         await explorerAfterDecision.InitializeAsync();
+        Assert.Empty(explorerAfterDecision.PendingHandoffs);
         explorerAfterDecision.LibraryCategory = "Design";
         explorerAfterDecision.LibraryTopic = "Combat";
         explorerAfterDecision.LibraryNodeContent = "Combat prototype direction established.";

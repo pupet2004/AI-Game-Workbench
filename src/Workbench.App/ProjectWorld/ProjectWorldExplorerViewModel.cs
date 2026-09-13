@@ -31,6 +31,14 @@ public sealed record DecisionItemView(
 
 public sealed record AttentionItemView(string Label, string Detail);
 
+public sealed record PendingHandoffItemView(
+    HandoffRef HandoffRef,
+    string Result,
+    string ProposedChanges,
+    string Validation,
+    string Evidence,
+    string Status);
+
 public sealed record LibraryContributionOptionView(
     AcceptedStateContributionRef ContributionRef,
     string Statement);
@@ -42,19 +50,22 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     private readonly Func<Task> _backToHome;
     private readonly Func<AssignmentRef, Task> _beginManualWork;
     private readonly Func<Task> _openWorkspace;
+    private readonly Func<HandoffRef, Task> _openGuidedDecision;
 
     public ProjectWorldExplorerViewModel(
         AppServices services,
         ProjectOpenResult result,
         Func<Task> backToHome,
         Func<AssignmentRef, Task>? beginManualWork = null,
-        Func<Task>? openWorkspace = null)
+        Func<Task>? openWorkspace = null,
+        Func<HandoffRef, Task>? openGuidedDecision = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _result = result ?? throw new ArgumentNullException(nameof(result));
         _backToHome = backToHome ?? throw new ArgumentNullException(nameof(backToHome));
         _beginManualWork = beginManualWork ?? (_ => Task.CompletedTask);
         _openWorkspace = openWorkspace ?? (() => Task.CompletedTask);
+        _openGuidedDecision = openGuidedDecision ?? (_ => Task.CompletedTask);
     }
 
     public string ProjectName => _result.Project.Name;
@@ -115,6 +126,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     public ObservableCollection<LibraryContributionOptionView> LibraryContributions { get; } = [];
     public ObservableCollection<ActiveAssignmentItemView> ActiveWork { get; } = [];
     public ObservableCollection<AttentionItemView> NeedsAttention { get; } = [];
+    public ObservableCollection<PendingHandoffItemView> PendingHandoffs { get; } = [];
     public ObservableCollection<DecisionItemView> RecentDecisions { get; } = [];
     public ObservableCollection<ProjectEvolutionRecord> EvolutionEntries { get; } = [];
 
@@ -184,7 +196,30 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
 
             OnPropertyChanged(nameof(AcceptedConstraintsSummary));
             OnPropertyChanged(nameof(ActiveAssignmentSummary));
-            PendingHandoffCount = state.Handoffs.Count;
+
+            var consideredHandoffs = state.AuthorityDecisions
+                .SelectMany(value => value.ConsideredRefs)
+                .OfType<ConsideredRef.Handoff>()
+                .Select(value => value.HandoffRef)
+                .ToHashSet();
+            var claims = state.Claims.ToDictionary(value => value.ClaimRef);
+            PendingHandoffs.Clear();
+            foreach (var handoff in state.Handoffs
+                .Where(value => !consideredHandoffs.Contains(value.HandoffRef))
+                .OrderByDescending(value => value.CreatedAt))
+            {
+                PendingHandoffs.Add(new(
+                    handoff.HandoffRef,
+                    ClaimStatement(claims, handoff.ResultClaimRef),
+                    JoinClaimStatements(claims, handoff.ProposedContributionClaimRefs),
+                    JoinClaimStatements(claims, handoff.ValidationClaimRefs),
+                    handoff.EvidenceRefs.Count == 0
+                        ? LocalizationService.Current["Dynamic.NoEvidence"]
+                        : string.Format(LocalizationService.Current["Dynamic.EvidenceCount"], handoff.EvidenceRefs.Count),
+                    LocalizationService.Current["Dynamic.AwaitingAuthorityDecision"]));
+            }
+
+            PendingHandoffCount = PendingHandoffs.Count;
             OnPropertyChanged(nameof(PendingHandoffCount));
             OnPropertyChanged(nameof(PendingHandoffSummary));
 
@@ -203,7 +238,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                 ["AcceptedProjectState", "Assignment projection", "Handoff projection"]));
 
             NeedsAttention.Clear();
-            if (state.Handoffs.Count == 0)
+            if (PendingHandoffs.Count == 0)
             {
                 NeedsAttention.Add(new(LocalizationService.Current["Dynamic.NoUnresolvedInputs"], LocalizationService.Current["Dynamic.NoHandoffAwaiting"]));
             }
@@ -253,6 +288,9 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     private Task BeginManualWorkAsync(AssignmentRef assignmentRef) => _beginManualWork(assignmentRef);
 
     [RelayCommand]
+    private Task ReviewHandoffAsync(HandoffRef handoffRef) => _openGuidedDecision(handoffRef);
+
+    [RelayCommand]
     private void ShowLibraryComposer()
     {
         if (LibraryContributions.Count == 0)
@@ -299,4 +337,24 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             Loading = false;
         }
     }
+
+    private static string ClaimStatement(IReadOnlyDictionary<ClaimRef, Claim> claims, ClaimRef claimRef) =>
+        claims.TryGetValue(claimRef, out var claim)
+            ? claim.Payload switch
+            {
+                ClaimPayload.Result result => result.Statement,
+                ClaimPayload.Validation validation => validation.Statement,
+                ClaimPayload.UnresolvedIssue issue => issue.Statement,
+                ClaimPayload.ProposedStateContribution contribution => contribution.Statement,
+                ClaimPayload.ProposedAssignmentRevision revision => revision.ProposedContract.WorkContract,
+                _ => claimRef.ToString()
+            }
+            : $"Missing claim {claimRef}";
+
+    private static string JoinClaimStatements(
+        IReadOnlyDictionary<ClaimRef, Claim> claims,
+        IReadOnlyList<ClaimRef> claimRefs) =>
+        claimRefs.Count == 0
+            ? LocalizationService.Current["Dynamic.NoneReported"]
+            : string.Join("; ", claimRefs.Select(value => ClaimStatement(claims, value)));
 }
