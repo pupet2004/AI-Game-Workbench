@@ -356,6 +356,84 @@ public sealed class CanonicalWorkerCompletionBridgeTests
         Assert.Equal(1, recovered);
     }
 
+    [Fact]
+    public async Task Crash_after_completion_persists_all_material_and_reconciles_before_acceptance()
+    {
+        using var projectDirectory = new TemporaryDirectory("canonical-crash-reconciliation");
+        using var recoveryDirectory = new TemporaryDirectory("canonical-crash-recovery-db");
+        var databasePath = Path.Combine(recoveryDirectory.Path, "workbench.db");
+        CoreProject project;
+        UserPrincipalRef principal;
+        CanonicalWorkerCompletionFacts facts;
+
+        await using (var context = await AppTestContext.CreateAsync())
+        {
+            var prepared = await PrepareCompletionAsync(context, projectDirectory);
+            project = await context.Services.ProjectRepository.GetByIdAsync(prepared.ProjectRef.Value)
+                ?? throw new InvalidOperationException("Prepared project was not persisted.");
+            principal = prepared.Principal;
+            facts = prepared.Facts;
+
+            await Assert.ThrowsAsync<B1CommandException>(() =>
+                context.Services.CanonicalWorkerCompletionBridge.BridgeAsync(
+                    facts, new UserPrincipalRef("user:crashed-before-reconciliation")));
+
+            var pending = await context.Services.CanonicalWorkerCompletions.GetBySourceEventAsync(
+                project.Id, facts.SourceEventId);
+            Assert.NotNull(pending);
+            Assert.Equal(CanonicalWorkerCompletionStatus.PendingBridge, pending!.Status);
+            Assert.NotNull(await context.Services.WorkerExecutionRepository.GetAsync(
+                project.Id, facts.WorkerExecutionId));
+            Assert.NotNull(await context.Services.B1WorkerExecutionBridge.GetVerificationEvidenceAsync(
+                prepared.ProjectRef, facts.WorkerExecutionId));
+
+            await context.Services.DisposeAsync();
+            File.Copy(context.DatabasePath, databasePath, overwrite: true);
+        }
+
+        await using (var restarted = AppServices.CreateForDatabasePath(
+                         databasePath, TimeProvider.System, new AgentRuntimeRegistry()))
+        {
+            await restarted.InitializeAsync();
+            Assert.Empty((await restarted.B1Projections.GetAcceptedProjectStateAsync(
+                new ProjectRef(project.Id))).CurrentContributions);
+
+            var recovered = await restarted.CanonicalWorkerCompletionBridge.RecoverAsync(
+                project.Id, principal);
+            Assert.Equal(1, recovered);
+
+            var governanceReady = await restarted.CanonicalWorkerCompletions.GetBySourceEventAsync(
+                project.Id, facts.SourceEventId);
+            Assert.NotNull(governanceReady);
+            Assert.Equal(CanonicalWorkerCompletionStatus.GovernanceReady, governanceReady!.Status);
+            Assert.NotNull(await restarted.B1WorkerExecutionBridge.GetVerificationEvidenceAsync(
+                new ProjectRef(project.Id), facts.WorkerExecutionId));
+
+            var decision = await restarted.GuidedDecision.CommitAsync(new GuidedDecisionRequest(
+                new ProjectRef(project.Id), principal, facts.HandoffRef,
+                AssignmentDisposition.Accepted, ContributionDecisionMode.AdoptVerbatim, null, null));
+
+            var accepted = await restarted.B1Projections.GetAcceptedProjectStateAsync(
+                new ProjectRef(project.Id));
+            Assert.Contains(accepted.CurrentContributions,
+                value => value.Statement == facts.ProposedChanges.Single() &&
+                    value.AuthorityDecisionRef == decision.DecisionRef);
+        }
+
+        await using (var recoveredAgain = AppServices.CreateForDatabasePath(
+                         databasePath, TimeProvider.System, new AgentRuntimeRegistry()))
+        {
+            await recoveredAgain.InitializeAsync();
+            var completion = await recoveredAgain.CanonicalWorkerCompletions.GetBySourceEventAsync(
+                project.Id, facts.SourceEventId);
+            Assert.NotNull(completion);
+            Assert.Equal(CanonicalWorkerCompletionStatus.Governed, completion!.Status);
+            Assert.NotNull(completion.AuthorityDecisionRef);
+            Assert.Single((await recoveredAgain.B1Projections.GetAcceptedProjectStateAsync(
+                new ProjectRef(project.Id))).CurrentContributions);
+        }
+    }
+
     private static async Task<PreparedCompletion> PrepareCompletionAsync(
         AppTestContext context,
         TemporaryDirectory projectDirectory)
