@@ -136,6 +136,11 @@
                                         <TextBlock Text="{Binding HandoffDisplay.AuthorityStatus}" Foreground="#475467" TextWrapping="Wrap" />
                                         <TextBlock Text="{Binding HandoffDisplay.Result}" TextWrapping="Wrap" />
                                         <TextBlock Text="{Binding HandoffDisplay.Provenance}" Foreground="#667085" TextWrapping="Wrap" />
+                                        <Button IsVisible="{Binding HandoffDisplay.CanReview}"
+                                                Content="{Binding #WorkRoot.DataContext[Worker.Review]}"
+                                                Command="{Binding #WorkRoot.DataContext.ReviewHandoffCommand}"
+                                                CommandParameter="{Binding HandoffDisplay.HandoffRef}"
+                                                HorizontalAlignment="Left" />
                                     </StackPanel>
                                 </Border>
                                 <StackPanel Grid.Row="5" IsVisible="{Binding HasPlan}" Spacing="3">

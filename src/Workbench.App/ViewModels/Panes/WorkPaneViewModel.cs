@@ -14,6 +14,7 @@ using Workbench.App.Continuity;
 using Workbench.Core.Continuity;
 using Workbench.Core.Workers;
 using Workbench.Storage.Workers;
+using Workbench.Storage.Continuity;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -34,9 +35,12 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
     private readonly WorkerExecutionRepository? _workerExecutions;
     private readonly CanonicalWorkerLaunchService? _canonicalWorkerLaunch;
     private readonly Func<HandoffRef, Task>? _openGuidedDecision;
+    private readonly B1AuthorityRepository? _authorityRepository;
+    private readonly B1WorkerExecutionBridgeService? _workerExecutionBridge;
+    private readonly CanonicalWorkerCompletionRepository? _canonicalWorkerCompletions;
     private CancellationTokenSource? _monitorCancellation;
     private WorkerSessionCardViewModel? _externalCliWorker;
-    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null, WorkerRemovalService? removalService = null, TaskRevisionRepository? taskRevisions = null, WorkerSessionRouter? workerRouter = null, CoreProject? project = null, Func<CancellationToken, Task>? restoreRuntimeAfterExternalCli = null, Func<Workbench.Runtime.Providers.ProviderAccountId, CancellationToken, Task<bool>>? releaseRuntimeForExternalCli = null, IAgentHost? agentHost = null, Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null, WorkerExecutionRepository? workerExecutions = null, CanonicalWorkerLaunchService? canonicalWorkerLaunch = null, Func<HandoffRef, Task>? openGuidedDecision = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; _taskRevisions = taskRevisions; _workerRouter = workerRouter; _project = project; _restoreRuntimeAfterExternalCli = restoreRuntimeAfterExternalCli; _releaseRuntimeForExternalCli = releaseRuntimeForExternalCli; _agentHost = agentHost; _openHostedSurface = openHostedSurface; _workerExecutions = workerExecutions; _canonicalWorkerLaunch = canonicalWorkerLaunch; _openGuidedDecision = openGuidedDecision; _removalService = removalService ?? (store is not null && runtimes is not null ? new WorkerRemovalService(runtimes, store, TimeProvider.System) : null); if (_agentHost is not null) _agentHost.EventReceived += OnAgentHostEvent; }
+    public WorkPaneViewModel(Func<Task> focus, IWorkerRoutingStore? store = null, AgentRuntimeRegistry? runtimes = null, IAgentInteractiveSessionLauncher? interactiveLauncher = null, WorkerRemovalService? removalService = null, TaskRevisionRepository? taskRevisions = null, WorkerSessionRouter? workerRouter = null, CoreProject? project = null, Func<CancellationToken, Task>? restoreRuntimeAfterExternalCli = null, Func<Workbench.Runtime.Providers.ProviderAccountId, CancellationToken, Task<bool>>? releaseRuntimeForExternalCli = null, IAgentHost? agentHost = null, Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null, WorkerExecutionRepository? workerExecutions = null, CanonicalWorkerLaunchService? canonicalWorkerLaunch = null, Func<HandoffRef, Task>? openGuidedDecision = null, B1AuthorityRepository? authorityRepository = null, B1WorkerExecutionBridgeService? workerExecutionBridge = null, CanonicalWorkerCompletionRepository? canonicalWorkerCompletions = null) { _focus = focus; _store = store; _runtimes = runtimes; _interactiveLauncher = interactiveLauncher; _taskRevisions = taskRevisions; _workerRouter = workerRouter; _project = project; _restoreRuntimeAfterExternalCli = restoreRuntimeAfterExternalCli; _releaseRuntimeForExternalCli = releaseRuntimeForExternalCli; _agentHost = agentHost; _openHostedSurface = openHostedSurface; _workerExecutions = workerExecutions; _canonicalWorkerLaunch = canonicalWorkerLaunch; _openGuidedDecision = openGuidedDecision; _authorityRepository = authorityRepository; _workerExecutionBridge = workerExecutionBridge; _canonicalWorkerCompletions = canonicalWorkerCompletions; _removalService = removalService ?? (store is not null && runtimes is not null ? new WorkerRemovalService(runtimes, store, TimeProvider.System) : null); if (_agentHost is not null) _agentHost.EventReceived += OnAgentHostEvent; }
     public ObservableCollection<WorkerSessionCardViewModel> Workers { get; } = [];
     public ObservableCollection<WorkerTranscriptLineViewModel> Transcript { get; } = [];
     public bool HasWorkers => Workers.Count > 0;
@@ -67,6 +71,7 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
                 card.SetHandoffDisplay(new HandoffDisplayViewModel(HandoffDisplayModelFactory.FromLegacyWorkerHandoff(
                     handoff,
                     $"Task {item.TaskId} / Execution {item.ExecutionId?.ToString() ?? "legacy"} / Session {item.Session.Id}")));
+            await TryLoadCanonicalHandoffAsync(item, card, cancellationToken);
             var persistedProgress = await _store.GetProgressAsync(item.ProjectId, item.TaskId, item.Session.Id, cancellationToken);
             if (persistedProgress is not null)
                 card.ApplyProgressSnapshot(persistedProgress.Steps);
@@ -568,6 +573,8 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
     }
 
     [RelayCommand] private Task OpenWorker(WorkerSessionCardViewModel worker) => OpenWorkerAsync(worker);
+    [RelayCommand] private Task ReviewHandoff(HandoffRef handoffRef) =>
+        _openGuidedDecision is null ? Task.CompletedTask : _openGuidedDecision(handoffRef);
     [RelayCommand] private async Task ContinueWorker(WorkerSessionCardViewModel worker)
     {
         ArgumentNullException.ThrowIfNull(worker);
@@ -731,6 +738,62 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
         return ValueTask.CompletedTask;
     }
     private static int Rank(AgentSessionStatus status) => status switch { AgentSessionStatus.Running => 0, AgentSessionStatus.WaitingApproval => 1, AgentSessionStatus.Ready => 2, AgentSessionStatus.Interrupted or AgentSessionStatus.Failed => 3, AgentSessionStatus.Completed => 4, _ => 5 };
+
+    private async Task TryLoadCanonicalHandoffAsync(
+        WorkerSessionRecord worker,
+        WorkerSessionCardViewModel card,
+        CancellationToken cancellationToken)
+    {
+        if (_authorityRepository is null ||
+            _workerExecutionBridge is null ||
+            _canonicalWorkerCompletions is null ||
+            worker.ExecutionId is not { } executionId)
+            return;
+
+        try
+        {
+            var executionLink = await _workerExecutionBridge.GetWorkerExecutionLinkAsync(
+                new ProjectRef(worker.ProjectId), executionId, cancellationToken);
+            if (executionLink is null)
+                return;
+
+            var completion = await _canonicalWorkerCompletions.GetByWorkerExecutionAsync(
+                worker.ProjectId, executionId, cancellationToken);
+            if (completion is null ||
+                completion.Status != CanonicalWorkerCompletionStatus.GovernanceReady ||
+                completion.Facts.AttemptRef != executionLink.AttemptRef)
+                return;
+
+            var state = await _authorityRepository.LoadProjectStateAsync(
+                new ProjectRef(worker.ProjectId), cancellationToken);
+            var considered = state.AuthorityDecisions
+                .SelectMany(value => value.ConsideredRefs)
+                .OfType<ConsideredRef.Handoff>()
+                .Select(value => value.HandoffRef)
+                .ToHashSet();
+            var handoff = state.Handoffs
+                .Where(value => value.HandoffRef == completion.Facts.HandoffRef &&
+                    !considered.Contains(value.HandoffRef))
+                .FirstOrDefault();
+            if (handoff is null)
+                return;
+
+            card.SetHandoffDisplay(new HandoffDisplayViewModel(
+                HandoffDisplayModelFactory.FromB1(
+                    state,
+                    handoff,
+                    $"Attempt {executionLink.AttemptRef} / Execution {executionId}")));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Canonical review is an enhancement to the Worker card; a
+            // transient projection read must not hide the legacy result.
+        }
+    }
 }
 public sealed partial class WorkerSessionCardViewModel : ObservableObject
 {

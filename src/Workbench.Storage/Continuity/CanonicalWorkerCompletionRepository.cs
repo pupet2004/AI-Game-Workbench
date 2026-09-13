@@ -74,6 +74,29 @@ public sealed class CanonicalWorkerCompletionRepository(WorkbenchDatabase databa
         return await ReadBySourceEventAsync(connection, null, projectId, sourceEventId, cancellationToken);
     }
 
+    public async Task<StoredCanonicalWorkerCompletion?> GetByWorkerExecutionAsync(
+        Guid projectId,
+        Guid workerExecutionId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = _database.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT source_event_id
+            FROM canonical_worker_completions
+            WHERE project_id=$project AND worker_execution_id=$execution
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$project", projectId.ToString());
+        command.Parameters.AddWithValue("$execution", workerExecutionId.ToString());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? await GetBySourceEventAsync(projectId, Guid.Parse(reader.GetString(0)), cancellationToken)
+            : null;
+    }
+
     public async Task<IReadOnlyList<StoredCanonicalWorkerCompletion>> ListPendingAsync(
         Guid projectId,
         CancellationToken cancellationToken = default)

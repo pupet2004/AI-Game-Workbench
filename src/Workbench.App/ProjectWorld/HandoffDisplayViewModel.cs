@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Workbench.App.ViewModels;
+using Workbench.Core.Continuity;
 
 namespace Workbench.App.ProjectWorld;
 
@@ -22,4 +23,10 @@ public sealed partial class HandoffDisplayViewModel : ViewModelBase
     public IReadOnlyList<string> Recommendations => Model.Recommendations;
     public string Provenance => Model.Provenance;
     public string? SourceReference => Model.SourceReference;
+    public HandoffRef? HandoffRef =>
+        Model.SourceKind == HandoffDisplaySourceKind.B1Handoff &&
+        Guid.TryParse(Model.SourceReference, out var value)
+            ? new HandoffRef(value)
+            : null;
+    public bool CanReview => HandoffRef is not null;
 }

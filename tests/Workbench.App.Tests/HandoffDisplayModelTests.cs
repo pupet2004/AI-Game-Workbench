@@ -21,6 +21,9 @@ public sealed class HandoffDisplayModelTests
         var model = HandoffDisplayModelFactory.FromB1(state, handoff, "Attempt / SessionBinding", ["chapter-01.md"], ["chapter-01.md"]);
 
         Assert.Equal(HandoffDisplaySourceKind.B1Handoff, model.SourceKind);
+        var viewModel = new HandoffDisplayViewModel(model);
+        Assert.True(viewModel.CanReview);
+        Assert.Equal(handoff.HandoffRef, viewModel.HandoffRef);
         Assert.Equal("Chapter completed", model.Result);
         Assert.Contains("not Accepted", model.AuthorityStatus);
         Assert.Equal("Attempt / SessionBinding", model.Provenance);
@@ -33,6 +36,7 @@ public sealed class HandoffDisplayModelTests
         var model = HandoffDisplayModelFactory.FromLegacyCompletion(completion, "Task / Execution / Session", ["chapter-01.md"]);
 
         Assert.Equal(HandoffDisplaySourceKind.LegacyWorkerCompletion, model.SourceKind);
+        Assert.False(new HandoffDisplayViewModel(model).CanReview);
         Assert.Contains("Legacy", model.AuthorityStatus);
         Assert.Equal(completion.PackageId.ToString(), model.SourceReference);
     }

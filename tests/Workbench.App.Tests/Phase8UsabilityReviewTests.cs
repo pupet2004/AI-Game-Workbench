@@ -72,6 +72,16 @@ public sealed class Phase8UsabilityReviewTests
     }
 
     [Fact]
+    public void Work_cards_can_send_canonical_handoffs_to_review_without_relabeling_legacy_results()
+    {
+        var markup = ReadView(Path.Combine("Panes", "WorkPaneView.axaml"));
+
+        Assert.Contains("HandoffDisplay.CanReview", markup, StringComparison.Ordinal);
+        Assert.Contains("ReviewHandoffCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Worker.Review]", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Main_window_keeps_the_sealed_journey_inside_the_supported_720p_minimum()
     {
         var markup = ReadView("MainWindow.axaml");

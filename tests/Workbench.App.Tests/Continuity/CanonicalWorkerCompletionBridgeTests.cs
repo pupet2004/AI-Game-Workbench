@@ -10,6 +10,7 @@ using Workbench.Core.Workers;
 using Workbench.Storage.Workers;
 using Workbench.Storage.Tasks;
 using Workbench.App.Tests.Support;
+using Workbench.App.ViewModels.Panes;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using CoreProject = Workbench.Core.Projects.Project;
@@ -18,8 +19,12 @@ namespace Workbench.App.Tests.Continuity;
 
 public sealed class CanonicalWorkerCompletionBridgeTests
 {
-    [Fact]
-    public async Task Legacy_router_completion_is_adapted_into_acceptance_spine_without_authority()
+    [Theory]
+    [InlineData(AssignmentDisposition.Accepted)]
+    [InlineData(AssignmentDisposition.Rejected)]
+    [InlineData(AssignmentDisposition.RevisionRequired)]
+    public async Task Legacy_router_completion_is_adapted_into_acceptance_spine_without_authority(
+        AssignmentDisposition disposition)
     {
         var runtime = new FakeAgentRuntime();
         var registry = new AgentRuntimeRegistry();
@@ -83,6 +88,63 @@ public sealed class CanonicalWorkerCompletionBridgeTests
         Assert.Equal(stateBeforeWorker.AuthorityDecisions.Count, state.AuthorityDecisions.Count);
         Assert.Null(completion.AuthorityDecisionRef);
         AssertAcceptedStateUnchanged(acceptedBeforeWorker, B1Projector.Build(state).AcceptedProjectState);
+
+        var otherBinding = await context.Services.B1NonAuthoritativeCommands.CreateSessionBindingAsync(
+            new CreateSessionBindingCommand(new ProjectRef(project.Id), principal,
+                new SessionBinding(new SessionBindingRef(Guid.NewGuid()), completion.Facts.AttemptRef,
+                    assignment.AssigneeActorRef, new ExternalSessionRef("test:other-worker"), now)));
+        var otherResult = await context.Services.B1NonAuthoritativeCommands.RecordClaimAsync(
+            new RecordClaimCommand(new ProjectRef(project.Id), principal, new ClaimRef(Guid.NewGuid()),
+                new ClaimantRef.LogicalActor(assignment.AssigneeActorRef), otherBinding.SessionBindingRef,
+                new ClaimPayload.Result("Result from a different Worker"), [], now.AddMinutes(1)));
+        await context.Services.B1NonAuthoritativeCommands.CreateHandoffAsync(
+            new CreateHandoffCommand(new ProjectRef(project.Id), principal,
+                new Handoff(new HandoffRef(Guid.NewGuid()), completion.Facts.AttemptRef, otherResult.ClaimRef,
+                    [], [], [], [], [], now.AddMinutes(1))));
+
+        HandoffRef? openedHandoff = null;
+        await using var pane = new WorkPaneViewModel(
+            () => Task.CompletedTask,
+            new TaskEventWorkerRoutingStore(
+                new Workbench.Storage.Workers.TaskEventRepository(context.Services.Database),
+                context.Services.WorkerExecutionRepository),
+            registry,
+            authorityRepository: context.Services.B1AuthorityRepository,
+            workerExecutionBridge: context.Services.B1WorkerExecutionBridge,
+            canonicalWorkerCompletions: context.Services.CanonicalWorkerCompletions,
+            openGuidedDecision: handoffRef =>
+            {
+                openedHandoff = handoffRef;
+                return Task.CompletedTask;
+            });
+        await pane.LoadAsync(project.Id);
+        var display = Assert.Single(pane.Workers).HandoffDisplay;
+        Assert.NotNull(display);
+        Assert.True(display.CanReview);
+        Assert.Equal(completion.Facts.HandoffRef, display.HandoffRef);
+        Assert.Equal(HandoffDisplaySourceKind.B1Handoff, display.Model.SourceKind);
+
+        await pane.ReviewHandoffCommand.ExecuteAsync(display.HandoffRef);
+
+        Assert.Equal(completion.Facts.HandoffRef, openedHandoff);
+        var afterNavigation = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(new ProjectRef(project.Id));
+        Assert.Equal(stateBeforeWorker.AuthorityDecisions.Count, afterNavigation.AuthorityDecisions.Count);
+        AssertAcceptedStateUnchanged(acceptedBeforeWorker, B1Projector.Build(afterNavigation).AcceptedProjectState);
+
+        await context.Services.GuidedDecision.CommitAsync(new GuidedDecisionRequest(
+            new ProjectRef(project.Id), principal, completion.Facts.HandoffRef, disposition,
+            ContributionDecisionMode.AdoptVerbatim, null,
+            disposition == AssignmentDisposition.RevisionRequired ? "Return with fresh evidence." : null));
+        await pane.LoadAsync(project.Id);
+
+        var reviewedDisplay = Assert.Single(pane.Workers).HandoffDisplay;
+        Assert.NotNull(reviewedDisplay);
+        Assert.False(reviewedDisplay.CanReview);
+        Assert.Equal(HandoffDisplaySourceKind.LegacyWorkerCompletion, reviewedDisplay.Model.SourceKind);
+        Assert.Contains("not Accepted Project State", reviewedDisplay.AuthorityStatus, StringComparison.Ordinal);
+        var afterReview = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(new ProjectRef(project.Id));
+        Assert.Contains(afterReview.Handoffs, value => value.HandoffRef == completion.Facts.HandoffRef);
+        Assert.Contains(afterReview.Claims, value => value.ClaimRef == completion.Facts.ResultClaimRef);
     }
 
     [Fact]

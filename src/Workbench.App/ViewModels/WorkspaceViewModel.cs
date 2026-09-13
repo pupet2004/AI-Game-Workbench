@@ -9,6 +9,7 @@ using Workbench.Runtime.Registry;
 using Workbench.Storage.Projects;
 using Workbench.Storage.Settings;
 using Workbench.Storage.Workers;
+using Workbench.Storage.Continuity;
 using Workbench.App.Leader;
 using Workbench.Storage.Leaders;
 using Workbench.Storage.Memory;
@@ -67,7 +68,10 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          Func<HandoffRef, Task>? openGuidedDecision = null,
          Func<WorkerSessionCardViewModel, Task>? openHostedSurface = null,
          Func<Task>? openProjectOverview = null,
-         Func<AuthorityConfirmationDraft, CancellationToken, Task<Workbench.Core.Continuity.AuthorityDecision>>? acceptAuthorityConfirmation = null)
+         Func<AuthorityConfirmationDraft, CancellationToken, Task<Workbench.Core.Continuity.AuthorityDecision>>? acceptAuthorityConfirmation = null,
+         B1AuthorityRepository? authorityRepository = null,
+         B1WorkerExecutionBridgeService? workerExecutionBridge = null,
+         CanonicalWorkerCompletionRepository? canonicalWorkerCompletions = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -90,7 +94,10 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             openHostedSurface: openHostedSurface,
             workerExecutions: workerExecutionRepository,
             canonicalWorkerLaunch: canonicalWorkerLaunch,
-            openGuidedDecision: openGuidedDecision);
+            openGuidedDecision: openGuidedDecision,
+            authorityRepository: authorityRepository,
+            workerExecutionBridge: workerExecutionBridge,
+            canonicalWorkerCompletions: canonicalWorkerCompletions);
         LibraryPane = new LibraryPaneViewModel(
             result,
             FocusLibraryAsync,
