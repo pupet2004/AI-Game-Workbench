@@ -205,6 +205,7 @@ public sealed class CanonicalWorkerCompletionBridgeTests
         Assert.Equal(decision.DecisionRef, completion.AuthorityDecisionRef);
         Assert.Empty(after.CurrentContributions);
         Assert.Equal(before.CurrentEffectiveRevisionRefs, after.CurrentEffectiveRevisionRefs);
+        await AssertGovernancePackageRemainsDurableAsync(context, prepared, completion);
         var summaries = await context.Services.ProjectSummaryRepository.QueryAsync(
             new Workbench.Storage.Memory.SummaryQuery(prepared.ProjectRef.Value, 20));
         Assert.Contains(summaries, value => value.Text.Contains("rejected", StringComparison.OrdinalIgnoreCase));
@@ -237,6 +238,7 @@ public sealed class CanonicalWorkerCompletionBridgeTests
             after.CurrentEffectiveRevisionRefs.Single().Value);
         Assert.Equal(AssignmentDisposition.RevisionRequired, decision.AssignmentDispositionEffect!.Disposition);
         Assert.NotNull(decision.RevisionActivationEffect);
+        await AssertGovernancePackageRemainsDurableAsync(context, prepared, completion);
     }
 
     [Fact]
@@ -322,7 +324,42 @@ public sealed class CanonicalWorkerCompletionBridgeTests
             attempt.AttemptRef, binding.SessionBindingRef, assignment.AssigneeActorRef,
             "Implemented the counter change.", "counter.js verified",
             [new EvidenceRef("test:counter")], now, ["The counter now increments by 2."]);
+        await context.Services.B1WorkerExecutionBridge.RecordVerificationEvidenceAsync(
+            new ProjectRef(project.Id),
+            new EvidenceRef("test:counter"),
+            executionId,
+            revision.TaskId,
+            revision.Id,
+            attempt.AttemptRef,
+            "Passed",
+            new { Check = "counter", Result = "passed" });
         return new PreparedCompletion(new ProjectRef(project.Id), principal, facts);
+    }
+
+    private static async Task AssertGovernancePackageRemainsDurableAsync(
+        AppTestContext context,
+        PreparedCompletion prepared,
+        StoredCanonicalWorkerCompletion completion)
+    {
+        Assert.Equal(prepared.Facts.CompletionId, completion.Facts.CompletionId);
+        Assert.Equal(prepared.Facts.ProposedChanges, completion.Facts.ProposedChanges);
+        Assert.Equal(prepared.Facts.EvidenceRefs, completion.Facts.EvidenceRefs);
+        Assert.NotNull(await context.Services.WorkerExecutionRepository.GetAsync(
+            prepared.ProjectRef.Value, prepared.Facts.WorkerExecutionId));
+
+        var evidence = await context.Services.B1Evidence.GetAsync(
+            prepared.ProjectRef, Assert.Single(prepared.Facts.EvidenceRefs));
+        Assert.NotNull(evidence);
+        Assert.NotNull(await context.Services.B1WorkerExecutionBridge.GetVerificationEvidenceAsync(
+            prepared.ProjectRef, prepared.Facts.WorkerExecutionId));
+
+        var state = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(prepared.ProjectRef);
+        var handoff = Assert.Single(state.Handoffs, value => value.HandoffRef == prepared.Facts.HandoffRef);
+        Assert.Contains(prepared.Facts.EvidenceRefs, evidenceRef => handoff.EvidenceRefs.Contains(evidenceRef));
+        Assert.Contains(state.Claims, value => value.ClaimRef == prepared.Facts.ResultClaimRef);
+        Assert.Contains(state.Claims, value => value.ClaimRef == prepared.Facts.ValidationClaimRef);
+        foreach (var proposalRef in handoff.ProposedContributionClaimRefs)
+            Assert.Contains(state.Claims, value => value.ClaimRef == proposalRef);
     }
 
     private sealed record PreparedCompletion(

@@ -4,12 +4,15 @@ using Workbench.App.Services;
 using Workbench.App.Tests.Support;
 using Workbench.App.Continuity;
 using Workbench.App.ProjectWorld;
+using Workbench.App.ViewModels.Leader;
+using Workbench.App.ViewModels.Panes;
 using Workbench.App.Worker;
 using Workbench.Core.Continuity;
 using Workbench.Core.Projects;
 using Workbench.Core.Tasks;
 using Workbench.Core.Workers;
 using Workbench.Runtime.Agents;
+using Workbench.Runtime.Providers;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Memory;
 using CoreProject = Workbench.Core.Projects.Project;
@@ -29,16 +32,32 @@ public sealed class TinyCounterAcceptanceSpineCertificationTests
         await InitializeGitWorkspaceAsync(projectPath);
         var project = new CoreProject(Guid.NewGuid(), "Tiny Counter Game", projectPath, ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var principal = new UserPrincipalRef("user:certification");
+        var leaderAccountId = ProviderAccountId.New();
+        var leaderSessionSequence = 0;
         var expectedStatements = new[] { "The counter now increments by 1.", "The counter now increments by 2.", "The counter now increments by 3." };
 
         for (var round = 0; round < expectedStatements.Length; round++)
         {
             var runtime = new FakeAgentRuntime();
-            var leaderAccountId = ProviderAccountId.New();
             var leaderRuntime = new FakeAgentRuntime(
                 "Leader Fake Provider",
                 "Leader Fake Account",
                 leaderAccountId);
+            var externalSessionId = $"leader-thread-{Interlocked.Increment(ref leaderSessionSequence)}";
+            leaderRuntime.CreateSessionOverride = request =>
+            {
+                var now = DateTimeOffset.UtcNow;
+                return new AgentSession(
+                    AgentSessionId.New(),
+                    request.AccountId,
+                    leaderRuntime.Provider.Id,
+                    request.ModelId,
+                    request.WorkingDirectory,
+                    externalSessionId,
+                    AgentSessionStatus.Ready,
+                    now,
+                    now);
+            };
             var registry = new AgentRuntimeRegistry();
             registry.Register(runtime);
             registry.Register(leaderRuntime);
@@ -80,11 +99,20 @@ public sealed class TinyCounterAcceptanceSpineCertificationTests
 
             if (round > 0)
             {
-                Assert.True(leaderPane.SessionNeedsResume);
                 var recoveredEpoch = leaderPane.SessionEpochId;
                 Assert.NotNull(recoveredEpoch);
+                Assert.True(leaderPane.CanStartNewBrain);
+                leaderRuntime.QueueTurn(new AgentTurnCompleted(
+                    new AgentResult(
+                        AgentSessionId.New(),
+                        AgentSessionStatus.Completed,
+                        $"Leader handoff: {expectedStatements[round - 1]}",
+                        null),
+                    DateTimeOffset.UtcNow));
                 await leaderPane.StartNewBrainAsync();
-                Assert.NotEqual(recoveredEpoch, leaderPane.SessionEpochId);
+                Assert.True(
+                    recoveredEpoch != leaderPane.SessionEpochId,
+                    $"Leader rollover failed: status={leaderPane.RuntimeStatus}; messages={string.Join(" | ", leaderPane.Messages.Select(message => message.Text))}");
 
                 leaderRuntime.QueueTurn(new AgentTurnCompleted(
                     new AgentResult(
@@ -95,7 +123,8 @@ public sealed class TinyCounterAcceptanceSpineCertificationTests
                     DateTimeOffset.UtcNow));
                 leaderPane.DraftMessage = "Read the current accepted counter state.";
                 await leaderPane.SendAsync();
-                var leaderRequest = Assert.Single(leaderRuntime.SentRequests);
+                Assert.Equal(2, leaderRuntime.SentRequests.Count);
+                var leaderRequest = leaderRuntime.SentRequests[^1];
                 Assert.Contains(expectedStatements[round - 1], leaderRequest.Text, StringComparison.Ordinal);
                 Assert.Contains("CURRENT AUTHORITY STATE (USER-ACCEPTED)", leaderRequest.Text, StringComparison.Ordinal);
             }
