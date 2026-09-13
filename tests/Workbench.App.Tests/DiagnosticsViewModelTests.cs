@@ -36,6 +36,21 @@ public sealed class DiagnosticsViewModelTests
         Assert.Equal("Connected", item.ConnectionStatus);
     }
 
+    [Fact]
+    public async Task Diagnostics_creates_a_consistent_database_backup()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var diagnostics = new DiagnosticsViewModel(context.Services, () => Task.CompletedTask);
+        await diagnostics.InitializeAsync();
+
+        await diagnostics.CreateBackupCommand.ExecuteAsync(null);
+
+        var backupPath = diagnostics.BackupStatus!["Backup created: ".Length..];
+        Assert.True(File.Exists(backupPath));
+        Assert.NotEqual(0, new FileInfo(backupPath).Length);
+        File.Delete(backupPath);
+    }
+
     private static Workbench.Runtime.Registry.AgentRuntimeRegistry RegistryWith(FakeAgentRuntime runtime)
     {
         var registry = new Workbench.Runtime.Registry.AgentRuntimeRegistry();

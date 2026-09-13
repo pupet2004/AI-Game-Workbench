@@ -16,15 +16,18 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
     private readonly AppServices _services;
     private readonly Func<Task> _back;
     private readonly LocalizationService _localization;
+    private readonly WorkbenchBackupService _backupService;
 
     public DiagnosticsViewModel(
         AppServices services,
         Func<Task> back,
-        LocalizationService? localization = null)
+        LocalizationService? localization = null,
+        WorkbenchBackupService? backupService = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _back = back ?? throw new ArgumentNullException(nameof(back));
         _localization = localization ?? new LocalizationService(services.WorkbenchSettingsRepository);
+        _backupService = backupService ?? new WorkbenchBackupService(services.Database, services.TimeProvider);
     }
 
     public string DatabasePath => _services.Database.DatabasePath;
@@ -47,6 +50,9 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(HasDatabaseError))]
     public partial string? DatabaseError { get; private set; }
 
+    [ObservableProperty]
+    public partial string? BackupStatus { get; private set; }
+
     public bool HasDatabaseError => !string.IsNullOrWhiteSpace(DatabaseError);
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default) =>
@@ -57,6 +63,23 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
 
     [RelayCommand]
     private Task Back() => _back();
+
+    [RelayCommand]
+    private async Task CreateBackup()
+    {
+        try
+        {
+            BackupStatus = string.Format(
+                _localization["Diagnostics.BackupCreated"],
+                await _backupService.CreateDatabaseBackupAsync());
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            BackupStatus = string.Format(
+                _localization["Diagnostics.BackupFailed"],
+                exception.Message);
+        }
+    }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {

@@ -27,6 +27,11 @@
                     <TextBlock Text="{Binding DatabaseStatus}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding DatabaseError}" IsVisible="{Binding HasDatabaseError}"
                                Foreground="IndianRed" TextWrapping="Wrap" />
+                    <Button Content="{Binding [Diagnostics.CreateBackup]}"
+                            Command="{Binding CreateBackupCommand}"
+                            IsEnabled="{Binding !Loading}"
+                            HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding BackupStatus}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 
