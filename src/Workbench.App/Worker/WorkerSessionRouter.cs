@@ -534,9 +534,10 @@ public sealed class WorkerSessionRouter(
             var taskState = assignments is null
                 ? null
                 : await assignments.GetRecoveryStateAsync(projectId, execution.TaskId, cancellationToken);
+            var taskTransitionRecorded = false;
             if (taskState?.Task.Status == TaskLifecycleStatus.Working && assignments is not null)
             {
-                await assignments.TryTransitionAsync(
+                var transition = await assignments.TryTransitionAsync(
                     projectId,
                     execution.TaskId,
                     TaskLifecycleStatus.Working,
@@ -546,8 +547,11 @@ public sealed class WorkerSessionRouter(
                     payload,
                     time.GetUtcNow(),
                     cancellationToken);
+                taskTransitionRecorded = transition is
+                    AssignmentStateTransitionResult.Applied or
+                    AssignmentStateTransitionResult.Idempotent;
             }
-            else if (_taskEvents is not null)
+            if (!taskTransitionRecorded && _taskEvents is not null)
             {
                 await _taskEvents.AppendAsync(new StoredTaskEvent(
                     eventId,
