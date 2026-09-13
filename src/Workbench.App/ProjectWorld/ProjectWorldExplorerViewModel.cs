@@ -77,6 +77,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     private readonly Func<AssignmentRef, Task> _beginManualWork;
     private readonly Func<Task> _openWorkspace;
     private readonly Func<Task> _openReview;
+    private readonly Func<Task> _openSettings;
     private readonly Func<HandoffRef, Task> _openGuidedDecision;
 
     public ProjectWorldExplorerViewModel(
@@ -86,7 +87,8 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         Func<AssignmentRef, Task>? beginManualWork = null,
         Func<Task>? openWorkspace = null,
         Func<Task>? openReview = null,
-        Func<HandoffRef, Task>? openGuidedDecision = null)
+        Func<HandoffRef, Task>? openGuidedDecision = null,
+        Func<Task>? openSettings = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _result = result ?? throw new ArgumentNullException(nameof(result));
@@ -94,6 +96,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         _beginManualWork = beginManualWork ?? (_ => Task.CompletedTask);
         _openWorkspace = openWorkspace ?? (() => Task.CompletedTask);
         _openReview = openReview ?? (() => Task.CompletedTask);
+        _openSettings = openSettings ?? (() => Task.CompletedTask);
         _openGuidedDecision = openGuidedDecision ?? (_ => Task.CompletedTask);
     }
 
@@ -354,6 +357,9 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
 
     [RelayCommand]
     private Task OpenReviewAsync() => _openReview();
+
+    [RelayCommand]
+    private Task OpenSettingsAsync() => _openSettings();
 
     [RelayCommand]
     private Task BeginManualWorkAsync(AssignmentRef assignmentRef) => _beginManualWork(assignmentRef);

@@ -234,14 +234,27 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task ShowProjectOverviewAsync(ProjectOpenResult result)
     {
-        var explorer = new ProjectWorldExplorerViewModel(
+        ProjectWorldExplorerViewModel? explorer = null;
+        async Task ReturnToProjectOverviewAsync()
+        {
+            if (explorer is not null)
+            {
+                CurrentPage = explorer;
+                return;
+            }
+
+            await ShowProjectOverviewAsync(result);
+        }
+
+        explorer = new ProjectWorldExplorerViewModel(
             _services,
             result,
             BackToHomeAsync,
             assignmentRef => ShowManualWorkAsync(result, assignmentRef),
             () => ShowThreeColumnWorkspaceAsync(result),
             () => ShowProjectReviewAsync(result),
-            handoffRef => ShowGuidedDecisionAsync(result, handoffRef));
+            handoffRef => ShowGuidedDecisionAsync(result, handoffRef),
+            () => ShowSettingsAsync(ReturnToProjectOverviewAsync));
         CurrentPage = explorer;
         await explorer.InitializeAsync();
     }

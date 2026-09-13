@@ -18,6 +18,7 @@
                     <Button Content="{Binding [Explorer.ReviewPending]}" Command="{Binding OpenReviewCommand}"
                             IsVisible="{Binding HasPendingHandoffs}" IsEnabled="{Binding !IsBusy}" />
                     <Button Content="{Binding [Explorer.OpenWorkspace]}" Command="{Binding OpenWorkspaceCommand}" IsEnabled="{Binding !IsBusy}" />
+                    <Button Content="{Binding [Explorer.Settings]}" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsBusy}" />
                     <Button Content="{Binding [Explorer.Home]}" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" />
                 </StackPanel>
             </Grid>

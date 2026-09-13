@@ -1,4 +1,5 @@
 using Workbench.App.Tests.Support;
+using Workbench.App.ProjectWorld;
 using Workbench.App.ViewModels;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
@@ -21,6 +22,27 @@ public sealed class NavigationTests
         await settings.BackCommand.ExecuteAsync(null);
 
         Assert.IsType<HomeViewModel>(main.CurrentPage);
+    }
+
+    [Fact]
+    public async Task Project_overview_settings_returns_to_same_overview()
+    {
+        using var folder = new TemporaryDirectory();
+        await using var context = await AppTestContext.CreateAsync(folder.Path);
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).CreateProjectAsync();
+        var setup = Assert.IsType<ProjectWorldSetupViewModel>(main.CurrentPage);
+        await setup.EstablishGovernanceCommand.ExecuteAsync(null);
+        await setup.PreviewInitializationCommand.ExecuteAsync(null);
+        await setup.ConfirmInitializationCommand.ExecuteAsync(null);
+
+        var overview = Assert.IsType<ProjectWorldExplorerViewModel>(main.CurrentPage);
+        await overview.OpenSettingsCommand.ExecuteAsync(null);
+        Assert.IsType<SettingsViewModel>(main.CurrentPage);
+        await ((SettingsViewModel)main.CurrentPage).BackCommand.ExecuteAsync(null);
+
+        Assert.Same(overview, main.CurrentPage);
     }
 
     [Fact]

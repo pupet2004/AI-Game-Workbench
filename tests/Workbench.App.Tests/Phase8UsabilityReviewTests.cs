@@ -71,6 +71,8 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("ActiveAssignmentSummary", markup, StringComparison.Ordinal);
         Assert.Contains("OpenReviewCommand", markup, StringComparison.Ordinal);
         Assert.Contains("[Explorer.ReviewPending]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Explorer.Settings]", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenSettingsCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]
