@@ -2,7 +2,8 @@
 
 Date: 2026-09-13
 
-Status: Passed for the deterministic provider-independent certification path.
+Status: Passed for the deterministic provider-independent certification path and
+the single-round live Codex Worker path.
 
 ## Certified Path
 
@@ -50,6 +51,25 @@ Each round proves:
 
 No database edits, CLI rescue path, or manual state repair are used.
 
+## Live Codex Gate
+
+The live gate
+`LiveCodexAcceptanceSpineTests.Real_codex_worker_change_requires_acceptance_and_survives_restart`
+passed with `WORKBENCH_RUN_CODEX_WORKER_LIVE=1`.
+
+It uses a real temporary Git workspace and confirms that Codex:
+
+1. Changes the real `src/counter.js` file from `+1` to `+2`.
+2. Returns a structured FinalReport with a Proposed State Contribution.
+3. Persists typed execution, verification evidence, Completion, Claims, and Handoff.
+4. Leaves AcceptedProjectState unchanged until the explicit User Accept decision.
+5. Updates AcceptedProjectState and Summary only after that decision.
+6. Releases and reopens the database, after which Leader boot context reads the
+   accepted `+2` statement.
+
+This is a single-round live-provider gate. The deterministic certification
+remains the three-round `+1 -> +2 -> +3` regression.
+
 ## Race Coverage
 
 A regression test covers a Legacy task transition reaching `Reviewing` before
@@ -75,7 +95,7 @@ not claim that every real external provider has completed the same path.
 
 ## Remaining Gates
 
-- Real-provider code-changing Worker demonstration.
+- Three consecutive real-provider rounds without state drift.
 - Crash-time workspace/execution reconciliation.
 - Automatic B1 successor task creation and dispatch.
 - Product-shell and UI workflow completion.
