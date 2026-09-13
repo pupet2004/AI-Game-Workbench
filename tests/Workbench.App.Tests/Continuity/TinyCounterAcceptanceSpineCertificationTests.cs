@@ -59,6 +59,7 @@ public sealed class TinyCounterAcceptanceSpineCertificationTests
             var currentResponsibility = currentAssignment.ResponsibilityRef;
             var currentWorker = currentAssignment.AssigneeActorRef;
             var before = await services.B1Projections.GetAcceptedProjectStateAsync(new ProjectRef(project.Id));
+            var summaryCountBeforeWorker = (await services.ProjectSummaryRepository.QueryAsync(new SummaryQuery(project.Id, 200))).Count;
 
             var increment = round + 1;
             var profile = ExecutionProfile.Create(runtime.Provider.Id.Value, runtime.Account.Id.Value.ToString(), "model-a", "fake-runtime");
@@ -127,6 +128,8 @@ public sealed class TinyCounterAcceptanceSpineCertificationTests
                 Assert.Single(verification.Checks, value => value.Name == "scope").Result);
             Assert.Equal(before.CurrentContributions.Count,
                 (await services.B1Projections.GetAcceptedProjectStateAsync(new ProjectRef(project.Id))).CurrentContributions.Count);
+            Assert.Equal(summaryCountBeforeWorker,
+                (await services.ProjectSummaryRepository.QueryAsync(new SummaryQuery(project.Id, 200))).Count);
 
             var decision = await services.GuidedDecision.CommitAsync(new GuidedDecisionRequest(
                 new ProjectRef(project.Id), principal, pending.Facts.HandoffRef, AssignmentDisposition.Accepted,

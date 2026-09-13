@@ -917,6 +917,7 @@ public sealed class WorkerSessionRouter(
 
                     if (isFinalReport &&
                         canPublishHandoff &&
+                        !linked &&
                         !canonicalCompletionBridged &&
                         completionSummaryConsumer is not null)
                     {
