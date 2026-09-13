@@ -48,7 +48,33 @@ public sealed class DiagnosticsViewModelTests
         var backupPath = diagnostics.BackupStatus!["Backup created: ".Length..];
         Assert.True(File.Exists(backupPath));
         Assert.NotEqual(0, new FileInfo(backupPath).Length);
+        await using (var backupConnection = new Workbench.Storage.Database.WorkbenchDatabase(backupPath).CreateConnection())
+        {
+            await backupConnection.OpenAsync();
+            await using var integrityCommand = backupConnection.CreateCommand();
+            integrityCommand.CommandText = "PRAGMA integrity_check;";
+            Assert.Equal("ok", await integrityCommand.ExecuteScalarAsync());
+        }
         File.Delete(backupPath);
+    }
+
+    [Fact]
+    public async Task Diagnostics_uses_a_unique_path_for_repeated_backups()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var diagnostics = new DiagnosticsViewModel(context.Services, () => Task.CompletedTask);
+        await diagnostics.InitializeAsync();
+
+        await diagnostics.CreateBackupCommand.ExecuteAsync(null);
+        var firstPath = diagnostics.BackupStatus!["Backup created: ".Length..];
+        await diagnostics.CreateBackupCommand.ExecuteAsync(null);
+        var secondPath = diagnostics.BackupStatus!["Backup created: ".Length..];
+
+        Assert.NotEqual(firstPath, secondPath);
+        Assert.True(File.Exists(firstPath));
+        Assert.True(File.Exists(secondPath));
+        File.Delete(firstPath);
+        File.Delete(secondPath);
     }
 
     private static Workbench.Runtime.Registry.AgentRuntimeRegistry RegistryWith(FakeAgentRuntime runtime)
