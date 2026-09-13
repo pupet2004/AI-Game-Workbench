@@ -69,6 +69,19 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("AcceptedStatementCountText", markup, StringComparison.Ordinal);
         Assert.Contains("PendingHandoffSummary", markup, StringComparison.Ordinal);
         Assert.Contains("ActiveAssignmentSummary", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenReviewCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Explorer.ReviewPending]", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Review_queue_is_a_first_class_project_destination()
+    {
+        var markup = ReadView("ProjectReviewView.axaml");
+
+        Assert.Contains("[Review.Title]", markup, StringComparison.Ordinal);
+        Assert.Contains("PendingHandoffs", markup, StringComparison.Ordinal);
+        Assert.Contains("ReviewHandoffCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Review.Back]", markup, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -76,6 +76,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     private readonly Func<Task> _backToHome;
     private readonly Func<AssignmentRef, Task> _beginManualWork;
     private readonly Func<Task> _openWorkspace;
+    private readonly Func<Task> _openReview;
     private readonly Func<HandoffRef, Task> _openGuidedDecision;
 
     public ProjectWorldExplorerViewModel(
@@ -84,6 +85,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         Func<Task> backToHome,
         Func<AssignmentRef, Task>? beginManualWork = null,
         Func<Task>? openWorkspace = null,
+        Func<Task>? openReview = null,
         Func<HandoffRef, Task>? openGuidedDecision = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
@@ -91,6 +93,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         _backToHome = backToHome ?? throw new ArgumentNullException(nameof(backToHome));
         _beginManualWork = beginManualWork ?? (_ => Task.CompletedTask);
         _openWorkspace = openWorkspace ?? (() => Task.CompletedTask);
+        _openReview = openReview ?? (() => Task.CompletedTask);
         _openGuidedDecision = openGuidedDecision ?? (_ => Task.CompletedTask);
     }
 
@@ -113,6 +116,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             LocalizationService.Current["Dynamic.ActiveAssignmentsCount"],
             ActiveWork.Count);
     public int PendingHandoffCount { get; private set; }
+    public bool HasPendingHandoffs => PendingHandoffCount > 0;
     public string PendingHandoffSummary => PendingHandoffCount == 0
         ? LocalizationService.Current["Explorer.NoPendingHandoffs"]
         : string.Format(
@@ -267,6 +271,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
 
             PendingHandoffCount = PendingHandoffs.Count;
             OnPropertyChanged(nameof(PendingHandoffCount));
+            OnPropertyChanged(nameof(HasPendingHandoffs));
             OnPropertyChanged(nameof(PendingHandoffSummary));
             OnPropertyChanged(nameof(ProjectPulseText));
 
@@ -346,6 +351,9 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         PendingHandoffs.FirstOrDefault() is { } pending
             ? _openGuidedDecision(pending.HandoffRef)
             : _openWorkspace();
+
+    [RelayCommand]
+    private Task OpenReviewAsync() => _openReview();
 
     [RelayCommand]
     private Task BeginManualWorkAsync(AssignmentRef assignmentRef) => _beginManualWork(assignmentRef);

@@ -214,9 +214,24 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             BackToHomeAsync,
             assignmentRef => ShowManualWorkAsync(result, assignmentRef),
             () => ShowThreeColumnWorkspaceAsync(result),
+            () => ShowProjectReviewAsync(result),
             handoffRef => ShowGuidedDecisionAsync(result, handoffRef));
         CurrentPage = explorer;
         await explorer.InitializeAsync();
+    }
+
+    private async Task ShowProjectReviewAsync(ProjectOpenResult result)
+    {
+        var review = new ProjectReviewViewModel(
+            _services,
+            result,
+            () => ShowProjectOverviewAsync(result),
+            handoffRef => ShowGuidedDecisionAsync(
+                result,
+                handoffRef,
+                () => ShowProjectReviewAsync(result)));
+        CurrentPage = review;
+        await review.InitializeAsync();
     }
 
     private Task<AuthorityDecision> AcceptAuthorityConfirmationAsync(
@@ -278,14 +293,17 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await surface.HydrateTranscriptAsync();
     }
 
-    private async Task ShowGuidedDecisionAsync(ProjectOpenResult result, HandoffRef handoffRef)
+    private async Task ShowGuidedDecisionAsync(
+        ProjectOpenResult result,
+        HandoffRef handoffRef,
+        Func<Task>? afterCommit = null)
     {
         var decision = new GuidedDecisionViewModel(
             _services,
             result,
             handoffRef,
             back: () => ShowProjectOverviewAsync(result),
-            afterCommit: () => ShowProjectOverviewAsync(result));
+            afterCommit: afterCommit ?? (() => ShowProjectOverviewAsync(result)));
         CurrentPage = decision;
         await decision.InitializeAsync();
     }
