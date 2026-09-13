@@ -865,7 +865,6 @@ public sealed class WorkerSessionRouter(
                     }
 
                     if (isFinalReport &&
-                        canPublishHandoff &&
                         assignments is not null &&
                         _canonicalWorkerCompletionBridge is not null &&
                         effectiveRevision is not null &&

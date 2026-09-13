@@ -8,6 +8,7 @@ using Workbench.Core.Projects;
 using Workbench.Core.Tasks;
 using Workbench.Core.Workers;
 using Workbench.Storage.Workers;
+using Workbench.Storage.Tasks;
 using Workbench.App.Tests.Support;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
@@ -82,6 +83,81 @@ public sealed class CanonicalWorkerCompletionBridgeTests
         Assert.Equal(stateBeforeWorker.AuthorityDecisions.Count, state.AuthorityDecisions.Count);
         Assert.Null(completion.AuthorityDecisionRef);
         AssertAcceptedStateUnchanged(acceptedBeforeWorker, B1Projector.Build(state).AcceptedProjectState);
+    }
+
+    [Fact]
+    public async Task Canonical_completion_survives_legacy_review_transition_race()
+    {
+        var runtime = new FakeAgentRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: registry);
+        using var projectDirectory = new TemporaryDirectory("router-canonical-race");
+        var now = context.Time.GetUtcNow();
+        var project = new CoreProject(Guid.NewGuid(), "Router race", projectDirectory.Path, ProjectType.Generic, null, now, now);
+        var principal = context.Services.UserPrincipalProvider.GetCurrent();
+        await context.Services.B1ProjectGovernance.CreateGovernedProjectAsync(project, principal);
+        await context.Services.ProjectWorldInitialization.CommitAsync(new ProjectWorldInitializationRequest(
+            new ProjectRef(project.Id), principal, RoleKind.Worker,
+            "Complete the bounded task", "A completed bounded result", "Implement the task."));
+
+        var profile = ExecutionProfile.Create(runtime.Provider.Id.Value, runtime.Account.Id.Value.ToString(), "model-a", "runtime");
+        var taskRevision = new TaskRevision(Guid.NewGuid(), 1, "Complete task", "`result.txt`", "Do not change unrelated files",
+            ["Create `result.txt`"], TaskRiskLevel.Low, profile, "test", TaskRevisionApprover.User, now, null);
+        await context.Services.TaskRepository.CreateAsync(project.Id, new TaskDraft(
+            taskRevision.TaskId, "Canonical race task", taskRevision.Goal, taskRevision.Scope,
+            taskRevision.OutOfScope, taskRevision.Acceptance, taskRevision.RiskLevel, profile, now, taskRevision));
+
+        runtime.BeforeSendAsync = async (_, _) =>
+        {
+            var transition = await new AssignmentReviewStateRepository(context.Services.Database).TryTransitionAsync(
+                project.Id,
+                taskRevision.TaskId,
+                TaskLifecycleStatus.Working,
+                TaskLifecycleStatus.Reviewing,
+                Guid.NewGuid(),
+                "WorkerFinalReportReceived",
+                "{\"racing\":true}",
+                now);
+            Assert.Equal(AssignmentStateTransitionResult.Applied, transition);
+        };
+        runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(
+                AgentSessionId.New(),
+                AgentSessionStatus.Completed,
+                JsonSerializer.Serialize(new
+                {
+                    Kind = "FinalReport",
+                    Message = "Created result.txt.",
+                    ValidationSummary = "tests passed",
+                    ProposedChanges = new[] { "The project now produces result.txt." }
+                }),
+                null),
+            now));
+
+        var executionId = Guid.NewGuid();
+        var identity = WorkerExecutionIdentity.Start(taskRevision.CreateReference(), "base", "main",
+            ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId), profile, "main", projectDirectory.Path);
+        StoredCanonicalWorkerCompletion? completion = null;
+        var result = await context.Services.WorkerSessionRouter.StartAsync(new WorkerStartRequest(
+            project, taskRevision.TaskId, taskRevision.Id, "Canonical race task", profile, "Implement the task.", null, "Worker",
+            WaitForCompletion: true,
+            ExecutionId: executionId,
+            ExecutionIdentity: identity,
+            OnCanonicalCompletion: (value, _) =>
+            {
+                completion = value;
+                return Task.CompletedTask;
+            }));
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.NotNull(completion);
+        Assert.Equal(CanonicalWorkerCompletionStatus.GovernanceReady, completion!.Status);
+        var state = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(new ProjectRef(project.Id));
+        Assert.Contains(state.Claims, value => value.ClaimRef == completion.Facts.ResultClaimRef);
+        Assert.Contains(state.Handoffs, value => value.HandoffRef == completion.Facts.HandoffRef);
+        Assert.Equal(TaskLifecycleStatus.Reviewing,
+            (await context.Services.TaskRepository.GetAsync(project.Id, taskRevision.TaskId))!.Status);
     }
 
     [Fact]
