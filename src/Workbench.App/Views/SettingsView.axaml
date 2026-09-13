@@ -36,6 +36,18 @@
             </StackPanel>
             <TextBlock Text="{Binding LeaderSessionRotationPolicy}" FontWeight="SemiBold" />
             <Separator Margin="0,8" />
+            <TextBlock Text="{Binding [Settings.Authority]}" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding [Settings.AuthorityDescription]}" TextWrapping="Wrap" />
+            <StackPanel Spacing="8">
+                <Button Content="{Binding [Settings.Cautious]}" Command="{Binding UseCautiousAuthorityCommand}" />
+                <TextBlock Text="{Binding [Settings.CautiousDescription]}" TextWrapping="Wrap" />
+                <Button Content="{Binding [Settings.Balanced]}" Command="{Binding UseBalancedAuthorityCommand}" />
+                <TextBlock Text="{Binding [Settings.BalancedDescription]}" TextWrapping="Wrap" />
+                <Button Content="{Binding [Settings.Autonomous]}" Command="{Binding UseAutonomousAuthorityCommand}" />
+                <TextBlock Text="{Binding [Settings.AutonomousDescription]}" TextWrapping="Wrap" />
+            </StackPanel>
+            <TextBlock Text="{Binding LeaderAuthorityMode}" FontWeight="SemiBold" />
+            <Separator Margin="0,8" />
             <TextBlock Text="{Binding [Settings.Agents]}" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="{Binding [Settings.AgentsDescription]}" TextWrapping="Wrap" />
             <StackPanel Spacing="10">

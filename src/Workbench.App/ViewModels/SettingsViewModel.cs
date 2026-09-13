@@ -45,6 +45,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public partial LeaderSessionRotationPolicy LeaderSessionRotationPolicy { get; set; } = LeaderSessionRotationPolicy.Auto;
 
     [ObservableProperty]
+    public partial LeaderAuthorityMode LeaderAuthorityMode { get; set; } = LeaderAuthorityMode.Balanced;
+
+    [ObservableProperty]
     public partial bool IsCodexEnabled { get; set; }
 
     [ObservableProperty]
@@ -66,6 +69,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         await _localization.InitializeAsync(cancellationToken);
         LeaderSessionRotationPolicy = await _settings.GetLeaderSessionRotationPolicyAsync(cancellationToken);
+        LeaderAuthorityMode = await _settings.GetLeaderAuthorityModeAsync(cancellationToken);
         var codex = await _settings.GetAgentRuntimeSettingsAsync("codex", cancellationToken: cancellationToken);
         var openCode = await _settings.GetAgentRuntimeSettingsAsync("opencode", cancellationToken: cancellationToken);
         IsCodexEnabled = codex.IsEnabled;
@@ -91,6 +95,23 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [RelayCommand]
     private Task UseManualRotation() => SetLeaderSessionRotationPolicyAsync(LeaderSessionRotationPolicy.ManualOnly);
+
+    public async Task SetLeaderAuthorityModeAsync(
+        LeaderAuthorityMode mode,
+        CancellationToken cancellationToken = default)
+    {
+        await _settings.SaveLeaderAuthorityModeAsync(mode, cancellationToken);
+        LeaderAuthorityMode = mode;
+    }
+
+    [RelayCommand]
+    private Task UseCautiousAuthority() => SetLeaderAuthorityModeAsync(LeaderAuthorityMode.Cautious);
+
+    [RelayCommand]
+    private Task UseBalancedAuthority() => SetLeaderAuthorityModeAsync(LeaderAuthorityMode.Balanced);
+
+    [RelayCommand]
+    private Task UseAutonomousAuthority() => SetLeaderAuthorityModeAsync(LeaderAuthorityMode.Autonomous);
 
     [RelayCommand]
     private async Task SaveAgentSettings()

@@ -130,6 +130,8 @@ public sealed class Phase8UsabilityReviewTests
 
         Assert.Contains("[Settings.Diagnostics]", markup, StringComparison.Ordinal);
         Assert.Contains("OpenDiagnosticsCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Settings.Authority]", markup, StringComparison.Ordinal);
+        Assert.Contains("UseBalancedAuthorityCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]

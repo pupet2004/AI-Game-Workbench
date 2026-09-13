@@ -22,6 +22,21 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Global_authority_setting_can_be_changed_and_survives_service_recreation()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var settings = context.CreateSettings();
+        await settings.InitializeAsync();
+
+        await settings.SetLeaderAuthorityModeAsync(LeaderAuthorityMode.Cautious);
+
+        var recreated = Workbench.App.Services.AppServices.CreateForDatabasePath(context.DatabasePath, context.Time);
+        await recreated.InitializeAsync();
+        Assert.Equal(LeaderAuthorityMode.Cautious, await recreated.WorkbenchSettingsRepository.GetLeaderAuthorityModeAsync());
+        await recreated.DisposeAsync();
+    }
+
+    [Fact]
     public async Task Project_rotation_override_can_be_changed_and_return_to_inherit_global()
     {
         await using var context = await AppTestContext.CreateAsync();
