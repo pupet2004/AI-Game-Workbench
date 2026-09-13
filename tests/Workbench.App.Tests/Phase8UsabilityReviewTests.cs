@@ -85,12 +85,24 @@ public sealed class Phase8UsabilityReviewTests
     }
 
     [Fact]
-    public void Workspace_keeps_review_reachable_from_the_three_pane_work_surface()
+    public void Workspace_keeps_review_and_settings_reachable_from_the_three_pane_work_surface()
     {
         var markup = ReadView("WorkspaceView.axaml");
 
         Assert.Contains("[Workspace.Review]", markup, StringComparison.Ordinal);
         Assert.Contains("OpenProjectReviewPageCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Workspace.Settings]", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenSettingsPageCommand", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Settings_back_label_does_not_assume_the_entry_page()
+    {
+        var markup = ReadView("SettingsView.axaml");
+
+        Assert.Contains("[Settings.Back]", markup, StringComparison.Ordinal);
+        Assert.Contains("BackCommand", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("[Settings.Projects]", markup, StringComparison.Ordinal);
     }
 
     [Fact]

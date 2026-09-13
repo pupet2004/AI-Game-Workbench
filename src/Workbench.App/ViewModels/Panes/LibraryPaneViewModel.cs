@@ -298,13 +298,18 @@ public partial class LibraryPaneViewModel : ViewModelBase
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        await RefreshRotationSettingsAsync(cancellationToken);
+        await LoadLibraryAsync(cancellationToken);
+    }
+
+    public async Task RefreshRotationSettingsAsync(CancellationToken cancellationToken = default)
+    {
         if (_rotationState is not null)
         {
             var state = await _rotationState.GetAsync(Result.Project.Id, cancellationToken);
             RotationPolicyOverride = state.ProjectOverride;
             EffectiveRotationPolicy = state.EffectivePolicy;
         }
-        await LoadLibraryAsync(cancellationToken);
     }
 
     public async Task LoadLibraryAsync(CancellationToken cancellationToken = default)

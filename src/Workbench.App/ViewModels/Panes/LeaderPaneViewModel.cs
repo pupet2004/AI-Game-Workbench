@@ -332,6 +332,25 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CanSend))]
     public partial string DraftMessage { get; set; } = string.Empty;
 
+    public async Task RefreshRotationSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_rotationState is not null)
+        {
+            var state = await _rotationState.GetAsync(_project.Id, cancellationToken);
+            _conversation.RotationMessage = state.Evaluation.IsDue
+                ? state.EffectivePolicy switch
+                {
+                    LeaderSessionRotationPolicy.Auto => LocalizationService.Current["Dynamic.RotationAuto"],
+                    LeaderSessionRotationPolicy.Ask => LocalizationService.Current["Dynamic.RotationAsk"],
+                    _ => null
+                }
+                : null;
+            OnPropertyChanged(nameof(RotationMessage));
+            OnPropertyChanged(nameof(HasRotationMessage));
+            OnPropertyChanged(nameof(ShowRotationMessage));
+        }
+    }
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await _sessionManager.LoadAsync(_project.Id, cancellationToken);
@@ -346,18 +365,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             _initialAnchorRequested = true;
             InitialAnchorRequestVersion++;
         }
-        if (_rotationState is not null)
-        {
-            var state = await _rotationState.GetAsync(_project.Id, cancellationToken);
-            _conversation.RotationMessage = state.Evaluation.IsDue
-                ? state.EffectivePolicy switch
-                {
-                    LeaderSessionRotationPolicy.Auto => LocalizationService.Current["Dynamic.RotationAuto"],
-                    LeaderSessionRotationPolicy.Ask => LocalizationService.Current["Dynamic.RotationAsk"],
-                    _ => null
-                }
-                : null;
-        }
+        await RefreshRotationSettingsAsync(cancellationToken);
 
         if (_conversation.Session is not null)
         {

@@ -3,11 +3,89 @@ using Workbench.App.ViewModels;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Microsoft.Data.Sqlite;
+using Workbench.Core.Leaders;
 
 namespace Workbench.App.Tests;
 
 public sealed class NavigationTests
 {
+    [Fact]
+    public async Task Home_settings_returns_to_projects()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+
+        await ((HomeViewModel)main.CurrentPage).ShowSettingsCommand.ExecuteAsync(null);
+        var settings = Assert.IsType<SettingsViewModel>(main.CurrentPage);
+        await settings.BackCommand.ExecuteAsync(null);
+
+        Assert.IsType<HomeViewModel>(main.CurrentPage);
+    }
+
+    [Fact]
+    public async Task Workspace_settings_returns_to_same_workspace_with_draft_session_and_layout()
+    {
+        using var folder = new TemporaryDirectory();
+        var runtime = new FakeAgentRuntime();
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: RegistryWith(runtime));
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        QueueCompleted(runtime, "answer");
+        workspace.LeaderPane.DraftMessage = "question";
+        await workspace.LeaderPane.SendAsync();
+        workspace.LeaderPane.DraftMessage = "Unsent follow-up";
+        workspace.ApplyPaneWidths(400, 400, 200);
+        var layout = workspace.Layout;
+        var session = workspace.LeaderPane.Session;
+
+        for (var visit = 0; visit < 2; visit++)
+        {
+            await workspace.OpenSettingsPageCommand.ExecuteAsync(null);
+            var settings = Assert.IsType<SettingsViewModel>(main.CurrentPage);
+            Assert.Equal(layout, await context.Services.ProjectLayoutRepository.GetAsync(workspace.Result.Project.Id));
+            await settings.BackCommand.ExecuteAsync(null);
+
+            Assert.Same(workspace, main.CurrentPage);
+            Assert.Same(session, workspace.LeaderPane.Session);
+            Assert.Equal("Unsent follow-up", workspace.LeaderPane.DraftMessage);
+            Assert.Equal(layout, workspace.Layout);
+            Assert.Equal(["question", "answer"], workspace.LeaderPane.Messages.Select(message => message.Text));
+        }
+
+        Assert.Single(runtime.CreatedSessions);
+    }
+
+    [Theory]
+    [InlineData(null, LeaderSessionRotationPolicy.ManualOnly)]
+    [InlineData(LeaderSessionRotationPolicy.Ask, LeaderSessionRotationPolicy.Ask)]
+    public async Task Returning_from_settings_refreshes_rotation_policy_and_preserves_project_override(
+        LeaderSessionRotationPolicy? projectOverride,
+        LeaderSessionRotationPolicy expectedPolicy)
+    {
+        using var folder = new TemporaryDirectory();
+        await using var context = await AppTestContext.CreateAsync();
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        await workspace.LibraryPane.SetLeaderSessionRotationPolicyOverrideAsync(projectOverride);
+
+        await workspace.OpenSettingsPageCommand.ExecuteAsync(null);
+        var settings = Assert.IsType<SettingsViewModel>(main.CurrentPage);
+        await settings.SetLeaderSessionRotationPolicyAsync(LeaderSessionRotationPolicy.ManualOnly);
+        Assert.Equal(
+            LeaderSessionRotationPolicy.ManualOnly,
+            await context.Services.WorkbenchSettingsRepository.GetLeaderSessionRotationPolicyAsync());
+        await settings.BackCommand.ExecuteAsync(null);
+
+        Assert.Same(workspace, main.CurrentPage);
+        Assert.Equal(expectedPolicy, workspace.LibraryPane.EffectiveRotationPolicy);
+        Assert.Equal(projectOverride, workspace.LibraryPane.RotationPolicyOverride);
+    }
+
     [Fact]
     public async Task App_starts_on_home()
     {

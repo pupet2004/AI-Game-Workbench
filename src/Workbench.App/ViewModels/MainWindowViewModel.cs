@@ -106,9 +106,19 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         CurrentPage = setup;
     }
 
-    public async Task ShowSettingsAsync()
+    public Task ShowSettingsAsync() => ShowSettingsAsync(BackToHomeAsync);
+
+    private async Task ShowSettingsAsync(Func<Task> back)
     {
-        var settings = new SettingsViewModel(_services.WorkbenchSettingsRepository, BackToHomeAsync, _localization);
+        if (CurrentPage is WorkspaceViewModel workspace)
+        {
+            await workspace.FlushLayoutAsync();
+        }
+
+        var settings = new SettingsViewModel(
+            _services.WorkbenchSettingsRepository,
+            back,
+            _localization);
         CurrentPage = settings;
         await settings.InitializeAsync();
     }
@@ -153,7 +163,21 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task ShowThreeColumnWorkspaceAsync(ProjectOpenResult result)
     {
-        var workspace = new WorkspaceViewModel(
+        WorkspaceViewModel? workspace = null;
+        async Task ReturnToWorkspaceAsync()
+        {
+            if (workspace is not null)
+            {
+                await workspace.LeaderPane.RefreshRotationSettingsAsync();
+                await workspace.LibraryPane.RefreshRotationSettingsAsync();
+                CurrentPage = workspace;
+                return;
+            }
+
+            await ShowProjectOverviewAsync(result);
+        }
+
+        workspace = new WorkspaceViewModel(
             result,
             _services.ProjectLayoutRepository,
             BackToHomeAsync,
@@ -194,6 +218,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result),
              openProjectReview: () => ShowProjectReviewAsync(result),
+             openSettings: () => ShowSettingsAsync(ReturnToWorkspaceAsync),
              acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();

@@ -7,7 +7,7 @@
         <StackPanel Margin="32" Spacing="16" MaxWidth="620">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="{Binding [Settings.Title]}" FontSize="28" FontWeight="SemiBold" />
-                <Button Grid.Column="1" Content="{Binding [Settings.Projects]}" Command="{Binding BackCommand}" />
+                <Button Grid.Column="1" Content="{Binding [Settings.Back]}" Command="{Binding BackCommand}" />
             </Grid>
             <TextBlock Text="{Binding [Settings.Language]}" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="{Binding [Settings.LanguageDescription]}" TextWrapping="Wrap" />
