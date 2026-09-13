@@ -34,8 +34,14 @@ public sealed class TinyCounterAcceptanceSpineCertificationTests
         for (var round = 0; round < expectedStatements.Length; round++)
         {
             var runtime = new FakeAgentRuntime();
+            var leaderAccountId = ProviderAccountId.New();
+            var leaderRuntime = new FakeAgentRuntime(
+                "Leader Fake Provider",
+                "Leader Fake Account",
+                leaderAccountId);
             var registry = new AgentRuntimeRegistry();
             registry.Register(runtime);
+            registry.Register(leaderRuntime);
             await using var services = AppServices.CreateForDatabasePath(databasePath, TimeProvider.System, registry);
             await services.InitializeAsync();
             if (round == 0)
@@ -51,6 +57,59 @@ public sealed class TinyCounterAcceptanceSpineCertificationTests
                 for (var priorRound = 0; priorRound < round; priorRound++)
                     Assert.Contains(expectedStatements[priorRound], boot.Text, StringComparison.Ordinal);
                 Assert.Contains("CURRENT AUTHORITY STATE (USER-ACCEPTED)", boot.Text, StringComparison.Ordinal);
+            }
+
+            var leaderManager = new ProjectLeaderSessionManager(
+                services.ProjectLeaderRepository,
+                services.LeaderSessionEpochRepository,
+                services.LeaderMessageRepository);
+            var leaderPane = new LeaderPaneViewModel(
+                project,
+                registry,
+                leaderManager,
+                () => Task.CompletedTask,
+                rolloverService: services.LeaderSessionRolloverService,
+                epochRepository: services.LeaderSessionEpochRepository,
+                messageRepository: services.LeaderMessageRepository,
+                bootContextBuilder: services.LeaderBootContextBuilder,
+                agentHost: services.AgentHost);
+            await leaderPane.InitializeAsync();
+            Assert.NotEmpty(leaderPane.AvailableModels);
+            leaderPane.SelectedModel = leaderPane.AvailableModels
+                .Single(option => option.Profile.AccountId == leaderAccountId);
+
+            if (round > 0)
+            {
+                Assert.True(leaderPane.SessionNeedsResume);
+                var recoveredEpoch = leaderPane.SessionEpochId;
+                Assert.NotNull(recoveredEpoch);
+                await leaderPane.StartNewBrainAsync();
+                Assert.NotEqual(recoveredEpoch, leaderPane.SessionEpochId);
+
+                leaderRuntime.QueueTurn(new AgentTurnCompleted(
+                    new AgentResult(
+                        AgentSessionId.New(),
+                        AgentSessionStatus.Completed,
+                        $"Leader confirmed {expectedStatements[round - 1]}",
+                        null),
+                    DateTimeOffset.UtcNow));
+                leaderPane.DraftMessage = "Read the current accepted counter state.";
+                await leaderPane.SendAsync();
+                var leaderRequest = Assert.Single(leaderRuntime.SentRequests);
+                Assert.Contains(expectedStatements[round - 1], leaderRequest.Text, StringComparison.Ordinal);
+                Assert.Contains("CURRENT AUTHORITY STATE (USER-ACCEPTED)", leaderRequest.Text, StringComparison.Ordinal);
+            }
+            else
+            {
+                leaderRuntime.QueueTurn(new AgentTurnCompleted(
+                    new AgentResult(
+                        AgentSessionId.New(),
+                        AgentSessionStatus.Completed,
+                        "Leader established the initial counter state.",
+                        null),
+                    DateTimeOffset.UtcNow));
+                leaderPane.DraftMessage = "Establish the current counter state.";
+                await leaderPane.SendAsync();
             }
 
             var initialProjection = await services.B1Projections.GetProjectProjectionAsync(new ProjectRef(project.Id));
