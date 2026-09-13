@@ -35,7 +35,8 @@ public sealed record WorkerStartRequest(
     SessionBindingRef? B1SessionBindingRef = null,
     LogicalActorRef? B1LogicalActorRef = null,
     UserPrincipalRef? B1OperatorRef = null,
-    Func<StoredCanonicalWorkerCompletion, CancellationToken, Task>? OnCanonicalCompletion = null);
+    Func<StoredCanonicalWorkerCompletion, CancellationToken, Task>? OnCanonicalCompletion = null,
+    AgentAccessMode AccessMode = AgentAccessMode.Restricted);
 
 public sealed record WorkerStartResult(bool Succeeded, AgentSession? WorkerSession, string? Error);
 
@@ -668,7 +669,11 @@ public sealed class WorkerSessionRouter(
             AgentSession? createdSession = null;
             try
             {
-                createdSession = await _agentHost.CreateSessionAsync(new CreateAgentSessionRequest(runtime.Account.Id, request.ExecutionProfile.ModelProfileId, request.Project.RootPath), cancellationToken);
+                createdSession = await _agentHost.CreateSessionAsync(new CreateAgentSessionRequest(
+                    runtime.Account.Id,
+                    request.ExecutionProfile.ModelProfileId,
+                    request.Project.RootPath,
+                    request.AccessMode), cancellationToken);
                 session = createdSession;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
@@ -771,7 +776,11 @@ public sealed class WorkerSessionRouter(
             {
                 await foreach (var item in _agentHost.RunTurnAsync(
                                    session,
-                                   new HostedAgentIntent(request.PromptSource, workerPrompt, DisplayText: request.LeaderPrompt),
+                                   new HostedAgentIntent(
+                                       request.PromptSource,
+                                       workerPrompt,
+                                       AccessMode: request.AccessMode,
+                                       DisplayText: request.LeaderPrompt),
                                    cancellationToken))
                 {
                     if (item is AgentProgressChanged progress)

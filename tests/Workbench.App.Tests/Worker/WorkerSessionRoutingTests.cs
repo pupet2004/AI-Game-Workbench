@@ -37,6 +37,22 @@ public sealed class WorkerSessionRoutingTests
     }
 
     [Fact]
+    public async Task Worker_access_mode_is_explicitly_propagated_to_session_and_turn()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.Runtime.QueueTurn(new AgentTurnCompleted(
+            new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed, FinalReport("Worker result"), null),
+            DateTimeOffset.UtcNow));
+
+        var result = await fixture.Router.StartAsync(
+            fixture.NewRequest("Write the bounded change", accessMode: AgentAccessMode.Full));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(AgentAccessMode.Full, Assert.Single(fixture.Runtime.CreateRequests).AccessMode);
+        Assert.Equal(AgentAccessMode.Full, Assert.Single(fixture.Runtime.SentRequests).AccessMode);
+    }
+
+    [Fact]
     public async Task Background_worker_start_returns_after_session_is_ready()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -295,8 +311,14 @@ public sealed class WorkerSessionRoutingTests
         public AgentRuntimeRegistry Registry { get; }
         public Workbench.Storage.Database.WorkbenchDatabase Database => _context.Services.Database;
 
-        public WorkerStartRequest NewRequest(string prompt, AgentSessionId? reuse = null, Func<WorkerHandoff, CancellationToken, Task>? onHandoff = null, bool waitForCompletion = true) =>
-            new(Project, Task.TaskId, Task.CurrentRevisionId, Task.Title, Profile, prompt, reuse, "Worker 1", onHandoff, WaitForCompletion: waitForCompletion);
+        public WorkerStartRequest NewRequest(
+            string prompt,
+            AgentSessionId? reuse = null,
+            Func<WorkerHandoff, CancellationToken, Task>? onHandoff = null,
+            bool waitForCompletion = true,
+            AgentAccessMode accessMode = AgentAccessMode.Restricted) =>
+            new(Project, Task.TaskId, Task.CurrentRevisionId, Task.Title, Profile, prompt, reuse, "Worker 1", onHandoff,
+                WaitForCompletion: waitForCompletion, AccessMode: accessMode);
 
         public AgentSession CreateExistingWorker() => new(AgentSessionId.New(), Runtime.Account.Id, Runtime.Provider.Id, "model-a", Project.RootPath, "worker-existing", AgentSessionStatus.Ready, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
