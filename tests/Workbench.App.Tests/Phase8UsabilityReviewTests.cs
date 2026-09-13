@@ -134,6 +134,14 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("UseBalancedAuthorityCommand", markup, StringComparison.Ordinal);
         Assert.Contains("[Settings.ProjectOverrides]", markup, StringComparison.Ordinal);
         Assert.Contains("InheritGlobalAuthorityCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("LeaderSessionRotationPolicyText", markup, StringComparison.Ordinal);
+        Assert.Contains("LeaderAuthorityModeText", markup, StringComparison.Ordinal);
+        Assert.Contains("ProjectRotationPolicyOverrideText", markup, StringComparison.Ordinal);
+        Assert.Contains("ProjectAuthorityModeOverrideText", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"{Binding LeaderSessionRotationPolicy}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"{Binding LeaderAuthorityMode}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"{Binding ProjectRotationPolicyOverride}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"{Binding ProjectAuthorityModeOverride}\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]

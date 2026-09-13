@@ -34,7 +34,7 @@
                 <Button Content="{Binding [Settings.ManualOnly]}" Command="{Binding UseManualRotationCommand}" />
                 <TextBlock Text="{Binding [Settings.ManualOnlyDescription]}" TextWrapping="Wrap" />
             </StackPanel>
-            <TextBlock Text="{Binding LeaderSessionRotationPolicy}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding LeaderSessionRotationPolicyText}" FontWeight="SemiBold" />
             <Separator Margin="0,8" />
             <TextBlock Text="{Binding [Settings.Authority]}" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="{Binding [Settings.AuthorityDescription]}" TextWrapping="Wrap" />
@@ -46,7 +46,7 @@
                 <Button Content="{Binding [Settings.Autonomous]}" Command="{Binding UseAutonomousAuthorityCommand}" />
                 <TextBlock Text="{Binding [Settings.AutonomousDescription]}" TextWrapping="Wrap" />
             </StackPanel>
-            <TextBlock Text="{Binding LeaderAuthorityMode}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding LeaderAuthorityModeText}" FontWeight="SemiBold" />
             <Border IsVisible="{Binding HasProjectSettings}" Padding="12" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="5">
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Settings.ProjectOverrides]}" FontSize="20" FontWeight="SemiBold" />
@@ -58,7 +58,7 @@
                         <Button Content="{Binding [Settings.ProjectAskFirst]}" Command="{Binding UseProjectAskBeforeRotationCommand}" />
                         <Button Content="{Binding [Settings.ProjectManualOnly]}" Command="{Binding UseProjectManualRotationCommand}" />
                     </StackPanel>
-                    <TextBlock Text="{Binding ProjectRotationPolicyOverride}" />
+                    <TextBlock Text="{Binding ProjectRotationPolicyOverrideText}" />
                     <TextBlock Text="{Binding [Settings.ProjectAuthorityCurrent]}" FontWeight="SemiBold" />
                     <StackPanel Spacing="6">
                         <Button Content="{Binding [Settings.ProjectInherit]}" Command="{Binding InheritGlobalAuthorityCommand}" />
@@ -66,7 +66,7 @@
                         <Button Content="{Binding [Settings.ProjectBalanced]}" Command="{Binding UseProjectBalancedAuthorityCommand}" />
                         <Button Content="{Binding [Settings.ProjectAutonomous]}" Command="{Binding UseProjectAutonomousAuthorityCommand}" />
                     </StackPanel>
-                    <TextBlock Text="{Binding ProjectAuthorityModeOverride}" />
+                    <TextBlock Text="{Binding ProjectAuthorityModeOverrideText}" />
                 </StackPanel>
             </Border>
             <Separator Margin="0,8" />

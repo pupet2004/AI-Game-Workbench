@@ -14,8 +14,10 @@ public sealed class SettingsViewModelTests
         var settings = context.CreateSettings();
         await settings.InitializeAsync();
 
+        Assert.Equal("Automatic", settings.LeaderSessionRotationPolicyText);
         await settings.SetLeaderSessionRotationPolicyAsync(LeaderSessionRotationPolicy.ManualOnly);
 
+        Assert.Equal("Manual only", settings.LeaderSessionRotationPolicyText);
         var recreated = Workbench.App.Services.AppServices.CreateForDatabasePath(context.DatabasePath, context.Time);
         await recreated.InitializeAsync();
         Assert.Equal(LeaderSessionRotationPolicy.ManualOnly, await recreated.WorkbenchSettingsRepository.GetLeaderSessionRotationPolicyAsync());
@@ -28,8 +30,10 @@ public sealed class SettingsViewModelTests
         var settings = context.CreateSettings();
         await settings.InitializeAsync();
 
+        Assert.Equal("Balanced", settings.LeaderAuthorityModeText);
         await settings.SetLeaderAuthorityModeAsync(LeaderAuthorityMode.Cautious);
 
+        Assert.Equal("Cautious", settings.LeaderAuthorityModeText);
         var recreated = Workbench.App.Services.AppServices.CreateForDatabasePath(context.DatabasePath, context.Time);
         await recreated.InitializeAsync();
         Assert.Equal(LeaderAuthorityMode.Cautious, await recreated.WorkbenchSettingsRepository.GetLeaderAuthorityModeAsync());
@@ -49,15 +53,21 @@ public sealed class SettingsViewModelTests
             projectId: opened.Project.Id);
         await settings.InitializeAsync();
 
+        Assert.Equal("Inherit global", settings.ProjectRotationPolicyOverrideText);
+        Assert.Equal("Inherit global", settings.ProjectAuthorityModeOverrideText);
         await settings.SetProjectRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.Ask);
         await settings.SetProjectAuthorityModeOverrideAsync(LeaderAuthorityMode.Cautious);
         Assert.Equal(LeaderSessionRotationPolicy.Ask, settings.ProjectRotationPolicyOverride);
         Assert.Equal(LeaderAuthorityMode.Cautious, settings.ProjectAuthorityModeOverride);
+        Assert.Equal("Project: ask first", settings.ProjectRotationPolicyOverrideText);
+        Assert.Equal("Project: cautious", settings.ProjectAuthorityModeOverrideText);
 
         await settings.SetProjectRotationPolicyOverrideAsync(null);
         await settings.SetProjectAuthorityModeOverrideAsync(null);
         Assert.Null(settings.ProjectRotationPolicyOverride);
         Assert.Null(settings.ProjectAuthorityModeOverride);
+        Assert.Equal("Inherit global", settings.ProjectRotationPolicyOverrideText);
+        Assert.Equal("Inherit global", settings.ProjectAuthorityModeOverrideText);
     }
 
     [Fact]

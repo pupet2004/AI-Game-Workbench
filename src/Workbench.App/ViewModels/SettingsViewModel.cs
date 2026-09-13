@@ -33,6 +33,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
             if (args.PropertyName is "Item[]" or nameof(LocalizationService.Language))
             {
                 OnPropertyChanged("Item[]");
+                OnPropertyChanged(nameof(LeaderSessionRotationPolicyText));
+                OnPropertyChanged(nameof(LeaderAuthorityModeText));
+                OnPropertyChanged(nameof(ProjectRotationPolicyOverrideText));
+                OnPropertyChanged(nameof(ProjectAuthorityModeOverrideText));
             }
         };
     }
@@ -51,14 +55,48 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial LeaderSessionRotationPolicy LeaderSessionRotationPolicy { get; set; } = LeaderSessionRotationPolicy.Auto;
 
+    public string LeaderSessionRotationPolicyText => LeaderSessionRotationPolicy switch
+    {
+        LeaderSessionRotationPolicy.Auto => _localization["Settings.Automatic"],
+        LeaderSessionRotationPolicy.Ask => _localization["Settings.AskFirst"],
+        LeaderSessionRotationPolicy.ManualOnly => _localization["Settings.ManualOnly"],
+        _ => LeaderSessionRotationPolicy.ToString()
+    };
+
     [ObservableProperty]
     public partial LeaderAuthorityMode LeaderAuthorityMode { get; set; } = LeaderAuthorityMode.Balanced;
+
+    public string LeaderAuthorityModeText => LeaderAuthorityMode switch
+    {
+        LeaderAuthorityMode.Cautious => _localization["Settings.Cautious"],
+        LeaderAuthorityMode.Balanced => _localization["Settings.Balanced"],
+        LeaderAuthorityMode.Autonomous => _localization["Settings.Autonomous"],
+        _ => LeaderAuthorityMode.ToString()
+    };
 
     [ObservableProperty]
     public partial LeaderSessionRotationPolicy? ProjectRotationPolicyOverride { get; set; }
 
+    public string ProjectRotationPolicyOverrideText => ProjectRotationPolicyOverride switch
+    {
+        null => _localization["Settings.ProjectInherit"],
+        LeaderSessionRotationPolicy.Auto => _localization["Settings.ProjectAutomatic"],
+        LeaderSessionRotationPolicy.Ask => _localization["Settings.ProjectAskFirst"],
+        LeaderSessionRotationPolicy.ManualOnly => _localization["Settings.ProjectManualOnly"],
+        _ => ProjectRotationPolicyOverride.Value.ToString()
+    };
+
     [ObservableProperty]
     public partial LeaderAuthorityMode? ProjectAuthorityModeOverride { get; set; }
+
+    public string ProjectAuthorityModeOverrideText => ProjectAuthorityModeOverride switch
+    {
+        null => _localization["Settings.ProjectInherit"],
+        LeaderAuthorityMode.Cautious => _localization["Settings.ProjectCautious"],
+        LeaderAuthorityMode.Balanced => _localization["Settings.ProjectBalanced"],
+        LeaderAuthorityMode.Autonomous => _localization["Settings.ProjectAutonomous"],
+        _ => ProjectAuthorityModeOverride.Value.ToString()
+    };
 
     [ObservableProperty]
     public partial bool IsCodexEnabled { get; set; }
@@ -77,6 +115,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial LanguageOption? SelectedLanguage { get; set; }
+
+    partial void OnLeaderSessionRotationPolicyChanged(LeaderSessionRotationPolicy value) =>
+        OnPropertyChanged(nameof(LeaderSessionRotationPolicyText));
+
+    partial void OnLeaderAuthorityModeChanged(LeaderAuthorityMode value) =>
+        OnPropertyChanged(nameof(LeaderAuthorityModeText));
+
+    partial void OnProjectRotationPolicyOverrideChanged(LeaderSessionRotationPolicy? value) =>
+        OnPropertyChanged(nameof(ProjectRotationPolicyOverrideText));
+
+    partial void OnProjectAuthorityModeOverrideChanged(LeaderAuthorityMode? value) =>
+        OnPropertyChanged(nameof(ProjectAuthorityModeOverrideText));
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
