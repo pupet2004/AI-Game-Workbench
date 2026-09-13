@@ -81,7 +81,7 @@ WorkerExecution
 
 ## Product Path
 
-The bridge is production-callable through `B1WorkerExecutionBridgeService` and is used by `WorkerSessionRouter` when a start request carries B1 Assignment/Revision/Attempt refs and a typed WorkerExecution identity. The normal Leader draft confirmation path now resolves a unique current B1 delegation, creates/reuses its Attempt through the routing application service, and supplies the typed refs before Worker runtime execution when a Git-backed execution identity is available. Ambiguous, non-governed, or non-Git starts remain explicitly `LEGACY / UNLINKED` for compatibility.
+The bridge is production-callable through `B1WorkerExecutionBridgeService` and is used by `WorkerSessionRouter` when a start request carries B1 Assignment/Revision/Attempt refs and a typed WorkerExecution identity. The normal Leader draft confirmation path now resolves a unique current B1 delegation, creates/reuses its Attempt through the routing application service, and supplies the typed refs before Worker runtime execution when a typed workspace-backed execution identity is available. Git supplies commit and branch provenance when present; non-Git projects use explicit `unversioned` / `worktree` provenance and filesystem snapshots. Ambiguous or non-governed starts remain explicitly `LEGACY / UNLINKED` for compatibility.
 
 ## Non-goals
 

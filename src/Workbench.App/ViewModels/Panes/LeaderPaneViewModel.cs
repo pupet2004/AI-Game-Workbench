@@ -1822,9 +1822,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
             OnCanonicalCompletion: _openGuidedDecision is null
                 ? null
                 : (completion, token) => DispatchAsync(() => _openGuidedDecision(completion.Facts.HandoffRef)));
-        if (_canonicalWorkerLaunch is not null && _git is { IsRepository: true, HeadCommit: not null, BranchName: not null })
+        CanonicalWorkerLaunchContext? canonical = null;
+        if (_canonicalWorkerLaunch is not null)
         {
-            var canonical = await _canonicalWorkerLaunch.PrepareAsync(_project.Id, confirmation.Revision, cancellationToken);
+            canonical = await _canonicalWorkerLaunch.PrepareAsync(_project.Id, confirmation.Revision, cancellationToken);
             if (canonical is not null)
             {
                 request = request with
@@ -1838,11 +1839,17 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 };
             }
         }
-        if (_git is { IsRepository: true, HeadCommit: not null, BranchName: not null } git)
+        if (canonical is not null)
         {
+            var baseCommit = _git is { IsRepository: true, HeadCommit: not null }
+                ? _git.HeadCommit
+                : "unversioned";
+            var targetBranch = _git is { IsRepository: true, BranchName: not null }
+                ? _git.BranchName
+                : "worktree";
             var executionId = Guid.NewGuid();
-            var identity = WorkerExecutionIdentity.Start(confirmation.Revision.CreateReference(), git.HeadCommit, git.BranchName,
-                ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId), profile, git.BranchName, _project.RootPath);
+            var identity = WorkerExecutionIdentity.Start(confirmation.Revision.CreateReference(), baseCommit, targetBranch,
+                ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId), profile, targetBranch, _project.RootPath);
             request = request with { ExecutionId = executionId, ExecutionIdentity = identity };
         }
         WorkerStartResult result;

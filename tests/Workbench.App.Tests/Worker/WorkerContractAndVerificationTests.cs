@@ -106,6 +106,24 @@ public sealed class WorkerContractAndVerificationTests
         Assert.Equal(["acceptance.txt", "README.md"], delta);
     }
 
+    [Fact]
+    public async Task Workspace_baseline_attributes_execution_delta_without_git()
+    {
+        using var directory = new TemporaryDirectory("worker-baseline-no-git");
+        Directory.CreateDirectory(Path.Combine(directory.Path, "src"));
+        File.WriteAllText(Path.Combine(directory.Path, "src", "counter.js"), "export const value = 1;");
+
+        var baseline = await WorkspaceSnapshot.CaptureAsync(directory.Path);
+
+        Assert.NotNull(baseline);
+        File.WriteAllText(Path.Combine(directory.Path, "src", "counter.js"), "export const value = 2;");
+        File.WriteAllText(Path.Combine(directory.Path, "src", "notes.txt"), "new");
+
+        var delta = await WorkspaceSnapshot.ComputeDeltaAsync(directory.Path, baseline!.Serialize());
+
+        Assert.Equal(["src/counter.js", "src/notes.txt"], delta!.Select(PathCanonicalize));
+    }
+
     private static async Task RunGitAsync(string workingDirectory, string argument)
     {
         using var process = Process.Start(new ProcessStartInfo
@@ -116,6 +134,8 @@ public sealed class WorkerContractAndVerificationTests
         await process.WaitForExitAsync();
         Assert.Equal(0, process.ExitCode);
     }
+
+    private static string PathCanonicalize(string path) => path.Replace('\\', '/');
 
     private static TaskRevision Revision(Guid? taskId = null) => new(taskId ?? Guid.NewGuid(), 1,
         "Goal A", "Only modify `acceptance/result.txt` (Scope B)",

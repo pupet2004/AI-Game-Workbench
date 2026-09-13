@@ -351,7 +351,7 @@ The non-normative research note [From Continuity to Accountability](./from-conti
 
 R5-B1 successfully moved the durable center of Workbench into a recoverable Project World. The current repository, however, remains a deliberate coexistence system: the sealed B1 spine operates beside active Agent-centric and Legacy product paths. This is not a contradiction, provided their records and behaviors are not mistaken for B1 identity, authority, or accepted state.
 
-The current canonical Leader-to-Worker path is B1-linked when a unique current delegation and typed Git-backed execution identity are available; legacy entry remains available for ambiguous or non-governed starts.
+The current canonical Leader-to-Worker path is B1-linked when a unique current delegation and typed workspace-backed execution identity are available. Git supplies commit and branch provenance when present; non-Git projects use explicit `unversioned` / `worktree` provenance and filesystem snapshots. Legacy entry remains available for ambiguous or non-governed starts.
 
 The global architecture should therefore be read in this order:
 

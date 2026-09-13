@@ -35,8 +35,8 @@ public sealed record WorkspaceSnapshot(IReadOnlyDictionary<string, string> Files
     public static async Task<WorkspaceSnapshot?> CaptureAsync(string workspace, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(workspace)) return null;
-        var paths = await GitPathsAsync(workspace, cancellationToken);
-        if (paths is null) return null;
+        var paths = await GitPathsAsync(workspace, cancellationToken) ??
+            EnumerateWorkspacePaths(workspace);
         var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in paths)
         {
@@ -88,6 +88,46 @@ public sealed record WorkspaceSnapshot(IReadOnlyDictionary<string, string> Files
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested) { return null; }
+    }
+
+    private static IReadOnlyList<string> EnumerateWorkspacePaths(string workspace)
+    {
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                IgnoreInaccessible = true,
+                RecurseSubdirectories = true,
+                ReturnSpecialDirectories = false
+            };
+            return Directory.EnumerateFiles(workspace, "*", options)
+                .Where(path => !IsGeneratedOrMetadataPath(workspace, path))
+                .Select(path => Path.GetRelativePath(workspace, path))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    private static bool IsGeneratedOrMetadataPath(string workspace, string path)
+    {
+        var relative = Path.GetRelativePath(workspace, path);
+        var segments = relative.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+        return segments.Any(segment => segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                                       segment.Equals(".godot", StringComparison.OrdinalIgnoreCase) ||
+                                       segment.Equals(".vs", StringComparison.OrdinalIgnoreCase) ||
+                                       segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                                       segment.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                                       segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase));
     }
 }
 
