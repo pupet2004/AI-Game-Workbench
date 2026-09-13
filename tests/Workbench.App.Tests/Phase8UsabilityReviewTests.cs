@@ -73,6 +73,8 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("[Explorer.ReviewPending]", markup, StringComparison.Ordinal);
         Assert.Contains("[Explorer.Settings]", markup, StringComparison.Ordinal);
         Assert.Contains("OpenSettingsCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Explorer.History]", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenHistoryCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -95,6 +97,8 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("OpenProjectReviewPageCommand", markup, StringComparison.Ordinal);
         Assert.Contains("[Workspace.Settings]", markup, StringComparison.Ordinal);
         Assert.Contains("OpenSettingsPageCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Workspace.History]", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenProjectHistoryPageCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -105,6 +109,18 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("[Settings.Back]", markup, StringComparison.Ordinal);
         Assert.Contains("BackCommand", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("[Settings.Projects]", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void History_view_is_a_read_only_project_destination()
+    {
+        var markup = ReadView("ProjectHistoryView.axaml");
+
+        Assert.Contains("[History.Description]", markup, StringComparison.Ordinal);
+        Assert.Contains("Entries", markup, StringComparison.Ordinal);
+        Assert.Contains("[History.Back]", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Accept", markup, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Reject", markup, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

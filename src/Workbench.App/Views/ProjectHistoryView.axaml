@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ProjectWorld"
+             x:Class="Workbench.App.Views.ProjectHistoryView"
+             x:DataType="vm:ProjectHistoryViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="40" Spacing="16" MaxWidth="1000">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding [History.Title]}" FontSize="28" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding ProjectName}" FontSize="20" />
+                    <TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" Opacity="0.7" />
+                </StackPanel>
+                <Button Grid.Column="1" Margin="8,0,0,0"
+                        Content="{Binding [History.Reload]}"
+                        Command="{Binding ReloadCommand}"
+                        IsEnabled="{Binding !IsBusy}" />
+                <Button Grid.Column="2" Margin="8,0,0,0"
+                        Content="{Binding [History.Back]}"
+                        Command="{Binding BackCommand}"
+                        IsEnabled="{Binding !IsBusy}" />
+            </Grid>
+            <TextBlock Text="{Binding [History.Description]}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding EntryCountText}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
+            <TextBlock IsVisible="{Binding !Entries.Count}"
+                       Text="{Binding [History.Empty]}"
+                       Opacity="0.7" />
+            <ItemsControl ItemsSource="{Binding Entries}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ProjectHistoryItemView">
+                        <Border Padding="12" Margin="0,0,0,8"
+                                BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
+                            <StackPanel Spacing="4">
+                                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="12">
+                                    <TextBlock Text="{Binding TimestampText}" FontFamily="Consolas" />
+                                    <TextBlock Grid.Column="1" Text="{Binding CategoryText}" FontWeight="SemiBold" />
+                                    <TextBlock Grid.Column="2" Text="{Binding AuthorityStatus}" TextWrapping="Wrap" Opacity="0.75" />
+                                </Grid>
+                                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding SourceText}" TextWrapping="Wrap" Opacity="0.7" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -62,6 +62,44 @@ public sealed class NavigationTests
     }
 
     [Fact]
+    public async Task Project_overview_history_returns_to_same_overview()
+    {
+        using var folder = new TemporaryDirectory();
+        await using var context = await AppTestContext.CreateAsync(folder.Path);
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).CreateProjectAsync();
+        var setup = Assert.IsType<ProjectWorldSetupViewModel>(main.CurrentPage);
+        await setup.EstablishGovernanceCommand.ExecuteAsync(null);
+        await setup.PreviewInitializationCommand.ExecuteAsync(null);
+        await setup.ConfirmInitializationCommand.ExecuteAsync(null);
+
+        var overview = Assert.IsType<ProjectWorldExplorerViewModel>(main.CurrentPage);
+        await overview.OpenHistoryCommand.ExecuteAsync(null);
+        Assert.IsType<ProjectHistoryViewModel>(main.CurrentPage);
+        await ((ProjectHistoryViewModel)main.CurrentPage).BackCommand.ExecuteAsync(null);
+
+        Assert.Same(overview, main.CurrentPage);
+    }
+
+    [Fact]
+    public async Task Workspace_history_returns_to_same_workspace()
+    {
+        using var folder = new TemporaryDirectory();
+        await using var context = await AppTestContext.CreateAsync();
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+
+        await workspace.OpenProjectHistoryPageCommand.ExecuteAsync(null);
+        Assert.IsType<ProjectHistoryViewModel>(main.CurrentPage);
+        await ((ProjectHistoryViewModel)main.CurrentPage).BackCommand.ExecuteAsync(null);
+
+        Assert.Same(workspace, main.CurrentPage);
+    }
+
+    [Fact]
     public async Task Workspace_settings_returns_to_same_workspace_with_draft_session_and_layout()
     {
         using var folder = new TemporaryDirectory();

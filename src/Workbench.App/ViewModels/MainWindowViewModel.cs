@@ -239,6 +239,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              openProjectOverview: () => ShowProjectOverviewAsync(result),
              openProjectReview: () => ShowProjectReviewAsync(result),
              openSettings: () => ShowSettingsAsync(ReturnToWorkspaceAsync),
+             openProjectHistory: () => ShowProjectHistoryAsync(result, ReturnToWorkspaceAsync),
              acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
@@ -274,9 +275,17 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             () => ShowThreeColumnWorkspaceAsync(result),
             () => ShowProjectReviewAsync(result),
             handoffRef => ShowGuidedDecisionAsync(result, handoffRef),
-            () => ShowSettingsAsync(ReturnToProjectOverviewAsync));
+            () => ShowSettingsAsync(ReturnToProjectOverviewAsync),
+            () => ShowProjectHistoryAsync(result, ReturnToProjectOverviewAsync));
         CurrentPage = explorer;
         await explorer.InitializeAsync();
+    }
+
+    private async Task ShowProjectHistoryAsync(ProjectOpenResult result, Func<Task> back)
+    {
+        var history = new ProjectHistoryViewModel(_services, result, back, _localization);
+        CurrentPage = history;
+        await history.InitializeAsync();
     }
 
     private async Task ShowProjectReviewAsync(ProjectOpenResult result)

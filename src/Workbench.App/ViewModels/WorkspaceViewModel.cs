@@ -70,6 +70,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          Func<Task>? openProjectOverview = null,
          Func<Task>? openProjectReview = null,
          Func<Task>? openSettings = null,
+         Func<Task>? openProjectHistory = null,
          Func<AuthorityConfirmationDraft, CancellationToken, Task<Workbench.Core.Continuity.AuthorityDecision>>? acceptAuthorityConfirmation = null,
          B1AuthorityRepository? authorityRepository = null,
          B1WorkerExecutionBridgeService? workerExecutionBridge = null,
@@ -81,6 +82,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
         OpenProjectOverview = openProjectOverview ?? (() => Task.CompletedTask);
         OpenProjectReview = openProjectReview ?? (() => Task.CompletedTask);
         OpenSettings = openSettings ?? (() => Task.CompletedTask);
+        OpenProjectHistory = openProjectHistory ?? (() => Task.CompletedTask);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _debounce = debounce ?? TimeSpan.FromMilliseconds(350);
         Layout = result.Layout;
@@ -152,6 +154,7 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
     internal Func<Task> OpenProjectOverview { get; }
     internal Func<Task> OpenProjectReview { get; }
     internal Func<Task> OpenSettings { get; }
+    internal Func<Task> OpenProjectHistory { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LeaderRatio), nameof(WorkRatio), nameof(LibraryRatio), nameof(LeaderGridLength), nameof(WorkGridLength), nameof(LibraryGridLength))]
@@ -219,6 +222,9 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
 
     [RelayCommand]
     private Task OpenSettingsPage() => OpenSettings();
+
+    [RelayCommand]
+    private Task OpenProjectHistoryPage() => OpenProjectHistory();
 
     public async ValueTask DisposeAsync()
     {
