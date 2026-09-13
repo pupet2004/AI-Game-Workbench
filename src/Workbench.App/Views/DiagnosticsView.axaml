@@ -37,6 +37,29 @@
 
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [Diagnostics.Backups]}" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding BackupCountText}" />
+                    <Button Content="{Binding [Diagnostics.ValidateBackups]}"
+                            Command="{Binding ValidateBackupsCommand}"
+                            IsEnabled="{Binding !Loading}"
+                            HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding BackupValidationStatus}" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding Backups}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DatabaseBackupDiagnosticItem">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                                    <TextBlock Text="{Binding FileName}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding LastWriteText}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Diagnostics.Runtimes]}" FontSize="20" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding RuntimeCountText}" />
                     <TextBlock Text="{Binding RuntimeUnavailableText}" TextWrapping="Wrap" />

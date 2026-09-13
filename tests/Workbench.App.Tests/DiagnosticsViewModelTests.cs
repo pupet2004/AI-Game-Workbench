@@ -1,4 +1,5 @@
 using Workbench.App.Tests.Support;
+using Workbench.App.Services;
 using Workbench.App.ViewModels;
 
 namespace Workbench.App.Tests;
@@ -48,6 +49,7 @@ public sealed class DiagnosticsViewModelTests
         var backupPath = diagnostics.BackupStatus!["Backup created: ".Length..];
         Assert.True(File.Exists(backupPath));
         Assert.NotEqual(0, new FileInfo(backupPath).Length);
+        Assert.Single(diagnostics.Backups);
         await using (var backupConnection = new Workbench.Storage.Database.WorkbenchDatabase(backupPath).CreateConnection())
         {
             await backupConnection.OpenAsync();
@@ -75,6 +77,39 @@ public sealed class DiagnosticsViewModelTests
         Assert.True(File.Exists(secondPath));
         File.Delete(firstPath);
         File.Delete(secondPath);
+    }
+
+    [Fact]
+    public async Task Diagnostics_lists_and_validates_existing_backups()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var backupService = new WorkbenchBackupService(context.Services.Database, context.Time);
+        var firstPath = await backupService.CreateDatabaseBackupAsync();
+        var secondPath = await backupService.CreateDatabaseBackupAsync();
+        var diagnostics = new DiagnosticsViewModel(context.Services, () => Task.CompletedTask);
+
+        await diagnostics.InitializeAsync();
+        await diagnostics.ValidateBackupsCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, diagnostics.Backups.Count);
+        Assert.Equal("Validated 2 backup(s).", diagnostics.BackupValidationStatus);
+        File.Delete(firstPath);
+        File.Delete(secondPath);
+    }
+
+    [Fact]
+    public async Task Backup_validation_does_not_create_a_missing_file()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var service = new WorkbenchBackupService(context.Services.Database, context.Time);
+        var missingPath = Path.Combine(
+            Path.GetDirectoryName(context.Services.Database.DatabasePath)!,
+            "workbench.backup-missing.db");
+
+        await Assert.ThrowsAsync<FileNotFoundException>(
+            () => service.ValidateDatabaseBackupAsync(missingPath));
+
+        Assert.False(File.Exists(missingPath));
     }
 
     private static Workbench.Runtime.Registry.AgentRuntimeRegistry RegistryWith(FakeAgentRuntime runtime)

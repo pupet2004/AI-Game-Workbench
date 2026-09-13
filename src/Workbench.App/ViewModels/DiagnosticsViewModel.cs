@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Workbench.App.Services;
@@ -10,6 +11,12 @@ public sealed record RuntimeDiagnosticItem(
     string Account,
     string RuntimeKind,
     string ConnectionStatus);
+
+public sealed record DatabaseBackupDiagnosticItem(
+    string FileName,
+    string Path,
+    string SizeText,
+    string LastWriteText);
 
 public sealed partial class DiagnosticsViewModel : ViewModelBase
 {
@@ -34,8 +41,13 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
 
     public ObservableCollection<RuntimeDiagnosticItem> Runtimes { get; } = [];
 
+    public ObservableCollection<DatabaseBackupDiagnosticItem> Backups { get; } = [];
+
     public string RuntimeCountText =>
         string.Format(_localization["Diagnostics.RuntimeCount"], Runtimes.Count);
+
+    public string BackupCountText =>
+        string.Format(_localization["Diagnostics.BackupCount"], Backups.Count);
 
     public string RuntimeUnavailableText =>
         _services.RuntimeUnavailableDetail ?? _localization["Diagnostics.NoRuntimeError"];
@@ -52,6 +64,9 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string? BackupStatus { get; private set; }
+
+    [ObservableProperty]
+    public partial string? BackupValidationStatus { get; private set; }
 
     public bool HasDatabaseError => !string.IsNullOrWhiteSpace(DatabaseError);
 
@@ -72,6 +87,7 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
             BackupStatus = string.Format(
                 _localization["Diagnostics.BackupCreated"],
                 await _backupService.CreateDatabaseBackupAsync());
+            LoadBackups();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -81,11 +97,41 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private async Task ValidateBackups()
+    {
+        var validCount = 0;
+        var failures = new List<string>();
+        foreach (var backup in Backups)
+        {
+            try
+            {
+                await _backupService.ValidateDatabaseBackupAsync(backup.Path);
+                validCount++;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                failures.Add(string.Format(
+                    _localization["Diagnostics.BackupValidationFailed"],
+                    backup.FileName,
+                    exception.Message));
+            }
+        }
+
+        BackupValidationStatus = failures.Count == 0
+            ? string.Format(_localization["Diagnostics.BackupsValidated"], validCount)
+            : string.Format(
+                _localization["Diagnostics.BackupValidationSummary"],
+                validCount,
+                failures.Count) + " " + string.Join(" ", failures);
+    }
+
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         Loading = true;
         DatabaseError = null;
         Runtimes.Clear();
+        Backups.Clear();
         OnPropertyChanged(nameof(RuntimeCountText));
         OnPropertyChanged(nameof(RuntimeUnavailableText));
 
@@ -116,9 +162,30 @@ public sealed partial class DiagnosticsViewModel : ViewModelBase
                         : _localization["Diagnostics.Disconnected"]));
             }
 
+            LoadBackups();
             OnPropertyChanged(nameof(RuntimeCountText));
             OnPropertyChanged(nameof(RuntimeUnavailableText));
             Loading = false;
         }
     }
+
+    private void LoadBackups()
+    {
+        Backups.Clear();
+        foreach (var backup in _backupService.ListDatabaseBackups())
+        {
+            Backups.Add(new DatabaseBackupDiagnosticItem(
+                System.IO.Path.GetFileName(backup.Path),
+                backup.Path,
+                FormatSize(backup.SizeBytes),
+                backup.LastWriteAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture)));
+        }
+
+        OnPropertyChanged(nameof(BackupCountText));
+    }
+
+    private static string FormatSize(long bytes) =>
+        bytes < 1024 * 1024
+            ? $"{Math.Max(1, bytes / 1024)} KB"
+            : $"{bytes / (1024d * 1024d):0.0} MB";
 }

@@ -127,6 +127,8 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("RuntimeCountText", markup, StringComparison.Ordinal);
         Assert.Contains("[Diagnostics.CreateBackup]", markup, StringComparison.Ordinal);
         Assert.Contains("CreateBackupCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Diagnostics.Backups]", markup, StringComparison.Ordinal);
+        Assert.Contains("ValidateBackupsCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]
