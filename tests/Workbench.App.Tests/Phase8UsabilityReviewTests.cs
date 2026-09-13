@@ -108,6 +108,26 @@ public sealed class Phase8UsabilityReviewTests
     }
 
     [Fact]
+    public void Settings_exposes_diagnostics_without_internal_runtime_controls()
+    {
+        var markup = ReadView("SettingsView.axaml");
+
+        Assert.Contains("[Settings.Diagnostics]", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenDiagnosticsCommand", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Diagnostics_view_exposes_database_and_runtime_health()
+    {
+        var markup = ReadView("DiagnosticsView.axaml");
+
+        Assert.Contains("[Diagnostics.Database]", markup, StringComparison.Ordinal);
+        Assert.Contains("DatabaseStatus", markup, StringComparison.Ordinal);
+        Assert.Contains("[Diagnostics.Runtimes]", markup, StringComparison.Ordinal);
+        Assert.Contains("RuntimeCountText", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Work_cards_can_send_canonical_handoffs_to_review_without_relabeling_legacy_results()
     {
         var markup = ReadView(Path.Combine("Panes", "WorkPaneView.axaml"));

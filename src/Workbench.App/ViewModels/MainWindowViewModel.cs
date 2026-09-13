@@ -115,12 +115,32 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             await workspace.FlushLayoutAsync();
         }
 
-        var settings = new SettingsViewModel(
+        SettingsViewModel? settings = null;
+        async Task ReturnToSettingsAsync()
+        {
+            if (settings is not null)
+            {
+                CurrentPage = settings;
+                return;
+            }
+
+            await ShowSettingsAsync(back);
+        }
+
+        settings = new SettingsViewModel(
             _services.WorkbenchSettingsRepository,
             back,
-            _localization);
+            _localization,
+            () => ShowDiagnosticsAsync(ReturnToSettingsAsync));
         CurrentPage = settings;
         await settings.InitializeAsync();
+    }
+
+    private async Task ShowDiagnosticsAsync(Func<Task> back)
+    {
+        var diagnostics = new DiagnosticsViewModel(_services, back, _localization);
+        CurrentPage = diagnostics;
+        await diagnostics.InitializeAsync();
     }
 
     [RelayCommand]

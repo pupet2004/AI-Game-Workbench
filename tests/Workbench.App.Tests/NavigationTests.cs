@@ -25,6 +25,22 @@ public sealed class NavigationTests
     }
 
     [Fact]
+    public async Task Settings_diagnostics_returns_to_same_settings_page()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+
+        await ((HomeViewModel)main.CurrentPage).ShowSettingsCommand.ExecuteAsync(null);
+        var settings = Assert.IsType<SettingsViewModel>(main.CurrentPage);
+        await settings.OpenDiagnosticsCommand.ExecuteAsync(null);
+        Assert.IsType<DiagnosticsViewModel>(main.CurrentPage);
+        await ((DiagnosticsViewModel)main.CurrentPage).BackCommand.ExecuteAsync(null);
+
+        Assert.Same(settings, main.CurrentPage);
+    }
+
+    [Fact]
     public async Task Project_overview_settings_returns_to_same_overview()
     {
         using var folder = new TemporaryDirectory();

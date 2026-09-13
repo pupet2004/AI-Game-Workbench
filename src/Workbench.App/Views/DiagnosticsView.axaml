@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Workbench.App.ViewModels"
+             x:Class="Workbench.App.Views.DiagnosticsView"
+             x:DataType="vm:DiagnosticsViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="32" Spacing="16" MaxWidth="760">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock Text="{Binding [Diagnostics.Title]}" FontSize="28" FontWeight="SemiBold" />
+                <Button Grid.Column="1" Margin="8,0,0,0"
+                        Content="{Binding [Diagnostics.Refresh]}"
+                        Command="{Binding RefreshCommand}"
+                        IsEnabled="{Binding !Loading}" />
+                <Button Grid.Column="2" Margin="8,0,0,0"
+                        Content="{Binding [Diagnostics.Back]}"
+                        Command="{Binding BackCommand}"
+                        IsEnabled="{Binding !Loading}" />
+            </Grid>
+
+            <TextBlock Text="{Binding [Diagnostics.Description]}" TextWrapping="Wrap" />
+
+            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [Diagnostics.Database]}" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding [Diagnostics.DatabasePath]}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding DatabasePath}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DatabaseStatus}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding DatabaseError}" IsVisible="{Binding HasDatabaseError}"
+                               Foreground="IndianRed" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [Diagnostics.Runtimes]}" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding RuntimeCountText}" />
+                    <TextBlock Text="{Binding RuntimeUnavailableText}" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding Runtimes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RuntimeDiagnosticItem">
+                                <Grid ColumnDefinitions="*,*,*,Auto" ColumnSpacing="12">
+                                    <TextBlock Text="{Binding Provider}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Account}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="2" Text="{Binding RuntimeKind}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="3" Text="{Binding ConnectionStatus}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -9,6 +9,7 @@
                 <TextBlock Text="{Binding [Settings.Title]}" FontSize="28" FontWeight="SemiBold" />
                 <Button Grid.Column="1" Content="{Binding [Settings.Back]}" Command="{Binding BackCommand}" />
             </Grid>
+            <Button Content="{Binding [Settings.Diagnostics]}" Command="{Binding OpenDiagnosticsCommand}" HorizontalAlignment="Left" />
             <TextBlock Text="{Binding [Settings.Language]}" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="{Binding [Settings.LanguageDescription]}" TextWrapping="Wrap" />
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">

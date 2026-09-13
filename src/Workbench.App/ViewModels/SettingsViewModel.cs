@@ -10,15 +10,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
 {
     private readonly WorkbenchSettingsRepository _settings;
     private readonly LocalizationService _localization;
+    private readonly Func<Task> _openDiagnostics;
 
     public SettingsViewModel(
         WorkbenchSettingsRepository settings,
         Func<Task> backToProjects,
-        LocalizationService? localization = null)
+        LocalizationService? localization = null,
+        Func<Task>? openDiagnostics = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         BackToProjects = backToProjects ?? throw new ArgumentNullException(nameof(backToProjects));
         _localization = localization ?? new LocalizationService(_settings);
+        _openDiagnostics = openDiagnostics ?? (() => Task.CompletedTask);
         _localization.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName is "Item[]" or nameof(LocalizationService.Language))
@@ -106,6 +109,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [RelayCommand]
     private Task Back() => BackToProjects();
+
+    [RelayCommand]
+    private Task OpenDiagnostics() => _openDiagnostics();
 
     public sealed record LanguageOption(WorkbenchLanguage Language, string DisplayName);
 }
