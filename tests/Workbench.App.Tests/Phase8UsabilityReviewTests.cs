@@ -132,6 +132,8 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("OpenDiagnosticsCommand", markup, StringComparison.Ordinal);
         Assert.Contains("[Settings.Authority]", markup, StringComparison.Ordinal);
         Assert.Contains("UseBalancedAuthorityCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Settings.ProjectOverrides]", markup, StringComparison.Ordinal);
+        Assert.Contains("InheritGlobalAuthorityCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]

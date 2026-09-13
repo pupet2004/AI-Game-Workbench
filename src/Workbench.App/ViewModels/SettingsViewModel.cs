@@ -11,17 +11,23 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly WorkbenchSettingsRepository _settings;
     private readonly LocalizationService _localization;
     private readonly Func<Task> _openDiagnostics;
+    private readonly ProjectSettingsRepository? _projectSettings;
+    private readonly Guid? _projectId;
 
     public SettingsViewModel(
         WorkbenchSettingsRepository settings,
         Func<Task> backToProjects,
         LocalizationService? localization = null,
-        Func<Task>? openDiagnostics = null)
+        Func<Task>? openDiagnostics = null,
+        ProjectSettingsRepository? projectSettings = null,
+        Guid? projectId = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         BackToProjects = backToProjects ?? throw new ArgumentNullException(nameof(backToProjects));
         _localization = localization ?? new LocalizationService(_settings);
         _openDiagnostics = openDiagnostics ?? (() => Task.CompletedTask);
+        _projectSettings = projectSettings;
+        _projectId = projectId;
         _localization.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName is "Item[]" or nameof(LocalizationService.Language))
@@ -32,6 +38,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     public Func<Task> BackToProjects { get; }
+    public bool HasProjectSettings => _projectSettings is not null && _projectId.HasValue;
 
     public new string this[string key] => _localization[key];
 
@@ -46,6 +53,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial LeaderAuthorityMode LeaderAuthorityMode { get; set; } = LeaderAuthorityMode.Balanced;
+
+    [ObservableProperty]
+    public partial LeaderSessionRotationPolicy? ProjectRotationPolicyOverride { get; set; }
+
+    [ObservableProperty]
+    public partial LeaderAuthorityMode? ProjectAuthorityModeOverride { get; set; }
 
     [ObservableProperty]
     public partial bool IsCodexEnabled { get; set; }
@@ -70,6 +83,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
         await _localization.InitializeAsync(cancellationToken);
         LeaderSessionRotationPolicy = await _settings.GetLeaderSessionRotationPolicyAsync(cancellationToken);
         LeaderAuthorityMode = await _settings.GetLeaderAuthorityModeAsync(cancellationToken);
+        if (HasProjectSettings)
+        {
+            ProjectRotationPolicyOverride = await _projectSettings!.GetLeaderSessionRotationPolicyOverrideAsync(_projectId!.Value, cancellationToken);
+            ProjectAuthorityModeOverride = await _projectSettings.GetLeaderAuthorityModeOverrideAsync(_projectId.Value, cancellationToken);
+        }
         var codex = await _settings.GetAgentRuntimeSettingsAsync("codex", cancellationToken: cancellationToken);
         var openCode = await _settings.GetAgentRuntimeSettingsAsync("opencode", cancellationToken: cancellationToken);
         IsCodexEnabled = codex.IsEnabled;
@@ -112,6 +130,56 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [RelayCommand]
     private Task UseAutonomousAuthority() => SetLeaderAuthorityModeAsync(LeaderAuthorityMode.Autonomous);
+
+    public async Task SetProjectRotationPolicyOverrideAsync(
+        LeaderSessionRotationPolicy? policy,
+        CancellationToken cancellationToken = default)
+    {
+        if (!HasProjectSettings)
+        {
+            return;
+        }
+
+        await _projectSettings!.SaveLeaderSessionRotationPolicyOverrideAsync(_projectId!.Value, policy, cancellationToken);
+        ProjectRotationPolicyOverride = policy;
+    }
+
+    public async Task SetProjectAuthorityModeOverrideAsync(
+        LeaderAuthorityMode? mode,
+        CancellationToken cancellationToken = default)
+    {
+        if (!HasProjectSettings)
+        {
+            return;
+        }
+
+        await _projectSettings!.SaveLeaderAuthorityModeOverrideAsync(_projectId!.Value, mode, cancellationToken);
+        ProjectAuthorityModeOverride = mode;
+    }
+
+    [RelayCommand]
+    private Task InheritGlobalRotation() => SetProjectRotationPolicyOverrideAsync(null);
+
+    [RelayCommand]
+    private Task UseProjectAutomaticRotation() => SetProjectRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.Auto);
+
+    [RelayCommand]
+    private Task UseProjectAskBeforeRotation() => SetProjectRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.Ask);
+
+    [RelayCommand]
+    private Task UseProjectManualRotation() => SetProjectRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.ManualOnly);
+
+    [RelayCommand]
+    private Task InheritGlobalAuthority() => SetProjectAuthorityModeOverrideAsync(null);
+
+    [RelayCommand]
+    private Task UseProjectCautiousAuthority() => SetProjectAuthorityModeOverrideAsync(LeaderAuthorityMode.Cautious);
+
+    [RelayCommand]
+    private Task UseProjectBalancedAuthority() => SetProjectAuthorityModeOverrideAsync(LeaderAuthorityMode.Balanced);
+
+    [RelayCommand]
+    private Task UseProjectAutonomousAuthority() => SetProjectAuthorityModeOverrideAsync(LeaderAuthorityMode.Autonomous);
 
     [RelayCommand]
     private async Task SaveAgentSettings()

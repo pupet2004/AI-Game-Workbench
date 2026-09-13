@@ -108,7 +108,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     public Task ShowSettingsAsync() => ShowSettingsAsync(BackToHomeAsync);
 
-    private async Task ShowSettingsAsync(Func<Task> back)
+    private async Task ShowSettingsAsync(Func<Task> back, Guid? projectId = null)
     {
         if (CurrentPage is WorkspaceViewModel workspace)
         {
@@ -131,7 +131,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _services.WorkbenchSettingsRepository,
             back,
             _localization,
-            () => ShowDiagnosticsAsync(ReturnToSettingsAsync));
+            () => ShowDiagnosticsAsync(ReturnToSettingsAsync),
+            _services.ProjectSettingsRepository,
+            projectId);
         CurrentPage = settings;
         await settings.InitializeAsync();
     }
@@ -238,7 +240,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result),
              openProjectReview: () => ShowProjectReviewAsync(result),
-             openSettings: () => ShowSettingsAsync(ReturnToWorkspaceAsync),
+             openSettings: () => ShowSettingsAsync(ReturnToWorkspaceAsync, result.Project.Id),
              openProjectHistory: () => ShowProjectHistoryAsync(result, ReturnToWorkspaceAsync),
              acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
         CurrentPage = workspace;
@@ -275,7 +277,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             () => ShowThreeColumnWorkspaceAsync(result),
             () => ShowProjectReviewAsync(result),
             handoffRef => ShowGuidedDecisionAsync(result, handoffRef),
-            () => ShowSettingsAsync(ReturnToProjectOverviewAsync),
+            () => ShowSettingsAsync(ReturnToProjectOverviewAsync, result.Project.Id),
             () => ShowProjectHistoryAsync(result, ReturnToProjectOverviewAsync));
         CurrentPage = explorer;
         await explorer.InitializeAsync();

@@ -47,6 +47,28 @@
                 <TextBlock Text="{Binding [Settings.AutonomousDescription]}" TextWrapping="Wrap" />
             </StackPanel>
             <TextBlock Text="{Binding LeaderAuthorityMode}" FontWeight="SemiBold" />
+            <Border IsVisible="{Binding HasProjectSettings}" Padding="12" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="5">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [Settings.ProjectOverrides]}" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding [Settings.ProjectOverridesDescription]}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding [Settings.ProjectRotationCurrent]}" FontWeight="SemiBold" />
+                    <StackPanel Spacing="6">
+                        <Button Content="{Binding [Settings.ProjectInherit]}" Command="{Binding InheritGlobalRotationCommand}" />
+                        <Button Content="{Binding [Settings.ProjectAutomatic]}" Command="{Binding UseProjectAutomaticRotationCommand}" />
+                        <Button Content="{Binding [Settings.ProjectAskFirst]}" Command="{Binding UseProjectAskBeforeRotationCommand}" />
+                        <Button Content="{Binding [Settings.ProjectManualOnly]}" Command="{Binding UseProjectManualRotationCommand}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ProjectRotationPolicyOverride}" />
+                    <TextBlock Text="{Binding [Settings.ProjectAuthorityCurrent]}" FontWeight="SemiBold" />
+                    <StackPanel Spacing="6">
+                        <Button Content="{Binding [Settings.ProjectInherit]}" Command="{Binding InheritGlobalAuthorityCommand}" />
+                        <Button Content="{Binding [Settings.ProjectCautious]}" Command="{Binding UseProjectCautiousAuthorityCommand}" />
+                        <Button Content="{Binding [Settings.ProjectBalanced]}" Command="{Binding UseProjectBalancedAuthorityCommand}" />
+                        <Button Content="{Binding [Settings.ProjectAutonomous]}" Command="{Binding UseProjectAutonomousAuthorityCommand}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ProjectAuthorityModeOverride}" />
+                </StackPanel>
+            </Border>
             <Separator Margin="0,8" />
             <TextBlock Text="{Binding [Settings.Agents]}" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="{Binding [Settings.AgentsDescription]}" TextWrapping="Wrap" />

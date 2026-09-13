@@ -37,6 +37,30 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Project_overrides_can_be_changed_and_cleared_from_project_settings()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var folder = new Support.TemporaryDirectory();
+        var opened = await context.Services.ProjectOpenService.OpenAsync(folder.Path);
+        var settings = new SettingsViewModel(
+            context.Services.WorkbenchSettingsRepository,
+            () => Task.CompletedTask,
+            projectSettings: context.Services.ProjectSettingsRepository,
+            projectId: opened.Project.Id);
+        await settings.InitializeAsync();
+
+        await settings.SetProjectRotationPolicyOverrideAsync(LeaderSessionRotationPolicy.Ask);
+        await settings.SetProjectAuthorityModeOverrideAsync(LeaderAuthorityMode.Cautious);
+        Assert.Equal(LeaderSessionRotationPolicy.Ask, settings.ProjectRotationPolicyOverride);
+        Assert.Equal(LeaderAuthorityMode.Cautious, settings.ProjectAuthorityModeOverride);
+
+        await settings.SetProjectRotationPolicyOverrideAsync(null);
+        await settings.SetProjectAuthorityModeOverrideAsync(null);
+        Assert.Null(settings.ProjectRotationPolicyOverride);
+        Assert.Null(settings.ProjectAuthorityModeOverride);
+    }
+
+    [Fact]
     public async Task Project_rotation_override_can_be_changed_and_return_to_inherit_global()
     {
         await using var context = await AppTestContext.CreateAsync();
