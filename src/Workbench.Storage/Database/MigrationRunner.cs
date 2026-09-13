@@ -157,6 +157,10 @@ internal static class MigrationRunner
         {
             await ApplyAsync(connection, Migration030CanonicalWorkerCompletions.ApplyAsync, cancellationToken);
         }
+        if (currentVersion < Migration031CanonicalWorkerProposedChanges.Version)
+        {
+            await ApplyAsync(connection, Migration031CanonicalWorkerProposedChanges.ApplyAsync, cancellationToken);
+        }
     }
 
     private static async Task ApplyAsync(

@@ -22,6 +22,7 @@ public sealed record CanonicalWorkerCompletionFacts
         string finalReport,
         string? validationSummary,
         IReadOnlyList<EvidenceRef> evidenceRefs,
+        IReadOnlyList<string> proposedChanges,
         ClaimRef resultClaimRef,
         ClaimRef? validationClaimRef,
         HandoffRef handoffRef,
@@ -34,6 +35,7 @@ public sealed record CanonicalWorkerCompletionFacts
         if (workerExecutionId == Guid.Empty) throw new ArgumentException("Worker execution identity is required.", nameof(workerExecutionId));
         ArgumentException.ThrowIfNullOrWhiteSpace(finalReport);
         ArgumentNullException.ThrowIfNull(evidenceRefs);
+        ArgumentNullException.ThrowIfNull(proposedChanges);
         if (resultClaimRef.Value == Guid.Empty) throw new ArgumentException("Result Claim identity is required.", nameof(resultClaimRef));
         if (validationClaimRef is { } validation && validation.Value == Guid.Empty)
             throw new ArgumentException("Validation Claim identity is invalid.", nameof(validationClaimRef));
@@ -50,6 +52,11 @@ public sealed record CanonicalWorkerCompletionFacts
         FinalReport = finalReport;
         ValidationSummary = validationSummary;
         EvidenceRefs = Array.AsReadOnly(evidenceRefs.ToArray());
+        ProposedChanges = Array.AsReadOnly(proposedChanges
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray());
         ResultClaimRef = resultClaimRef;
         ValidationClaimRef = validationClaimRef;
         HandoffRef = handoffRef;
@@ -68,6 +75,7 @@ public sealed record CanonicalWorkerCompletionFacts
     public string FinalReport { get; }
     public string? ValidationSummary { get; }
     public IReadOnlyList<EvidenceRef> EvidenceRefs { get; }
+    public IReadOnlyList<string> ProposedChanges { get; }
     public ClaimRef ResultClaimRef { get; }
     public ClaimRef? ValidationClaimRef { get; }
     public HandoffRef HandoffRef { get; }

@@ -22,7 +22,7 @@ public sealed class WorkbenchDatabaseTests
     }
 
     [Fact]
-    public async Task Latest_migrations_set_user_version_to_30()
+    public async Task Latest_migrations_set_user_version_to_31()
     {
         await using var temporary = new TemporaryDatabase();
         var database = new WorkbenchDatabase(temporary.DatabasePath);
@@ -34,7 +34,7 @@ public sealed class WorkbenchDatabaseTests
         var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
 
-        Assert.Equal(30L, await command.ExecuteScalarAsync());
+        Assert.Equal(31L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public sealed class WorkbenchDatabaseTests
         await database.InitializeAsync();
 
         var firstSnapshot = await ReadV11ContinuitySnapshotAsync(database);
-        Assert.Equal(30L, firstSnapshot.UserVersion);
+        Assert.Equal(31L, firstSnapshot.UserVersion);
         Assert.Equal("Migration Project", firstSnapshot.ProjectName);
         Assert.Equal("00000000-0000-0000-0000-000000000102", firstSnapshot.TaskId);
         Assert.Equal("00000000-0000-0000-0000-000000000103", firstSnapshot.CurrentRevisionId);

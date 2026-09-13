@@ -5,6 +5,11 @@ using Workbench.Storage.Continuity;
 
 namespace Workbench.App.Continuity;
 
+/// <summary>
+/// Converts a durable Worker completion into non-authoritative governance
+/// material. This service may persist Completion, Claims, and a Handoff, but it
+/// must never create an Authority Decision or write AcceptedProjectState.
+/// </summary>
 public sealed class CanonicalWorkerCompletionBridgeService(
     CanonicalWorkerCompletionRepository completionRepository,
     B1ClaimHandoffRepository claimHandoffRepository,
@@ -16,6 +21,10 @@ public sealed class CanonicalWorkerCompletionBridgeService(
         claimHandoffRepository ?? throw new ArgumentNullException(nameof(claimHandoffRepository));
     private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
+    /// <summary>
+    /// Creates stable identities for the non-authoritative governance package
+    /// associated with one Worker completion source event.
+    /// </summary>
     public CanonicalWorkerCompletionFacts CreateFacts(
         ProjectRef projectRef,
         Guid sourceEventId,
@@ -28,7 +37,8 @@ public sealed class CanonicalWorkerCompletionBridgeService(
         string finalReport,
         string? validationSummary,
         IReadOnlyList<EvidenceRef> evidenceRefs,
-        DateTimeOffset? completedAt = null)
+        DateTimeOffset? completedAt = null,
+        IReadOnlyList<string>? proposedChanges = null)
     {
         var source = sourceEventId.ToString("N");
         return new(
@@ -44,6 +54,7 @@ public sealed class CanonicalWorkerCompletionBridgeService(
             finalReport,
             string.IsNullOrWhiteSpace(validationSummary) ? null : validationSummary,
             evidenceRefs,
+            proposedChanges ?? [],
             new ClaimRef(DeterministicGuid($"canonical-worker-completion:{source}:result")),
             string.IsNullOrWhiteSpace(validationSummary)
                 ? null
@@ -52,6 +63,11 @@ public sealed class CanonicalWorkerCompletionBridgeService(
             completedAt ?? _timeProvider.GetUtcNow());
     }
 
+    /// <summary>
+    /// Persists Completion and bridges it to Claims and a Handoff. The returned
+    /// status is GovernanceReady until an Authority command governs the
+    /// Handoff.
+    /// </summary>
     public async Task<StoredCanonicalWorkerCompletion> BridgeAsync(
         CanonicalWorkerCompletionFacts facts,
         UserPrincipalRef authenticatedOperatorRef,
@@ -85,6 +101,20 @@ public sealed class CanonicalWorkerCompletionBridgeService(
                 facts.CompletedAt));
             validationRefs = [validationRef];
         }
+        var proposedClaims = facts.ProposedChanges
+            .Select((statement, index) => new Claim(
+                new ClaimRef(DeterministicGuid($"canonical-worker-completion:{facts.SourceEventId:N}:proposal:{index}")),
+                facts.ProjectRef,
+                new ClaimantRef.LogicalActor(facts.WorkerActorRef),
+                facts.SessionBindingRef,
+                new ClaimPayload.ProposedStateContribution(
+                    statement,
+                    new ContributionScopeRef.Project(facts.ProjectRef),
+                    null),
+                facts.EvidenceRefs,
+                facts.CompletedAt))
+            .ToArray();
+        claims.AddRange(proposedClaims);
 
         var handoff = new Handoff(
             facts.HandoffRef,
@@ -92,7 +122,7 @@ public sealed class CanonicalWorkerCompletionBridgeService(
             facts.ResultClaimRef,
             validationRefs,
             [],
-            [],
+            proposedClaims.Select(value => value.ClaimRef).ToArray(),
             [],
             facts.EvidenceRefs,
             facts.CompletedAt);

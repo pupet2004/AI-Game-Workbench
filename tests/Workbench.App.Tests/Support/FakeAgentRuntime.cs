@@ -79,6 +79,8 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
 
     public Func<CreateAgentSessionRequest, AgentSession>? CreateSessionOverride { get; set; }
 
+    public Func<AgentSession, AgentRequest, Task>? BeforeSendAsync { get; set; }
+
     public int GetModelsCallCount { get; private set; }
 
     public Exception? ApprovalException { get; set; }
@@ -180,6 +182,11 @@ internal sealed class FakeAgentRuntime : IAgentRuntime, IAsyncDisposable
         if (SendException is not null)
         {
             throw SendException;
+        }
+
+        if (BeforeSendAsync is not null)
+        {
+            await BeforeSendAsync(session, request);
         }
 
         var events = _turns.Count > 0 ? _turns.Dequeue() : [];

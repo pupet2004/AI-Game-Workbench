@@ -435,7 +435,8 @@ public sealed class WorkerSessionRouter(
     B1WorkerExecutionBridgeService? b1WorkerExecutionBridge = null,
     B1NonAuthoritativeCommandService? b1RoutingCommands = null,
     WorkerCompletionSummaryConsumer? completionSummaryConsumer = null,
-    CanonicalWorkerCompletionBridgeService? canonicalWorkerCompletionBridge = null)
+    CanonicalWorkerCompletionBridgeService? canonicalWorkerCompletionBridge = null,
+    CanonicalWorkerLaunchService? canonicalWorkerLaunch = null)
 {
     private readonly IAgentHost _agentHost = agentHost ?? new InProcessAgentHost(runtimes);
     private readonly ConcurrentDictionary<AgentSessionId, Task> _intentTails = new();
@@ -444,6 +445,7 @@ public sealed class WorkerSessionRouter(
     private readonly B1WorkerExecutionBridgeService? _b1WorkerExecutionBridge = b1WorkerExecutionBridge;
     private readonly B1NonAuthoritativeCommandService? _b1RoutingCommands = b1RoutingCommands;
     private readonly CanonicalWorkerCompletionBridgeService? _canonicalWorkerCompletionBridge = canonicalWorkerCompletionBridge;
+    private readonly CanonicalWorkerLaunchService? _canonicalWorkerLaunch = canonicalWorkerLaunch;
 
     public async Task<int> ReconcileCompletedAssignmentsAsync(
         Guid projectId,
@@ -592,6 +594,36 @@ public sealed class WorkerSessionRouter(
             if (effectiveRevision is null)
                 return new WorkerStartResult(false, null, "The requested TaskRevision is not available for this project and task.");
         }
+
+        // Legacy callers may know only the Task and typed execution identity.
+        // Resolve the current Project World assignment here so their Worker
+        // completion enters the canonical governance path as well.
+        if (_canonicalWorkerLaunch is not null &&
+            effectiveRevision is not null &&
+            request.ExecutionId is not null &&
+            request.ExecutionIdentity is not null &&
+            request.B1AssignmentRef is null &&
+            request.B1AssignmentRevisionRef is null &&
+            request.B1AttemptRef is null)
+        {
+            var canonical = await _canonicalWorkerLaunch.PrepareAsync(
+                request.Project.Id,
+                effectiveRevision,
+                cancellationToken);
+            if (canonical is not null)
+            {
+                request = request with
+                {
+                    B1AssignmentRef = canonical.AssignmentRef,
+                    B1AssignmentRevisionRef = canonical.AssignmentRevisionRef,
+                    B1AttemptRef = canonical.AttemptRef,
+                    B1SessionBindingRef = canonical.SessionBindingRef,
+                    B1LogicalActorRef = canonical.LogicalActorRef,
+                    B1OperatorRef = canonical.OperatorRef
+                };
+            }
+        }
+
         var created = request.ReuseWorkerSessionId is null;
         var typed = executions is not null && request.ExecutionId.HasValue && request.ExecutionIdentity is not null;
         var linked = request.B1AssignmentRef.HasValue || request.B1AttemptRef.HasValue || request.B1AssignmentRevisionRef.HasValue;
@@ -764,7 +796,7 @@ public sealed class WorkerSessionRouter(
                         completed.Result.FinalStatus == AgentSessionStatus.Completed &&
                         !string.IsNullOrWhiteSpace(finalText))
                     {
-                        payload = new WorkerHandoffPayload(WorkerHandoffKind.FinalReport, finalText, null);
+                        payload = new WorkerHandoffPayload(WorkerHandoffKind.FinalReport, finalText, null, []);
                     }
                     var isFinalReport = payload?.Kind == WorkerHandoffKind.FinalReport;
                     WorkerCompletionVerification? verification = null;
@@ -803,6 +835,7 @@ public sealed class WorkerSessionRouter(
                     var validationSummary = CombineValidationSummary(payload?.ValidationSummary, verification);
                     var eventId = Guid.NewGuid();
                     var canPublishHandoff = true;
+                    var canonicalCompletionBridged = false;
                     if (isFinalReport && assignments is not null)
                     {
                         var finalReport = payload!;
@@ -856,11 +889,15 @@ public sealed class WorkerSessionRouter(
                                 payload!.Message,
                                 validationSummary,
                                 evidenceRefs,
-                                time.GetUtcNow());
+                                completedAt: time.GetUtcNow(),
+                                proposedChanges: payload.ProposedChanges);
                             var canonical = await _canonicalWorkerCompletionBridge.BridgeAsync(
                                 facts,
                                 operatorRef,
                                 cancellationToken: cancellationToken);
+                            canonicalCompletionBridged = canonical.Status is
+                                CanonicalWorkerCompletionStatus.GovernanceReady or
+                                CanonicalWorkerCompletionStatus.Governed;
                             if (request.OnCanonicalCompletion is not null)
                             {
                                 try { await request.OnCanonicalCompletion(canonical, cancellationToken); }
@@ -880,6 +917,7 @@ public sealed class WorkerSessionRouter(
 
                     if (isFinalReport &&
                         canPublishHandoff &&
+                        !canonicalCompletionBridged &&
                         completionSummaryConsumer is not null)
                     {
                         try

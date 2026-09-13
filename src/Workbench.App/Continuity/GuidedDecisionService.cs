@@ -90,7 +90,8 @@ public sealed class GuidedDecisionService(
         var proposedClaims = handoff.ProposedContributionClaimRefs
             .Select(value => claims[value])
             .ToArray();
-        if (request.ContributionMode != ContributionDecisionMode.Ignore)
+        if (request.Disposition == AssignmentDisposition.Accepted &&
+            request.ContributionMode != ContributionDecisionMode.Ignore)
         {
             if (!string.IsNullOrWhiteSpace(request.EditedContributionStatement) && proposedClaims.Length > 1)
                 throw new B1CommandException(B1FailureCode.InvalidDecisionShape, "Edit mode currently requires one proposed contribution at a time.");

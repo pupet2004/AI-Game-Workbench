@@ -9,7 +9,8 @@ public sealed class B1AuthorityCommandService(
     B1AuthorityEvaluator evaluator,
     TimeProvider timeProvider,
     ProjectEvolutionCandidateRepository? evolutionCandidates = null,
-    CanonicalWorkerCompletionRepository? canonicalCompletions = null)
+    CanonicalWorkerCompletionRepository? canonicalCompletions = null,
+    ProjectSummaryRepository? projectSummaries = null)
 {
     private const int MaximumConflictRetries = 3;
     private readonly B1AuthorityRepository _repository =
@@ -20,6 +21,7 @@ public sealed class B1AuthorityCommandService(
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     private readonly ProjectEvolutionCandidateRepository? _evolutionCandidates = evolutionCandidates;
     private readonly CanonicalWorkerCompletionRepository? _canonicalCompletions = canonicalCompletions;
+    private readonly ProjectSummaryRepository? _projectSummaries = projectSummaries;
 
     public Task<AuthorityDecision> EstablishLogicalActorAsync(
         EstablishLogicalActorCommand command,
@@ -156,6 +158,26 @@ public sealed class B1AuthorityCommandService(
                         }
                     }
                 }
+                if (_projectSummaries is not null)
+                {
+                    try
+                    {
+                        await AppendCanonicalDecisionSummaryAsync(
+                            state,
+                            committed.Decision,
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        // Accepted state is authoritative. Summary is a
+                        // recoverable continuity projection and must not
+                        // turn a durable Authority Decision into a failure.
+                    }
+                }
                 return committed.Decision;
             }
         }
@@ -163,5 +185,70 @@ public sealed class B1AuthorityCommandService(
         throw new B1CommandException(
             B1FailureCode.ConcurrentProjectChange,
             "The Project authority state changed during all commit attempts.");
+    }
+
+    private async Task AppendCanonicalDecisionSummaryAsync(
+        B1ProjectState stateBeforeCommit,
+        AuthorityDecision decision,
+        CancellationToken cancellationToken)
+    {
+        var summaries = _projectSummaries;
+        if (summaries is null)
+            return;
+
+        var handoffRefs = decision.ConsideredRefs
+            .OfType<ConsideredRef.Handoff>()
+            .Select(value => value.HandoffRef)
+            .Distinct()
+            .ToArray();
+        if (handoffRefs.Length == 0)
+            return;
+
+        var claims = stateBeforeCommit.Claims.ToDictionary(value => value.ClaimRef);
+        var handoffs = stateBeforeCommit.Handoffs.ToDictionary(value => value.HandoffRef);
+        var deltas = new List<SummaryDelta>();
+        foreach (var handoffRef in handoffRefs)
+        {
+            if (!handoffs.TryGetValue(handoffRef, out var handoff))
+                continue;
+
+            var result = claims.GetValueOrDefault(handoff.ResultClaimRef)?.Payload as ClaimPayload.Result;
+            var disposition = decision.AssignmentDispositionEffect?.Disposition;
+            var kind = disposition switch
+            {
+                AssignmentDisposition.Rejected => SummaryDeltaKind.RejectedPath,
+                AssignmentDisposition.RevisionRequired => SummaryDeltaKind.Unresolved,
+                _ => SummaryDeltaKind.Change
+            };
+            var outcome = disposition switch
+            {
+                AssignmentDisposition.Rejected => "rejected",
+                AssignmentDisposition.RevisionRequired => "requires revision",
+                _ => "accepted"
+            };
+            var resultText = result?.Statement ?? "Worker result";
+            var contributionText = decision.AcceptedStateContributions.Count == 0
+                ? string.Empty
+                : $" Accepted state: {string.Join("; ", decision.AcceptedStateContributions.Select(value => value.Statement))}";
+            var text = $"Authority {outcome} Worker result: {resultText}.{contributionText}";
+            var sources = new List<SummarySourceRef>
+            {
+                new("AuthorityDecision", decision.DecisionRef.Value.ToString()),
+                new("Handoff", handoffRef.Value.ToString())
+            };
+            if (handoff.ResultClaimRef.Value != Guid.Empty)
+                sources.Add(new("Claim", handoff.ResultClaimRef.Value.ToString()));
+            deltas.Add(new SummaryDelta(decision.CreatedAt, kind, text, sources));
+        }
+
+        if (deltas.Count > 0)
+        {
+            await summaries.AppendAsync(
+                decision.ProjectRef.Value,
+                decision.DecisionRef.Value,
+                deltas,
+                decision.CreatedAt,
+                cancellationToken);
+        }
     }
 }

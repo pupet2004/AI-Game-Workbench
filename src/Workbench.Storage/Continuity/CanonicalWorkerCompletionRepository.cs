@@ -26,10 +26,10 @@ public sealed class CanonicalWorkerCompletionRepository(WorkbenchDatabase databa
                 INSERT INTO canonical_worker_completions(
                     id,project_id,source_event_id,task_id,task_revision_id,worker_execution_id,
                     attempt_id,session_binding_id,worker_actor_id,final_report,validation_summary,
-                    evidence_refs_json,planned_result_claim_id,planned_validation_claim_id,planned_handoff_id,
+                    evidence_refs_json,proposed_changes_json,planned_result_claim_id,planned_validation_claim_id,planned_handoff_id,
                     result_claim_id,validation_claim_id,handoff_id,status,created_at)
                 VALUES($id,$project,$source,$task,$revision,$execution,$attempt,$binding,$actor,$report,$validation,
-                    $evidence,$planned_result,$planned_validation,$planned_handoff,NULL,NULL,NULL,'PendingBridge',$created)
+                    $evidence,$proposed_changes,$planned_result,$planned_validation,$planned_handoff,NULL,NULL,NULL,'PendingBridge',$created)
                 ON CONFLICT(project_id,source_event_id) DO NOTHING;
                 """;
             Add(insert, "$id", facts.CompletionId.ToString());
@@ -44,6 +44,7 @@ public sealed class CanonicalWorkerCompletionRepository(WorkbenchDatabase databa
             Add(insert, "$report", facts.FinalReport);
             Add(insert, "$validation", facts.ValidationSummary);
             Add(insert, "$evidence", JsonSerializer.Serialize(facts.EvidenceRefs.Select(value => value.Value).ToArray()));
+            Add(insert, "$proposed_changes", JsonSerializer.Serialize(facts.ProposedChanges));
             Add(insert, "$planned_result", facts.ResultClaimRef.Value.ToString());
             Add(insert, "$planned_validation", facts.ValidationClaimRef?.Value.ToString());
             Add(insert, "$planned_handoff", facts.HandoffRef.Value.ToString());
@@ -192,7 +193,7 @@ public sealed class CanonicalWorkerCompletionRepository(WorkbenchDatabase databa
         command.CommandText = """
             SELECT id,source_event_id,task_id,task_revision_id,worker_execution_id,attempt_id,
                    session_binding_id,worker_actor_id,final_report,validation_summary,evidence_refs_json,
-                   planned_result_claim_id,planned_validation_claim_id,planned_handoff_id,
+                   proposed_changes_json,planned_result_claim_id,planned_validation_claim_id,planned_handoff_id,
                    result_claim_id,validation_claim_id,handoff_id,status,created_at,governed_at,authority_decision_id
             FROM canonical_worker_completions
             WHERE project_id=$project AND source_event_id=$source;
@@ -215,20 +216,21 @@ public sealed class CanonicalWorkerCompletionRepository(WorkbenchDatabase databa
             reader.GetString(8),
             reader.IsDBNull(9) ? null : reader.GetString(9),
             ParseEvidence(reader.GetString(10)),
-            new ClaimRef(Guid.Parse(reader.IsDBNull(14) ? reader.GetString(11) : reader.GetString(14))),
-            reader.IsDBNull(15)
-                ? (reader.IsDBNull(12) ? null : new ClaimRef(Guid.Parse(reader.GetString(12))))
-                : new ClaimRef(Guid.Parse(reader.GetString(15))),
-            new HandoffRef(Guid.Parse(reader.IsDBNull(16) ? reader.GetString(13) : reader.GetString(16))),
-            DateTimeOffset.Parse(reader.GetString(18), CultureInfo.InvariantCulture));
-        var status = Enum.Parse<CanonicalWorkerCompletionStatus>(reader.GetString(17), false);
-        var persistedAt = DateTimeOffset.Parse(reader.GetString(18), CultureInfo.InvariantCulture);
-        DateTimeOffset? governedAt = reader.IsDBNull(19)
+            ParseProposedChanges(reader.GetString(11)),
+            new ClaimRef(Guid.Parse(reader.IsDBNull(15) ? reader.GetString(12) : reader.GetString(15))),
+            reader.IsDBNull(16)
+                ? (reader.IsDBNull(13) ? null : new ClaimRef(Guid.Parse(reader.GetString(13))))
+                : new ClaimRef(Guid.Parse(reader.GetString(16))),
+            new HandoffRef(Guid.Parse(reader.IsDBNull(17) ? reader.GetString(14) : reader.GetString(17))),
+            DateTimeOffset.Parse(reader.GetString(19), CultureInfo.InvariantCulture));
+        var status = Enum.Parse<CanonicalWorkerCompletionStatus>(reader.GetString(18), false);
+        var persistedAt = DateTimeOffset.Parse(reader.GetString(19), CultureInfo.InvariantCulture);
+        DateTimeOffset? governedAt = reader.IsDBNull(20)
             ? null
-            : DateTimeOffset.Parse(reader.GetString(19), CultureInfo.InvariantCulture);
-        AuthorityDecisionRef? decision = reader.IsDBNull(20)
+            : DateTimeOffset.Parse(reader.GetString(20), CultureInfo.InvariantCulture);
+        AuthorityDecisionRef? decision = reader.IsDBNull(21)
             ? null
-            : new AuthorityDecisionRef(Guid.Parse(reader.GetString(20)));
+            : new AuthorityDecisionRef(Guid.Parse(reader.GetString(21)));
         return new StoredCanonicalWorkerCompletion(facts, status, persistedAt, governedAt, decision);
     }
 
@@ -237,6 +239,13 @@ public sealed class CanonicalWorkerCompletionRepository(WorkbenchDatabase databa
         var values = JsonSerializer.Deserialize<string[]>(json) ?? [];
         return values.Select(value => new EvidenceRef(value)).ToArray();
     }
+
+    private static IReadOnlyList<string> ParseProposedChanges(string json) =>
+        (JsonSerializer.Deserialize<string[]>(json) ?? [])
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Select(value => value.Trim())
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
 
     private static void ValidateIdentity(CanonicalWorkerCompletionFacts stored, CanonicalWorkerCompletionFacts requested)
     {
@@ -250,6 +259,7 @@ public sealed class CanonicalWorkerCompletionRepository(WorkbenchDatabase databa
             !string.Equals(stored.FinalReport, requested.FinalReport, StringComparison.Ordinal) ||
             !string.Equals(stored.ValidationSummary, requested.ValidationSummary, StringComparison.Ordinal) ||
             !stored.EvidenceRefs.SequenceEqual(requested.EvidenceRefs) ||
+            !stored.ProposedChanges.SequenceEqual(requested.ProposedChanges, StringComparer.Ordinal) ||
             stored.ResultClaimRef != requested.ResultClaimRef ||
             stored.ValidationClaimRef != requested.ValidationClaimRef ||
             stored.HandoffRef != requested.HandoffRef ||

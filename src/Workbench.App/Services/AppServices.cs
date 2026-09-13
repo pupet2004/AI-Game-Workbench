@@ -300,11 +300,17 @@ public sealed class AppServices : IAsyncDisposable
             b1AuthorityEvaluator,
             effectiveTimeProvider,
             evolutionCandidates,
-            canonicalWorkerCompletions);
+            canonicalWorkerCompletions,
+            projectSummaries);
         var b1WorkerExecutionBridge = new B1WorkerExecutionBridgeService(
             new B1WorkerBridgeRepository(database),
             b1AuthorityRepository,
             b1Evidence);
+        var canonicalWorkerLaunch = new CanonicalWorkerLaunchService(
+            b1AuthorityRepository,
+            b1NonAuthoritativeCommands,
+            b1ProjectGovernance,
+            effectiveTimeProvider);
         var canonicalWorkerCompletionBridge = new CanonicalWorkerCompletionBridgeService(
             canonicalWorkerCompletions,
             b1ClaimHandoffRepository,
@@ -382,7 +388,7 @@ public sealed class AppServices : IAsyncDisposable
             new TaskRevisionRepository(database),
             new ProjectLibraryRepository(database),
             libraryEvolutionRepository,
-            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost, new TaskRevisionRepository(database), taskEvents, b1WorkerExecutionBridge, b1NonAuthoritativeCommands, completionSummaryConsumer, canonicalWorkerCompletionBridge),
+            new WorkerSessionRouter(effectiveRuntimeRegistry, workerRoutingStore, effectiveTimeProvider, reviewState, leaderReviewOrchestrator, workerExecutionRepository, agentHost, new TaskRevisionRepository(database), taskEvents, b1WorkerExecutionBridge, b1NonAuthoritativeCommands, completionSummaryConsumer, canonicalWorkerCompletionBridge, canonicalWorkerLaunch),
             workerRoutingStore,
             workerExecutionRepository,
             leaderReviewOrchestrator,
@@ -395,7 +401,7 @@ public sealed class AppServices : IAsyncDisposable
             b1WorkerExecutionBridge,
             canonicalWorkerCompletions,
             canonicalWorkerCompletionBridge,
-            new CanonicalWorkerLaunchService(b1AuthorityRepository, b1NonAuthoritativeCommands, b1ProjectGovernance, effectiveTimeProvider),
+            canonicalWorkerLaunch,
             b1Evidence,
             b1NonAuthoritativeCommands,
             b1AuthorityCommands,

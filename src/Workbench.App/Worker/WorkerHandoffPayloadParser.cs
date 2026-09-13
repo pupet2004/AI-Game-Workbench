@@ -4,7 +4,11 @@ namespace Workbench.App.Worker;
 
 public enum WorkerHandoffKind { NeedsLeaderDecision, FinalReport }
 
-public sealed record WorkerHandoffPayload(WorkerHandoffKind Kind, string Message, string? ValidationSummary);
+public sealed record WorkerHandoffPayload(
+    WorkerHandoffKind Kind,
+    string Message,
+    string? ValidationSummary,
+    IReadOnlyList<string> ProposedChanges);
 
 public static class WorkerHandoffPayloadParser
 {
@@ -15,11 +19,19 @@ public static class WorkerHandoffPayloadParser
         {
             var parsed = JsonSerializer.Deserialize<WorkerHandoffPayloadDocument>(text);
             if (parsed is null || !Enum.TryParse<WorkerHandoffKind>(parsed.Kind, true, out var kind) || string.IsNullOrWhiteSpace(parsed.Message)) return false;
-            payload = new WorkerHandoffPayload(kind, parsed.Message, parsed.ValidationSummary);
+            payload = new WorkerHandoffPayload(
+                kind,
+                parsed.Message,
+                parsed.ValidationSummary,
+                parsed.ProposedChanges ?? []);
             return true;
         }
         catch (JsonException) { return false; }
     }
 
-    private sealed record WorkerHandoffPayloadDocument(string? Kind, string? Message, string? ValidationSummary);
+    private sealed record WorkerHandoffPayloadDocument(
+        string? Kind,
+        string? Message,
+        string? ValidationSummary,
+        string[]? ProposedChanges);
 }

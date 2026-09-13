@@ -15,7 +15,7 @@ public sealed class LibraryProjectionProvenanceMigrationTests
 
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(30L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(31L, await ScalarAsync<long>(connection, "PRAGMA user_version;"));
         Assert.Equal(0L, await ScalarAsync<long>(connection,
             "SELECT \"notnull\" FROM pragma_table_info('project_library_proposals') WHERE name='source_session_id';"));
 

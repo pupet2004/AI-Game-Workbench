@@ -206,12 +206,8 @@ public sealed class B1ManualContinuityCertificationTests
                      {
                          "leader_session_epochs",
                          "leader_messages",
-                         "project_summary_entries",
-                         "project_summary_source_refs",
                          "worker_executions",
-                         "task_events",
-                         "task_review_decisions",
-                         "worker_completion_packages"
+                         "task_events"
                      })
             {
                 Assert.Equal(0L, await CountRowsAsync(restarted, table));
