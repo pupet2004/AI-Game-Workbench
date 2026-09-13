@@ -85,6 +85,15 @@ public sealed class Phase8UsabilityReviewTests
     }
 
     [Fact]
+    public void Workspace_keeps_review_reachable_from_the_three_pane_work_surface()
+    {
+        var markup = ReadView("WorkspaceView.axaml");
+
+        Assert.Contains("[Workspace.Review]", markup, StringComparison.Ordinal);
+        Assert.Contains("OpenProjectReviewPageCommand", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Work_cards_can_send_canonical_handoffs_to_review_without_relabeling_legacy_results()
     {
         var markup = ReadView(Path.Combine("Panes", "WorkPaneView.axaml"));

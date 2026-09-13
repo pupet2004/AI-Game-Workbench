@@ -193,6 +193,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              openGuidedDecision: handoffRef => ShowGuidedDecisionAsync(result, handoffRef),
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result),
+             openProjectReview: () => ShowProjectReviewAsync(result),
              acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
         CurrentPage = workspace;
         await workspace.LeaderPane.InitializeAsync();
