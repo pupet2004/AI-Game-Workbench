@@ -14,6 +14,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="{Binding [Explorer.Reload]}" Command="{Binding ReloadCommand}" IsEnabled="{Binding !IsBusy}" />
+                    <Button Content="{Binding [Explorer.Continue]}" Command="{Binding ContinueProjectCommand}" IsEnabled="{Binding !IsBusy}" />
                     <Button Content="{Binding [Explorer.OpenWorkspace]}" Command="{Binding OpenWorkspaceCommand}" IsEnabled="{Binding !IsBusy}" />
                     <Button Content="{Binding [Explorer.Home]}" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" />
                 </StackPanel>
@@ -23,6 +24,28 @@
                 <TextBlock Text="{Binding UserPrincipal}" Opacity="0.75" />
             </StackPanel>
             <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
+
+            <Border Padding="16" Background="#101828" CornerRadius="6">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="24">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="{Binding [Explorer.CurrentState]}" Foreground="#FFFFFF" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding ProjectStateLabel}" Foreground="#E4E7EC" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding ProjectPulseText}" Foreground="#B9C5D6" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="3" MinWidth="110">
+                        <TextBlock Text="{Binding AcceptedStatementCountText}" Foreground="#FFFFFF" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding [Explorer.Accepted]}" Foreground="#B9C5D6" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="3" MinWidth="110">
+                        <TextBlock Text="{Binding PendingHandoffSummary}" Foreground="#FFFFFF" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding [Explorer.PendingHandoffs]}" Foreground="#B9C5D6" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Spacing="3" MinWidth="110">
+                        <TextBlock Text="{Binding ActiveAssignmentSummary}" Foreground="#FFFFFF" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding [Explorer.ActiveWork]}" Foreground="#B9C5D6" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+            </Border>
 
             <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="8">

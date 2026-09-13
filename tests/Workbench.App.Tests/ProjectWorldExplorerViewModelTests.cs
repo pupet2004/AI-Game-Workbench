@@ -22,6 +22,8 @@ public sealed class ProjectWorldExplorerViewModelTests
         Assert.Empty(explorer.AcceptedState);
         Assert.Empty(explorer.ActiveWork);
         Assert.Contains("No accepted", explorer.ProjectStateLabel);
+        Assert.Contains("first task", explorer.ProjectPulseText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("0", explorer.AcceptedStatementCountText);
         Assert.Single(explorer.NeedsAttention);
     }
 

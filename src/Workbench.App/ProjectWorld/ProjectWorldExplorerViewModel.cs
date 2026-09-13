@@ -101,14 +101,29 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         ? LocalizationService.Current["Dynamic.ProjectAccepts"]
         : LocalizationService.Current["Explorer.NoAccepted"];
 
+    public string AcceptedStatementCountText =>
+        string.Format(
+            LocalizationService.Current["Dynamic.AcceptedStatementsCount"],
+            AcceptedState.Count);
+
     public string AcceptedConstraintsSummary => string.Join("; ", AcceptedState.Select(item => item.Statement));
     public string ActiveAssignmentSummary => ActiveWork.Count == 0
-        ? "No active assignments"
-        : $"{ActiveWork.Count} active assignment{(ActiveWork.Count == 1 ? string.Empty : "s")}";
+        ? LocalizationService.Current["Explorer.NoAssignments"]
+        : string.Format(
+            LocalizationService.Current["Dynamic.ActiveAssignmentsCount"],
+            ActiveWork.Count);
     public int PendingHandoffCount { get; private set; }
     public string PendingHandoffSummary => PendingHandoffCount == 0
-        ? "No pending handoffs"
-        : $"{PendingHandoffCount} pending handoff{(PendingHandoffCount == 1 ? string.Empty : "s")}";
+        ? LocalizationService.Current["Explorer.NoPendingHandoffs"]
+        : string.Format(
+            LocalizationService.Current["Dynamic.PendingHandoffsCount"],
+            PendingHandoffCount);
+    public string ProjectPulseText =>
+        PendingHandoffCount > 0
+            ? LocalizationService.Current["Explorer.NextReview"]
+            : ActiveWork.Count > 0
+                ? LocalizationService.Current["Explorer.NextWork"]
+                : LocalizationService.Current["Explorer.NextLeader"];
 
     [ObservableProperty]
     public partial RecoveryViewModel? Recovery { get; private set; }
@@ -225,6 +240,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             }
 
             OnPropertyChanged(nameof(AcceptedConstraintsSummary));
+            OnPropertyChanged(nameof(AcceptedStatementCountText));
             OnPropertyChanged(nameof(ActiveAssignmentSummary));
 
             var consideredHandoffs = state.AuthorityDecisions
@@ -252,6 +268,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             PendingHandoffCount = PendingHandoffs.Count;
             OnPropertyChanged(nameof(PendingHandoffCount));
             OnPropertyChanged(nameof(PendingHandoffSummary));
+            OnPropertyChanged(nameof(ProjectPulseText));
 
             var completed = projection.AcceptedProjectState.RevisionDispositions.Values
                 .Where(value => value.Disposition == AssignmentDisposition.Accepted)
@@ -323,6 +340,12 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
 
     [RelayCommand]
     private Task OpenWorkspaceAsync() => _openWorkspace();
+
+    [RelayCommand]
+    private Task ContinueProjectAsync() =>
+        PendingHandoffs.FirstOrDefault() is { } pending
+            ? _openGuidedDecision(pending.HandoffRef)
+            : _openWorkspace();
 
     [RelayCommand]
     private Task BeginManualWorkAsync(AssignmentRef assignmentRef) => _beginManualWork(assignmentRef);

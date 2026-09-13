@@ -59,6 +59,19 @@ public sealed class Phase8UsabilityReviewTests
     }
 
     [Fact]
+    public void Project_overview_exposes_current_state_and_one_continue_action()
+    {
+        var markup = ReadView("ProjectWorldExplorerView.axaml");
+
+        Assert.Contains("[Explorer.CurrentState]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Explorer.Continue]", markup, StringComparison.Ordinal);
+        Assert.Contains("ContinueProjectCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("AcceptedStatementCountText", markup, StringComparison.Ordinal);
+        Assert.Contains("PendingHandoffSummary", markup, StringComparison.Ordinal);
+        Assert.Contains("ActiveAssignmentSummary", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Main_window_keeps_the_sealed_journey_inside_the_supported_720p_minimum()
     {
         var markup = ReadView("MainWindow.axaml");
