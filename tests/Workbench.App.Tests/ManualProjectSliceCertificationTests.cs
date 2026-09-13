@@ -97,6 +97,9 @@ public sealed class ManualProjectSliceCertificationTests
             () => Task.CompletedTask);
         await explorerAfterDecision.InitializeAsync();
         Assert.Empty(explorerAfterDecision.PendingHandoffs);
+        var summary = Assert.Single(explorerAfterDecision.RecentSummaries);
+        Assert.Contains("Authority accepted Worker result", summary.Text);
+        Assert.Contains("AuthorityDecision:", summary.SourceText);
         explorerAfterDecision.LibraryCategory = "Design";
         explorerAfterDecision.LibraryTopic = "Combat";
         explorerAfterDecision.LibraryNodeContent = "Combat prototype direction established.";

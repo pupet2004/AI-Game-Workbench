@@ -99,6 +99,28 @@
 
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [Explorer.Summaries]}" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding [Explorer.SummariesDescription]}" Opacity="0.7" TextWrapping="Wrap" />
+                    <TextBlock IsVisible="{Binding !RecentSummaries.Count}" Text="{Binding [Explorer.NoSummaries]}" Opacity="0.7" />
+                    <ItemsControl ItemsSource="{Binding RecentSummaries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:ProjectSummaryItemView">
+                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="{Binding KindText}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding TimestampText}" Opacity="0.7" FontFamily="Consolas" />
+                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding SourceText}" Opacity="0.7" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Explorer.ActiveWork]}" FontSize="18" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding [Explorer.ActiveWorkDescription]}" Opacity="0.7" TextWrapping="Wrap" />
                     <TextBlock IsVisible="{Binding !ActiveWork.Count}" Text="{Binding [Explorer.NoAssignments]}" Opacity="0.7" />

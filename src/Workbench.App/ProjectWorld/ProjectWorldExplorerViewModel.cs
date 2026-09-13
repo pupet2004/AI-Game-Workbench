@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Workbench.App.Memory;
@@ -7,6 +8,7 @@ using Workbench.App.ViewModels;
 using Workbench.Core.Continuity;
 using Workbench.Project.Opening;
 using Workbench.Storage.Continuity;
+using Workbench.Storage.Memory;
 
 namespace Workbench.App.ProjectWorld;
 
@@ -28,6 +30,30 @@ public sealed record DecisionItemView(
     string DecisionText,
     string EffectsText,
     string ContributionText);
+
+public sealed record ProjectSummaryItemView(
+    DateTimeOffset OccurredAt,
+    SummaryDeltaKind Kind,
+    string Text,
+    IReadOnlyList<SummarySourceRef> SourceRefs)
+{
+    public string KindText => Kind switch
+    {
+        SummaryDeltaKind.Decision => LocalizationService.Current["Explorer.SummaryDecision"],
+        SummaryDeltaKind.Change => LocalizationService.Current["Explorer.SummaryChange"],
+        SummaryDeltaKind.Constraint => LocalizationService.Current["Explorer.SummaryConstraint"],
+        SummaryDeltaKind.RejectedPath => LocalizationService.Current["Explorer.SummaryRejectedPath"],
+        _ => LocalizationService.Current["Explorer.SummaryUnresolved"]
+    };
+
+    public string TimestampText =>
+        OccurredAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+    public string SourceText =>
+        SourceRefs.Count == 0
+            ? LocalizationService.Current["Dynamic.NoSources"]
+            : string.Join(", ", SourceRefs.Select(value => $"{value.SourceKind}:{value.SourceLocator}"));
+}
 
 public sealed record AttentionItemView(string Label, string Detail);
 
@@ -128,6 +154,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     public ObservableCollection<AttentionItemView> NeedsAttention { get; } = [];
     public ObservableCollection<PendingHandoffItemView> PendingHandoffs { get; } = [];
     public ObservableCollection<DecisionItemView> RecentDecisions { get; } = [];
+    public ObservableCollection<ProjectSummaryItemView> RecentSummaries { get; } = [];
     public ObservableCollection<ProjectEvolutionRecord> EvolutionEntries { get; } = [];
 
     public bool HasLegacyContext { get; private set; }
@@ -156,6 +183,9 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             var state = await _services.B1AuthorityRepository.LoadProjectStateAsync(projectRef, cancellationToken);
             var projection = B1Projector.Build(state);
             var library = await _services.LibraryAcceptedStateReader.ReadAsync(projectRef, cancellationToken);
+            var summaries = await _services.ProjectSummaryRepository.QueryAsync(
+                new SummaryQuery(_result.Project.Id, 5),
+                cancellationToken);
             var evolution = await _services.ProjectEvolutionIndex.ListAsync(_result.Project.Id, cancellationToken);
 
             AcceptedState.Clear();
@@ -259,6 +289,16 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                     decision.AcceptedStateContributions.Count == 0
                         ? LocalizationService.Current["Dynamic.NoAcceptedStatements"]
                         : string.Join("; ", decision.AcceptedStateContributions.Select(value => value.Statement))));
+            }
+
+            RecentSummaries.Clear();
+            foreach (var summary in summaries)
+            {
+                RecentSummaries.Add(new(
+                    summary.OccurredAt,
+                    summary.Kind,
+                    summary.Text,
+                    summary.SourceRefs));
             }
 
             EvolutionEntries.Clear();
