@@ -1,0 +1,24 @@
+; Engine configuration file.
+; Product loop fixture for AI Game Workbench.
+
+config_version=5
+
+[application]
+
+config/name="Workbench Product Loop Counter"
+run/main_scene="res://scenes/main.tscn"
+
+[display]
+
+window/size/viewport_width=960
+window/size/viewport_height=540
+window/size/window_width_override=960
+window/size/window_height_override=540
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.047, 0.063, 0.094, 1)
+
