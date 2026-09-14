@@ -19,19 +19,47 @@ public sealed class CanonicalWorkerLaunchService(
     B1ProjectGovernanceRepository governanceRepository,
     TimeProvider timeProvider)
 {
-    public async Task<CanonicalWorkerLaunchContext?> PrepareAsync(Guid projectId, TaskRevision taskRevision, CancellationToken cancellationToken = default)
+    public Task<CanonicalWorkerLaunchContext?> PrepareAsync(
+        Guid projectId,
+        TaskRevision taskRevision,
+        CancellationToken cancellationToken = default) =>
+        PrepareAsync(projectId, taskRevision, null, cancellationToken);
+
+    public async Task<CanonicalWorkerLaunchContext?> PrepareAsync(
+        Guid projectId,
+        TaskRevision taskRevision,
+        AssignmentRef? requestedAssignmentRef,
+        CancellationToken cancellationToken = default)
     {
         var project = new ProjectRef(projectId);
         var governance = await governanceRepository.GetAsync(project, cancellationToken);
         if (governance is null) return null;
         var state = await authorityRepository.LoadProjectStateAsync(project, cancellationToken);
         var projection = B1Projector.Build(state);
-        var candidates = projection.AcceptedProjectState.CurrentDelegationAssignments
-            .Select(value => projection.AcceptedProjectState.Assignments[value])
-            .Where(assignment => projection.AcceptedProjectState.CurrentEffectiveRevisionRefs.ContainsKey(assignment.AssignmentRef))
-            .ToArray();
-        if (candidates.Length != 1) return null;
-        var assignment = candidates[0];
+        Assignment assignment;
+        if (requestedAssignmentRef is { } requested)
+        {
+            if (!projection.AcceptedProjectState.CurrentDelegationAssignments.Contains(requested) ||
+                !projection.AcceptedProjectState.Assignments.TryGetValue(requested, out assignment!))
+            {
+                return null;
+            }
+        }
+        else
+        {
+            var candidates = projection.AcceptedProjectState.CurrentDelegationAssignments
+                .Select(value => projection.AcceptedProjectState.Assignments[value])
+                .Where(value => projection.AcceptedProjectState.CurrentEffectiveRevisionRefs.ContainsKey(value.AssignmentRef))
+                .ToArray();
+            if (candidates.Length != 1) return null;
+            assignment = candidates[0];
+        }
+
+        if (!projection.AcceptedProjectState.CurrentEffectiveRevisionRefs.ContainsKey(assignment.AssignmentRef))
+        {
+            return null;
+        }
+
         var revisionRef = projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[assignment.AssignmentRef];
         if (!projection.EffectiveCurrentAttemptRefs.TryGetValue(assignment.AssignmentRef, out var selected) || selected is null)
         {

@@ -107,8 +107,15 @@ The successor path is deliberately gated:
 - the successor is an Authority Decision, never a side effect of Completion or
   Summary projection.
 
-The remaining step is to connect an explicit successor plan to TaskRevision
-creation and Worker dispatch.
+An explicit successor plan now creates the Task and initial TaskRevision, then
+dispatches the Worker through `CanonicalWorkerLaunchService` and
+`WorkerSessionRouter`. The launch accepts an explicit AssignmentRef, so a
+successor remains addressable when other Assignments are current. If the
+runtime is unavailable after the Authority commit, the result is
+`FailedAfterAuthorityCommit` and a durable `SuccessorDispatchFailed` task event
+is recorded once the Task exists. Retrying the same request reuses the
+persisted successor Authority Decision and Task instead of creating another
+successor.
 
 ## Race Coverage
 
@@ -136,5 +143,4 @@ not claim that every real external provider has completed the same path.
 ## Remaining Gates
 
 - Three consecutive real-provider rounds without state drift.
-- Automatic B1 successor task creation and dispatch.
 - Product-shell and UI workflow completion.
