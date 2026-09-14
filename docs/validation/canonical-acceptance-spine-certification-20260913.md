@@ -115,7 +115,9 @@ runtime is unavailable after the Authority commit, the result is
 `FailedAfterAuthorityCommit` and a durable `SuccessorDispatchFailed` task event
 is recorded once the Task exists. Retrying the same request reuses the
 persisted successor Authority Decision and Task instead of creating another
-successor.
+successor. Subsequent launches recover the explicit Assignment from the
+persisted Worker Task bridge rather than guessing from the number of current
+Assignments.
 
 ## Race Coverage
 

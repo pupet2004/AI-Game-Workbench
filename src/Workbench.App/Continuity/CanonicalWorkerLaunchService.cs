@@ -17,7 +17,8 @@ public sealed class CanonicalWorkerLaunchService(
     B1AuthorityRepository authorityRepository,
     B1NonAuthoritativeCommandService routingCommands,
     B1ProjectGovernanceRepository governanceRepository,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    B1WorkerExecutionBridgeService? workerBridge = null)
 {
     public Task<CanonicalWorkerLaunchContext?> PrepareAsync(
         Guid projectId,
@@ -36,8 +37,12 @@ public sealed class CanonicalWorkerLaunchService(
         if (governance is null) return null;
         var state = await authorityRepository.LoadProjectStateAsync(project, cancellationToken);
         var projection = B1Projector.Build(state);
+        var linkedAssignmentRef = requestedAssignmentRef is null && workerBridge is not null
+            ? (await workerBridge.GetWorkerTaskLinkAsync(project, taskRevision.TaskId, cancellationToken))?.AssignmentRef
+            : null;
+        var effectiveRequestedAssignmentRef = requestedAssignmentRef ?? linkedAssignmentRef;
         Assignment assignment;
-        if (requestedAssignmentRef is { } requested)
+        if (effectiveRequestedAssignmentRef is { } requested)
         {
             if (!projection.AcceptedProjectState.CurrentDelegationAssignments.Contains(requested) ||
                 !projection.AcceptedProjectState.Assignments.TryGetValue(requested, out assignment!))

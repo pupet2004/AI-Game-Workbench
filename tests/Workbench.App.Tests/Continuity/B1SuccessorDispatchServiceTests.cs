@@ -96,6 +96,11 @@ public sealed class B1SuccessorDispatchServiceTests
         Assert.Contains(
             result.DelegationDecision.AssignmentDelegationEffect!.Assignment.AssignmentRef,
             accepted.CurrentDelegationAssignments);
+        var recoveredLaunch = await context.Services.CanonicalWorkerLaunch.PrepareAsync(project.Id, revision);
+        Assert.NotNull(recoveredLaunch);
+        Assert.Equal(
+            result.DelegationDecision.AssignmentDelegationEffect.Assignment.AssignmentRef,
+            recoveredLaunch!.AssignmentRef);
         Assert.Single(await context.Services.TaskRepository.ListAsync(project.Id));
         Assert.Single(await context.Services.WorkerExecutionRepository.ListAsync(project.Id));
         Assert.NotNull(await context.Services.CanonicalWorkerCompletions.GetByWorkerExecutionAsync(

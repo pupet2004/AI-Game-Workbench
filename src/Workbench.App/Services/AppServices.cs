@@ -315,7 +315,8 @@ public sealed class AppServices : IAsyncDisposable
             b1AuthorityRepository,
             b1NonAuthoritativeCommands,
             b1ProjectGovernance,
-            effectiveTimeProvider);
+            effectiveTimeProvider,
+            b1WorkerExecutionBridge);
         var canonicalWorkerCompletionBridge = new CanonicalWorkerCompletionBridgeService(
             canonicalWorkerCompletions,
             b1ClaimHandoffRepository,
