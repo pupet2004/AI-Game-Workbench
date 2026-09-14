@@ -62,6 +62,44 @@ public sealed class ProjectWorldExplorerViewModelTests
             entry.Summary.Contains("Chapter completed", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Explorer_shows_only_current_assignments_after_successor_replacement()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var projectRef = new ProjectRef(fixture.OpenResult.Project.Id);
+        await fixture.Services.ProjectWorldInitialization.CommitAsync(new ProjectWorldInitializationRequest(
+            projectRef,
+            fixture.Principal,
+            RoleKind.Worker,
+            "Own gameplay implementation",
+            "A clear first playable change",
+            "Design the first combat prototype"));
+
+        var before = await fixture.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
+        var replaced = Assert.Single(B1Projector.Build(before).AcceptedProjectState.CurrentDelegationAssignments);
+        var projection = B1Projector.Build(before).AcceptedProjectState;
+        var assignment = projection.Assignments[replaced];
+        await fixture.Services.B1AuthorityCommands.DelegateAssignmentAsync(
+            new DelegateAssignmentCommand(
+                projectRef,
+                fixture.Principal,
+                new DecidingAuthorityRef.UserPrincipal(fixture.Principal),
+                new AssignmentDelegationInstruction(
+                    new ResponsibilityTarget.Existing(assignment.ResponsibilityRef),
+                    new AssignmentAssigneeTarget.Existing(assignment.AssigneeActorRef),
+                    new AssignmentRevisionContract("Continue with the next bounded change"),
+                    replaced),
+                null,
+                [],
+                []));
+
+        var explorer = new ProjectWorldExplorerViewModel(fixture.Services, fixture.OpenResult, () => Task.CompletedTask);
+        await explorer.InitializeAsync();
+
+        Assert.Single(explorer.ActiveWork);
+        Assert.DoesNotContain(explorer.ActiveWork, item => item.AssignmentRef == replaced);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly AppTestContext _context;

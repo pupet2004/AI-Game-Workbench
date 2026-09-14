@@ -231,8 +231,9 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                 LibraryNodeContent = SelectedLibraryContribution.Statement;
 
             ActiveWork.Clear();
-            foreach (var assignment in projection.AcceptedProjectState.Assignments.Values)
+            foreach (var assignmentRef in projection.AcceptedProjectState.CurrentDelegationAssignments)
             {
+                var assignment = projection.AcceptedProjectState.Assignments[assignmentRef];
                 var revisionRef = projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[assignment.AssignmentRef];
                 var revision = projection.AcceptedProjectState.Revisions[revisionRef];
                 var actor = projection.AcceptedProjectState.LogicalActors[assignment.AssigneeActorRef];
