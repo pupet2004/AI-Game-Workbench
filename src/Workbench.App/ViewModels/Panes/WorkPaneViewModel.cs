@@ -68,6 +68,11 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
             var plan = await LoadPlanAsync(item, cancellationToken);
             var card = new WorkerSessionCardViewModel(item, plan,
                 compact: item.Session.Status == AgentSessionStatus.Completed && sessions.Count > 3);
+            if (_workerExecutions is not null && item.ExecutionId is { } executionId &&
+                await _workerExecutions.GetAsync(item.ProjectId, executionId, cancellationToken) is { } execution)
+            {
+                card.SetExecutionState(execution.State);
+            }
             var handoff = await _store.GetLatestHandoffAsync(item.ProjectId, item.TaskId, item.Session.Id, cancellationToken);
             if (handoff is not null)
                 card.SetHandoffDisplay(new HandoffDisplayViewModel(HandoffDisplayModelFactory.FromLegacyWorkerHandoff(
@@ -341,6 +346,12 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
                         UpdatedAt = DateTimeOffset.UtcNow
                     });
                     OnPropertyChanged(nameof(SelectedWorker));
+                }
+
+                if (_workerExecutions is not null && worker.Record.ExecutionId is { } executionId &&
+                    await _workerExecutions.GetAsync(worker.Record.ProjectId, executionId, cancellationToken) is { } execution)
+                {
+                    worker.SetExecutionState(execution.State);
                 }
 
                 await RefreshTranscriptAsync(worker, cancellationToken);
@@ -818,6 +829,21 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
     public string WorkingDirectory => record.Session.WorkingDirectory ?? "未提供";
     public string Runtime => record.Profile.AgentRuntimeId;
     public string Status => record.Session.Status switch { AgentSessionStatus.Running => LocalizationService.Current["Dynamic.Working"], AgentSessionStatus.WaitingApproval => LocalizationService.Current["Dynamic.Waiting"], AgentSessionStatus.Ready => LocalizationService.Current["Dynamic.Ready"], AgentSessionStatus.Completed => LocalizationService.Current["Dynamic.Completed"], AgentSessionStatus.Interrupted => LocalizationService.Current["Dynamic.Interrupted"], AgentSessionStatus.Failed => LocalizationService.Current["Dynamic.Failed"], AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Dynamic.Closed"], _ => record.Session.Status.ToString() };
+    [ObservableProperty] public partial WorkerExecutionState? ExecutionState { get; private set; }
+    public bool HasExecutionState => ExecutionState is not null;
+    public string ExecutionStateText => ExecutionState switch
+    {
+        WorkerExecutionState.Preparing or
+        WorkerExecutionState.WorkspaceCreating or
+        WorkerExecutionState.WorkspaceCreated or
+        WorkerExecutionState.RuntimeStarting or
+        WorkerExecutionState.Running => LocalizationService.Current["Dynamic.Working"],
+        WorkerExecutionState.Blocked => LocalizationService.Current["Dynamic.Waiting"],
+        WorkerExecutionState.CompletedPendingReview => LocalizationService.Current["Review.AwaitingDecision"],
+        WorkerExecutionState.Interrupted => LocalizationService.Current["Dynamic.Interrupted"],
+        WorkerExecutionState.Failed => LocalizationService.Current["Dynamic.Failed"],
+        _ => string.Empty
+    };
     public bool CanContinue => record.Session.Status is AgentSessionStatus.Interrupted or AgentSessionStatus.Failed;
     public string LastActiveAtText => record.LastActiveAt.LocalDateTime.ToString("g");
     public string CompactTimeText => record.LastActiveAt.LocalDateTime.ToString("MM/dd HH:mm");
@@ -844,6 +870,13 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
     {
         HandoffDisplay = display;
         OnPropertyChanged(nameof(HandoffDisplay));
+    }
+
+    internal void SetExecutionState(WorkerExecutionState state)
+    {
+        ExecutionState = state;
+        OnPropertyChanged(nameof(HasExecutionState));
+        OnPropertyChanged(nameof(ExecutionStateText));
     }
 
     internal void SetExternalCliActive(bool active, WorkerSessionSurfaceLease? lease = null)

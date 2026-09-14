@@ -2,6 +2,7 @@ using Workbench.App.Tests.Support;
 using Workbench.App.ViewModels.Panes;
 using Workbench.App.Worker;
 using Workbench.Core.Tasks;
+using Workbench.Core.Workers;
 using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Workers;
@@ -71,6 +72,85 @@ public sealed class WorkPaneViewModelTests
         var card = Assert.Single(pane.Workers);
         Assert.Equal("Completed", card.Status);
         Assert.Equal(completedAt.LocalDateTime.ToString("g"), card.LastActiveAtText);
+    }
+
+    [Fact]
+    public async Task Worker_card_keeps_session_status_separate_from_persisted_execution_state()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        using var projectDirectory = new TemporaryDirectory();
+        var project = (await context.Services.ProjectOpenService.OpenAsync(projectDirectory.Path)).Project;
+        var runtime = new FakeAgentRuntime();
+        var profile = Profile(runtime);
+        var now = context.Services.TimeProvider.GetUtcNow();
+        var taskId = Guid.NewGuid();
+        var revision = new TaskRevision(
+            taskId,
+            1,
+            "goal",
+            "scope",
+            "out",
+            ["accept"],
+            TaskRiskLevel.Low,
+            profile,
+            "initial",
+            TaskRevisionApprover.User,
+            now,
+            null);
+        await context.Services.TaskRepository.CreateAsync(
+            project.Id,
+            new TaskDraft(taskId, "Awaiting review", "goal", "scope", "out", ["accept"], TaskRiskLevel.Low, profile, now, revision));
+        var executionId = Guid.NewGuid();
+        await context.Services.WorkerExecutionRepository.CreateAsync(new StoredWorkerExecution(
+            executionId,
+            project.Id,
+            taskId,
+            revision.CreateReference(),
+            revision.CreateReference(),
+            "unversioned",
+            "worktree",
+            ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId),
+            profile,
+            "worker/review",
+            project.RootPath,
+            WorkerExecutionState.CompletedPendingReview,
+            null,
+            null,
+            null,
+            now,
+            now));
+        var session = new AgentSession(
+            AgentSessionId.New(),
+            runtime.Account.Id,
+            runtime.Provider.Id,
+            "model-a",
+            project.RootPath,
+            "review-session",
+            AgentSessionStatus.Completed,
+            now,
+            now);
+        await context.Services.WorkerExecutionRepository.PersistSessionIdentityAsync(
+            project.Id,
+            taskId,
+            executionId,
+            session.Id.Value.ToString(),
+            session.ExternalSessionId,
+            project.RootPath);
+        await new TaskEventWorkerRoutingStore(new TaskEventRepository(context.Services.Database)).SaveSessionAsync(
+            new WorkerSessionRecord(project.Id, taskId, "Awaiting review", session, profile, "Worker", now, executionId, revision.Id));
+
+        var pane = new WorkPaneViewModel(
+            () => Task.CompletedTask,
+            new TaskEventWorkerRoutingStore(
+                new TaskEventRepository(context.Services.Database),
+                context.Services.WorkerExecutionRepository),
+            new AgentRuntimeRegistry(),
+            workerExecutions: context.Services.WorkerExecutionRepository);
+        await pane.LoadAsync(project.Id);
+
+        var card = Assert.Single(pane.Workers);
+        Assert.Equal("Completed", card.Status);
+        Assert.Equal("Awaiting Authority Decision", card.ExecutionStateText);
     }
 
     [Fact]
