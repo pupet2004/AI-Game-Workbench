@@ -109,5 +109,15 @@ dotnet run --project .\src\Workbench.App\Workbench.App.csproj -- --project .\dem
 .\Workbench.App.exe --project .\demos\product-loop-godot-counter
 ```
 
+桌面进程级重启 harness：
+
+```powershell
+pwsh -NoLogo -NoProfile -File .\tools\verify-product-loop-process-restart.ps1
+```
+
+该 harness 会构建 Workbench，使用同一个项目路径启动两次，并在两次启动
+之间强制结束第一个进程。它只验证进程级启动/退出/重启，不伪造 Worker、
+Accept 或 UI 操作结果。
+
 如果本机没有安装 Godot，脚本仍会验证 fixture 文件和项目引用；安装 Godot
 后，脚本会额外执行 headless smoke test。
