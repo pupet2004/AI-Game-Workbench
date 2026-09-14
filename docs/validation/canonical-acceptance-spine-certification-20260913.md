@@ -1,9 +1,9 @@
 # Canonical Acceptance Spine Certification
 
-Date: 2026-09-13
+Date: 2026-09-14
 
 Status: Passed for the deterministic provider-independent certification path and
-the single-round live Codex Worker path.
+the three-round live Codex Worker path.
 
 ## Certified Path
 
@@ -54,21 +54,26 @@ No database edits, CLI rescue path, or manual state repair are used.
 ## Live Codex Gate
 
 The live gate
-`LiveCodexAcceptanceSpineTests.Real_codex_worker_change_requires_acceptance_and_survives_restart`
-passed with `WORKBENCH_RUN_CODEX_WORKER_LIVE=1`.
+`LiveCodexAcceptanceSpineTests.Real_codex_worker_completes_three_accepted_counter_rounds`
+passed with `WORKBENCH_RUN_CODEX_WORKER_LIVE=1` on September 14, 2026.
 
-It uses a real temporary Git workspace and confirms that Codex:
+It uses one real temporary Git workspace and confirms across three rounds that
+Codex:
 
-1. Changes the real `src/counter.js` file from `+1` to `+2`.
-2. Returns a structured FinalReport with a Proposed State Contribution.
-3. Persists typed execution, verification evidence, Completion, Claims, and Handoff.
-4. Leaves AcceptedProjectState unchanged until the explicit User Accept decision.
-5. Updates AcceptedProjectState and Summary only after that decision.
-6. Releases and reopens the database, after which Leader boot context reads the
-   accepted `+2` statement.
+1. Changes the real `src/counter.js` file from `+1` to `+2` to `+3`.
+2. Returns a structured FinalReport with a Proposed State Contribution on each
+   round.
+3. Persists typed execution, verification evidence, Completion, Claims, and
+   Handoff on each round.
+4. Leaves AcceptedProjectState unchanged until the explicit User Accept
+   decision.
+5. Updates AcceptedProjectState and Summary only after each decision.
+6. Closes and reopens the database between rounds, after which Leader boot
+   context reads all prior accepted statements.
+7. Creates the next B1 delegation only after the prior round is accepted.
 
-This is a single-round live-provider gate. The deterministic certification
-remains the three-round `+1 -> +2 -> +3` regression.
+This is the three-round live-provider gate. The deterministic certification
+remains the faster provider-independent `+1 -> +2 -> +3` regression.
 
 ## Crash Recovery Gate
 
