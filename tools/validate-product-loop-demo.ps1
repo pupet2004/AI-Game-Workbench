@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$RequireGodot
+    [switch]$RequireGodot,
+    [string]$GodotExecutablePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,8 +36,18 @@ if ($scriptText -notmatch 'const CLICK_INCREMENT: int = 1') {
     throw 'Product loop demo baseline must start at +1.'
 }
 
-$godot = Get-Command godot -ErrorAction SilentlyContinue
-if ($null -eq $godot) {
+$godotPath = $null
+if (-not [string]::IsNullOrWhiteSpace($GodotExecutablePath)) {
+    $godotPath = (Resolve-Path -LiteralPath $GodotExecutablePath).Path
+}
+else {
+    $godot = Get-Command godot -ErrorAction SilentlyContinue
+    if ($null -ne $godot) {
+        $godotPath = $godot.Source
+    }
+}
+
+if ($null -eq $godotPath) {
     if ($RequireGodot) {
         throw 'Godot executable was not found on PATH.'
     }
@@ -45,10 +56,9 @@ if ($null -eq $godot) {
     exit 0
 }
 
-& $godot.Source --headless --path $demo --quit
+& $godotPath --headless --path $demo --quit
 if ($LASTEXITCODE -ne 0) {
     throw "Godot headless smoke test failed with exit code $LASTEXITCODE."
 }
 
 Write-Output 'Product loop Godot demo passed static and headless validation.'
-

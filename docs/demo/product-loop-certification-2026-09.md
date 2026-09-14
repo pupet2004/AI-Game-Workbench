@@ -47,6 +47,25 @@ Accept 之后：
 - Summary 显示该 accepted change。
 - 如果有 successor assignment，下一轮工作应基于该状态。
 
+当前已通过一个非 UI 的真实 Provider gate：
+
+```text
+Real Codex
+  → real Godot project copy
+  → CLICK_INCREMENT 1 → 2
+  → Godot headless validation
+  → Completion / Evidence / Claim / Handoff
+  → explicit Accept
+  → database reopen
+  → AcceptedProjectState recovered
+```
+
+证据记录：
+
+```text
+docs/validation/godot-product-loop-live-20260914.md
+```
+
 ## Restart Gate
 
 1. 完全退出 Workbench 桌面进程。
@@ -95,6 +114,14 @@ Continuity Kernel 或 Acceptance Spine 的领域模型。
 
 ```powershell
 pwsh -NoLogo -NoProfile -File .\tools\validate-product-loop-demo.ps1
+```
+
+如果 Godot 没有注册到当前 shell 的 PATH，可以显式传入可执行文件：
+
+```powershell
+pwsh -NoLogo -NoProfile -File .\tools\validate-product-loop-demo.ps1 `
+  -GodotExecutablePath "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\GodotEngine.GodotEngine_Microsoft.Winget.Source_8wekyb3d8bbwe\Godot_v4.7.2-stable_win64_console.exe" `
+  -RequireGodot
 ```
 
 Workbench 也支持直接打开项目：
