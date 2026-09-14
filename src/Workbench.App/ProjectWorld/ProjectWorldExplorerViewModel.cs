@@ -6,9 +6,11 @@ using Workbench.App.Memory;
 using Workbench.App.Services;
 using Workbench.App.ViewModels;
 using Workbench.Core.Continuity;
+using Workbench.Core.Workers;
 using Workbench.Project.Opening;
 using Workbench.Storage.Continuity;
 using Workbench.Storage.Memory;
+using Workbench.Storage.Workers;
 
 namespace Workbench.App.ProjectWorld;
 
@@ -25,6 +27,30 @@ public sealed record ActiveAssignmentItemView(
     string ResponsibilityText,
     string RevisionText,
     string ContinuationText);
+
+public sealed record AgentExecutionItemView(
+    Guid ExecutionId,
+    string TaskText,
+    WorkerExecutionState State,
+    DateTimeOffset UpdatedAt)
+{
+    public string StateText => State switch
+    {
+        WorkerExecutionState.Preparing or
+        WorkerExecutionState.WorkspaceCreating or
+        WorkerExecutionState.WorkspaceCreated or
+        WorkerExecutionState.RuntimeStarting or
+        WorkerExecutionState.Running => LocalizationService.Current["Dynamic.Working"],
+        WorkerExecutionState.Blocked => LocalizationService.Current["Dynamic.Waiting"],
+        WorkerExecutionState.CompletedPendingReview => LocalizationService.Current["Review.AwaitingDecision"],
+        WorkerExecutionState.Interrupted => LocalizationService.Current["Dynamic.Interrupted"],
+        WorkerExecutionState.Failed => LocalizationService.Current["Dynamic.Failed"],
+        _ => State.ToString()
+    };
+
+    public string UpdatedAtText =>
+        UpdatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
+}
 
 public sealed record DecisionItemView(
     string DecisionText,
@@ -121,6 +147,11 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
         : string.Format(
             LocalizationService.Current["Dynamic.ActiveAssignmentsCount"],
             ActiveWork.Count);
+    public string AgentExecutionSummary => AgentExecutions.Count == 0
+        ? LocalizationService.Current["Explorer.NoAgentExecutions"]
+        : string.Format(
+            LocalizationService.Current["Dynamic.AgentExecutionsCount"],
+            AgentExecutions.Count);
     public int PendingHandoffCount { get; private set; }
     public bool HasPendingHandoffs => PendingHandoffCount > 0;
     public string PendingHandoffSummary => PendingHandoffCount == 0
@@ -176,6 +207,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     public ObservableCollection<AcceptedStateItemView> AcceptedState { get; } = [];
     public ObservableCollection<LibraryContributionOptionView> LibraryContributions { get; } = [];
     public ObservableCollection<ActiveAssignmentItemView> ActiveWork { get; } = [];
+    public ObservableCollection<AgentExecutionItemView> AgentExecutions { get; } = [];
     public ObservableCollection<AttentionItemView> NeedsAttention { get; } = [];
     public ObservableCollection<PendingHandoffItemView> PendingHandoffs { get; } = [];
     public ObservableCollection<DecisionItemView> RecentDecisions { get; } = [];
@@ -253,6 +285,27 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             OnPropertyChanged(nameof(AcceptedConstraintsSummary));
             OnPropertyChanged(nameof(AcceptedStatementCountText));
             OnPropertyChanged(nameof(ActiveAssignmentSummary));
+
+            var tasks = (await _services.TaskRepository.ListAsync(
+                    _result.Project.Id,
+                    cancellationToken))
+                .ToDictionary(value => value.TaskId);
+            AgentExecutions.Clear();
+            foreach (var execution in (await _services.WorkerExecutionRepository.ListAsync(
+                         _result.Project.Id,
+                         cancellationToken))
+                .OrderByDescending(value => value.UpdatedAt)
+                .Take(10))
+            {
+                AgentExecutions.Add(new(
+                    execution.ExecutionId,
+                    tasks.TryGetValue(execution.TaskId, out var task)
+                        ? task.Title
+                        : $"Task {execution.TaskId}",
+                    execution.State,
+                    execution.UpdatedAt));
+            }
+            OnPropertyChanged(nameof(AgentExecutionSummary));
 
             var consideredHandoffs = state.AuthorityDecisions
                 .SelectMany(value => value.ConsideredRefs)

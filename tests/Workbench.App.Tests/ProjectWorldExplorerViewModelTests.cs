@@ -3,8 +3,11 @@ using Workbench.App.ViewModels;
 using Workbench.App.Services;
 using Workbench.App.Tests.Support;
 using Workbench.Core.Continuity;
+using Workbench.Core.Tasks;
+using Workbench.Core.Workers;
 using Workbench.Project.Opening;
 using Workbench.Storage.Projects;
+using Workbench.Storage.Workers;
 
 namespace Workbench.App.Tests;
 
@@ -98,6 +101,81 @@ public sealed class ProjectWorldExplorerViewModelTests
 
         Assert.Single(explorer.ActiveWork);
         Assert.DoesNotContain(explorer.ActiveWork, item => item.AssignmentRef == replaced);
+    }
+
+    [Fact]
+    public async Task Explorer_shows_persisted_agent_execution_state_separately_from_assignments()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var projectRef = new ProjectRef(fixture.OpenResult.Project.Id);
+        await fixture.Services.ProjectWorldInitialization.CommitAsync(new ProjectWorldInitializationRequest(
+            projectRef,
+            fixture.Principal,
+            RoleKind.Worker,
+            "Own gameplay implementation",
+            "A clear first playable change",
+            "Design the first combat prototype"));
+
+        var profile = ExecutionProfile.Create(
+            "fake-provider",
+            Guid.NewGuid().ToString(),
+            "model-a",
+            "fake-runtime");
+        var revision = new TaskRevision(
+            Guid.NewGuid(),
+            1,
+            "Implement the first playable slice",
+            "Project code",
+            "Unrelated files",
+            ["The slice is implemented."],
+            TaskRiskLevel.Low,
+            profile,
+            "Explorer test",
+            TaskRevisionApprover.User,
+            fixture.Services.TimeProvider.GetUtcNow(),
+            null);
+        await fixture.Services.TaskRepository.CreateAsync(
+            fixture.OpenResult.Project.Id,
+            new TaskDraft(
+                revision.TaskId,
+                "First playable slice",
+                revision.Goal,
+                revision.Scope,
+                revision.OutOfScope,
+                revision.Acceptance,
+                revision.RiskLevel,
+                profile,
+                revision.CreatedAt,
+                revision));
+        await fixture.Services.WorkerExecutionRepository.CreateAsync(new StoredWorkerExecution(
+            Guid.NewGuid(),
+            fixture.OpenResult.Project.Id,
+            revision.TaskId,
+            revision.CreateReference(),
+            revision.CreateReference(),
+            "unversioned",
+            "worktree",
+            ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId),
+            profile,
+            "worker/explorer",
+            fixture.OpenResult.Project.RootPath,
+            WorkerExecutionState.CompletedPendingReview,
+            null,
+            null,
+            null,
+            fixture.Services.TimeProvider.GetUtcNow(),
+            fixture.Services.TimeProvider.GetUtcNow()));
+
+        var explorer = new ProjectWorldExplorerViewModel(
+            fixture.Services,
+            fixture.OpenResult,
+            () => Task.CompletedTask);
+        await explorer.InitializeAsync();
+
+        var execution = Assert.Single(explorer.AgentExecutions);
+        Assert.Equal("First playable slice", execution.TaskText);
+        Assert.Contains("decision", execution.StateText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("1", explorer.AgentExecutionSummary, StringComparison.Ordinal);
     }
 
     private sealed class Fixture : IAsyncDisposable

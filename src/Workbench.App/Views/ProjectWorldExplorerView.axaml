@@ -164,6 +164,35 @@
                 </StackPanel>
             </Border>
 
+            <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [Explorer.AgentExecution]}" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding [Explorer.AgentExecutionDescription]}" Opacity="0.7" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding AgentExecutionSummary}" Opacity="0.8" />
+                    <TextBlock IsVisible="{Binding !AgentExecutions.Count}"
+                               Text="{Binding [Explorer.NoAgentExecutions]}"
+                               Opacity="0.7" />
+                    <ItemsControl ItemsSource="{Binding AgentExecutions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:AgentExecutionItemView">
+                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="{Binding TaskText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ExecutionId}" Opacity="0.65" FontFamily="Consolas" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="3">
+                                            <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding UpdatedAtText}" Opacity="0.7" FontFamily="Consolas" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
             <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding [Explorer.PendingHandoffs]}" FontSize="18" FontWeight="SemiBold" />
