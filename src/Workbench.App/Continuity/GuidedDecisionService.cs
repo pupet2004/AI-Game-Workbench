@@ -17,7 +17,8 @@ public sealed record GuidedDecisionRequest(
     AssignmentDisposition Disposition,
     ContributionDecisionMode ContributionMode,
     string? EditedContributionStatement,
-    string? NewRevisionContract);
+    string? NewRevisionContract,
+    string? SuccessorAssignmentContract = null);
 
 public sealed record GuidedDecisionPreview(
     AssignmentDisposition Disposition,
@@ -46,7 +47,7 @@ public sealed class GuidedDecisionService(
         CancellationToken cancellationToken = default)
     {
         var state = await _authorityRepository.LoadProjectStateAsync(request.ProjectRef, cancellationToken);
-        var command = BuildCommand(state, request);
+        var (command, _) = BuildCommand(state, request);
         var validated = _evaluator.Evaluate(
             state,
             command,
@@ -60,11 +61,31 @@ public sealed class GuidedDecisionService(
         CancellationToken cancellationToken = default)
     {
         var state = await _authorityRepository.LoadProjectStateAsync(request.ProjectRef, cancellationToken);
-        var command = BuildCommand(state, request);
-        return await _authorityCommands.DecideAssignmentAsync(command, cancellationToken);
+        var (command, assignment) = BuildCommand(state, request);
+        var decision = await _authorityCommands.DecideAssignmentAsync(command, cancellationToken);
+        if (request.Disposition == AssignmentDisposition.Accepted &&
+            !string.IsNullOrWhiteSpace(request.SuccessorAssignmentContract))
+        {
+            await _authorityCommands.DelegateAssignmentAsync(
+                new DelegateAssignmentCommand(
+                    request.ProjectRef,
+                    request.UserPrincipalRef,
+                    new DecidingAuthorityRef.UserPrincipal(request.UserPrincipalRef),
+                    new AssignmentDelegationInstruction(
+                        new ResponsibilityTarget.Existing(assignment.ResponsibilityRef),
+                        new AssignmentAssigneeTarget.Existing(assignment.AssigneeActorRef),
+                        new AssignmentRevisionContract(request.SuccessorAssignmentContract.Trim()),
+                        assignment.AssignmentRef),
+                    null,
+                    [],
+                    []),
+                cancellationToken);
+        }
+
+        return decision;
     }
 
-    private static DecideAssignmentCommand BuildCommand(
+    private static (DecideAssignmentCommand Command, Assignment Assignment) BuildCommand(
         B1ProjectState state,
         GuidedDecisionRequest request)
     {
@@ -126,15 +147,17 @@ public sealed class GuidedDecisionService(
                 revisionClaim?.ClaimRef);
         }
 
-        return new DecideAssignmentCommand(
-            request.ProjectRef,
-            request.UserPrincipalRef,
-            new DecidingAuthorityRef.UserPrincipal(request.UserPrincipalRef),
-            new AssignmentDispositionInstruction(assignment.AssignmentRef, currentRevision, request.Disposition),
-            activation,
-            null,
-            considered,
-            contributions);
+        return (
+            new DecideAssignmentCommand(
+                request.ProjectRef,
+                request.UserPrincipalRef,
+                new DecidingAuthorityRef.UserPrincipal(request.UserPrincipalRef),
+                new AssignmentDispositionInstruction(assignment.AssignmentRef, currentRevision, request.Disposition),
+                activation,
+                null,
+                considered,
+                contributions),
+            assignment);
     }
 
     private static GuidedDecisionPreview BuildPreview(
@@ -147,6 +170,9 @@ public sealed class GuidedDecisionService(
             effects.Add($"Assignment disposition: {disposition.Disposition}");
         if (validated.RevisionActivationEffect is not null)
             effects.Add("Create a successor Assignment Revision");
+        if (request.Disposition == AssignmentDisposition.Accepted &&
+            !string.IsNullOrWhiteSpace(request.SuccessorAssignmentContract))
+            effects.Add("Create a successor Assignment");
         if (validated.AcceptedStateContributions.Count > 0)
             effects.Add($"Establish {validated.AcceptedStateContributions.Count} Accepted Project contribution(s)");
         return new(

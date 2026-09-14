@@ -64,6 +64,68 @@ public sealed class GuidedDecisionServiceTests
         Assert.False(viewModel.IsPreviewVisible);
     }
 
+    [Fact]
+    public async Task Accepted_decision_creates_explicit_successor_assignment_after_the_accept()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var before = await fixture.Services.B1AuthorityRepository.LoadProjectStateAsync(
+            new ProjectRef(fixture.Result.Project.Id));
+        var currentAssignment = Assert.Single(
+            B1Projector.Build(before).AcceptedProjectState.CurrentDelegationAssignments);
+
+        var request = new GuidedDecisionRequest(
+            new(fixture.Result.Project.Id),
+            fixture.Principal,
+            fixture.Handoff,
+            AssignmentDisposition.Accepted,
+            ContributionDecisionMode.AdoptVerbatim,
+            null,
+            null,
+            "Implement the next bounded gameplay change.");
+
+        var preview = await fixture.Services.GuidedDecision.PreviewAsync(request);
+        Assert.Contains(preview.Effects, effect =>
+            effect.Contains("successor Assignment", StringComparison.Ordinal));
+
+        await fixture.Services.GuidedDecision.CommitAsync(request);
+
+        var after = await fixture.Services.B1AuthorityRepository.LoadProjectStateAsync(
+            new ProjectRef(fixture.Result.Project.Id));
+        var projection = B1Projector.Build(after);
+        var successor = Assert.Single(
+            projection.AcceptedProjectState.CurrentDelegationAssignments
+                .Where(value => value != currentAssignment)
+                .Select(value => projection.AcceptedProjectState.Assignments[value]));
+        var successorRevision = projection.AcceptedProjectState.Revisions[
+            projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[successor.AssignmentRef]];
+        Assert.Equal("Implement the next bounded gameplay change.", successorRevision.Contract.WorkContract);
+        Assert.Contains(after.AuthorityDecisions, decision =>
+            decision.AssignmentDelegationEffect?.ReplacesAssignmentRef == currentAssignment);
+    }
+
+    [Fact]
+    public async Task Rejected_decision_does_not_create_a_successor_even_when_requested()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var request = new GuidedDecisionRequest(
+            new(fixture.Result.Project.Id),
+            fixture.Principal,
+            fixture.Handoff,
+            AssignmentDisposition.Rejected,
+            ContributionDecisionMode.Ignore,
+            null,
+            null,
+            "This must not be scheduled after rejection.");
+
+        await fixture.Services.GuidedDecision.CommitAsync(request);
+
+        var after = await fixture.Services.B1AuthorityRepository.LoadProjectStateAsync(
+            new ProjectRef(fixture.Result.Project.Id));
+        Assert.Single(after.Assignments);
+        Assert.Single(after.AuthorityDecisions, decision =>
+            decision.AssignmentDelegationEffect is not null);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly AppTestContext _context;

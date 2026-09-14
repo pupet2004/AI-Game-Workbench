@@ -90,6 +90,26 @@ a process crash by:
 The reconciliation is idempotent because terminal `Interrupted` executions are
 not selected again.
 
+## Successor Assignment Gate
+
+`GuidedDecisionRequest` accepts an optional, user-supplied successor
+Assignment contract. When the disposition is `Accepted`, the
+`GuidedDecisionService` creates the successor through a second
+`B1AuthorityCommandService.DelegateAssignmentAsync` call, replacing the
+accepted Assignment while preserving its Responsibility and assignee.
+
+The successor path is deliberately gated:
+
+- an empty contract creates no successor;
+- Reject and Revise create no successor;
+- Completion, Claims, Handoffs, and AcceptedProjectState are still governed by
+  the original decision first;
+- the successor is an Authority Decision, never a side effect of Completion or
+  Summary projection.
+
+The remaining step is to connect an explicit successor plan to TaskRevision
+creation and Worker dispatch.
+
 ## Race Coverage
 
 A regression test covers a Legacy task transition reaching `Reviewing` before
