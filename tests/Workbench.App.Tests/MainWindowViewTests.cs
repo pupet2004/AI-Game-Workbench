@@ -50,6 +50,20 @@ public sealed class MainWindowViewTests
     }
 
     [Fact]
+    public async Task Startup_project_argument_opens_the_project_after_home_load()
+    {
+        using var folder = new TemporaryDirectory("startup-project-route");
+        await using var context = await AppTestContext.CreateAsync();
+        var main = context.CreateMain();
+
+        await main.InitializeAsync(
+            startupArgs: ["--project", folder.Path]);
+
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        Assert.Equal(Path.GetFullPath(folder.Path), workspace.Result.Project.RootPath);
+    }
+
+    [Fact]
     public void Main_window_starts_centered_in_normal_state()
     {
         var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));

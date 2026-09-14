@@ -49,7 +49,9 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
     [ObservableProperty]
     public partial ViewModelBase CurrentPage { get; set; }
 
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    public async Task InitializeAsync(
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<string>? startupArgs = null)
     {
         var home = (HomeViewModel)CurrentPage;
         try
@@ -58,6 +60,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             await _localization.InitializeAsync(cancellationToken);
             _localization.AdoptAsCurrent();
             await home.LoadAsync(cancellationToken);
+            var startupProjectPath = startupArgs is null
+                ? null
+                : StartupArguments.TryGetProjectPath(startupArgs);
+            if (startupProjectPath is not null)
+            {
+                await home.OpenPathAsync(startupProjectPath, cancellationToken);
+            }
         }
         catch (DatabaseInitializationException)
         {

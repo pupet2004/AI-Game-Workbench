@@ -110,7 +110,7 @@ public partial class App : Application
                 window.WindowState = WindowState.Minimized;
             };
             desktop.MainWindow = window;
-            _ = viewModel.InitializeAsync();
+            _ = viewModel.InitializeAsync(startupArgs: desktop.Args);
         }
 
         base.OnFrameworkInitializationCompleted();

@@ -97,6 +97,17 @@ Continuity Kernel 或 Acceptance Spine 的领域模型。
 pwsh -NoLogo -NoProfile -File .\tools\validate-product-loop-demo.ps1
 ```
 
+Workbench 也支持直接打开项目：
+
+```powershell
+dotnet run --project .\src\Workbench.App\Workbench.App.csproj -- --project .\demos\product-loop-godot-counter
+```
+
+发布后的桌面程序使用同样的参数：
+
+```powershell
+.\Workbench.App.exe --project .\demos\product-loop-godot-counter
+```
+
 如果本机没有安装 Godot，脚本仍会验证 fixture 文件和项目引用；安装 Godot
 后，脚本会额外执行 headless smoke test。
-
