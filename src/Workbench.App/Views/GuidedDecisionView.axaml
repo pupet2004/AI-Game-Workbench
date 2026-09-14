@@ -31,6 +31,8 @@
             <TextBox Text="{Binding EditedContributionStatement}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="{Binding [Decision.EditedContributionPlaceholder]}" />
             <TextBlock Text="{Binding [Decision.NewRevision]}" FontWeight="SemiBold" />
             <TextBox Text="{Binding NewRevisionContract}" AcceptsReturn="True" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding [Decision.SuccessorAssignment]}" FontWeight="SemiBold" />
+            <TextBox Text="{Binding SuccessorAssignmentContract}" AcceptsReturn="True" TextWrapping="Wrap" />
             <Button Content="{Binding [Decision.Preview]}" Command="{Binding PreviewDecisionCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
             <Border Padding="12" Background="#12000000" IsVisible="{Binding IsPreviewVisible}">
                 <StackPanel Spacing="8"><TextBlock Text="{Binding [Decision.PreviewHeading]}" FontWeight="SemiBold" /><TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" /><Button Content="{Binding [Decision.Confirm]}" Command="{Binding ConfirmDecisionCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" /></StackPanel>

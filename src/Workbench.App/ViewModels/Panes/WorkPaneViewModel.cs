@@ -53,10 +53,13 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
     public bool HasPendingWorkerRemoval => PendingWorkerRemoval is not null;
     public bool HasWorkerDetails => DetailedWorker is not null;
     public bool CanCollapseAllWorkers => Workers.Any(item => !item.IsCompact);
-    public async Task LoadAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task LoadAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default,
+        bool reconcileInterruptedExecutions = true)
     {
         Workers.Clear(); if (_store is null) return;
-        if (_workerRouter is not null)
+        if (reconcileInterruptedExecutions && _workerRouter is not null)
             await _workerRouter.ReconcileInterruptedExecutionsAsync(projectId, cancellationToken);
         if (_workerRouter is not null)
             await _workerRouter.ReconcileCompletedAssignmentsAsync(projectId, cancellationToken);
@@ -569,7 +572,10 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
             throw new InvalidOperationException(result.Error ?? "The Worker could not accept the user direction.");
         }
 
-        await LoadAsync(worker.Record.ProjectId, cancellationToken);
+        await LoadAsync(
+            worker.Record.ProjectId,
+            cancellationToken,
+            reconcileInterruptedExecutions: false);
     }
 
     public Task StopWorkerAsync(
@@ -666,7 +672,7 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
             await _store.SaveSessionAsync(runningRecord);
             var result = await _workerRouter.StartAsync(continuation);
             if (!result.Succeeded) OpenError = result.Error;
-            await LoadAsync(worker.Record.ProjectId);
+            await LoadAsync(worker.Record.ProjectId, reconcileInterruptedExecutions: false);
         }
         catch (Exception exception)
         {

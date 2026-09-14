@@ -134,7 +134,10 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             taskRepository: taskRepository,
             taskRevisionRepository: taskRevisionRepository,
             workerSessionRouter: workerSessionRouter,
-            refreshWorkPane: cancellationToken => WorkPane.LoadAsync(result.Project.Id, cancellationToken),
+            refreshWorkPane: cancellationToken => WorkPane.LoadAsync(
+                result.Project.Id,
+                cancellationToken,
+                reconcileInterruptedExecutions: false),
             projectMemoryApi: projectMemoryApi,
             timeProvider: _timeProvider,
             refreshLibraryPane: LibraryPane.LoadLibraryAsync,

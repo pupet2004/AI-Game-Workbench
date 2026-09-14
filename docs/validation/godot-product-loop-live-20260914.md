@@ -55,7 +55,6 @@ Observed result:
 
 ## Boundary
 
-This record proves the real Provider and real Godot artifact boundary. It does
-not yet prove a human-scale desktop walkthrough where a user clicks Accept in
-the Avalonia UI. That remains the Product Loop UI certification gate.
-
+This record proves the real Provider and real Godot artifact boundary at the
+service level. The human-scale desktop walkthrough is certified separately in
+`product-loop-ui-real-codex-20260914.md`.

@@ -6,6 +6,9 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ExecutablePath = '',
 
+    [Parameter(Mandatory = $false)]
+    [string]$DatabasePath = '',
+
     [switch]$KeepSecondProcess
 )
 
@@ -45,10 +48,15 @@ function Start-WorkbenchProcess {
         [string]$TargetProject
     )
 
+    $arguments = @('--project', ('"' + $TargetProject + '"'))
+    if (-not [string]::IsNullOrWhiteSpace($DatabasePath)) {
+        $arguments += @('--database', ('"' + $DatabasePath + '"'))
+    }
+
     $process = Start-Process `
         -FilePath $Executable `
         -WorkingDirectory $WorkingDirectory `
-        -ArgumentList @('--project', $TargetProject) `
+        -ArgumentList $arguments `
         -PassThru
 
     $deadline = (Get-Date).AddSeconds(20)

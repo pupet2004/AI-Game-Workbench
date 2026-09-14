@@ -26,12 +26,19 @@ public partial class App : Application
             // must therefore hide a Surface, not shut down the application.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             var window = new MainWindow();
-            var services = AppServices.CreateDefault(
-                configuredRuntimeFactories:
-                [
+            var configuredRuntimeFactories =
+                new[]
+                {
                     new ConfiguredAgentRuntimeFactory("codex", CodexRuntimeComposition.ConnectAsync),
                     new ConfiguredAgentRuntimeFactory("opencode", OpenCodeRuntimeComposition.ConnectAsync)
-                ]);
+            };
+            var startupArgs = Program.StartupArguments;
+            var databasePath = StartupArguments.TryGetDatabasePath(startupArgs);
+            var services = string.IsNullOrWhiteSpace(databasePath)
+                ? AppServices.CreateDefault(configuredRuntimeFactories: configuredRuntimeFactories)
+                : AppServices.CreateForDatabasePath(
+                    databasePath,
+                    configuredRuntimeFactories: configuredRuntimeFactories);
             var viewModel = new MainWindowViewModel(
                 services,
                 new FolderPickerService(window));

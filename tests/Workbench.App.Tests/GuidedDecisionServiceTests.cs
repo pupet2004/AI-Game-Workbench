@@ -121,6 +121,41 @@ public sealed class GuidedDecisionServiceTests
     }
 
     [Fact]
+    public async Task Guided_decision_view_model_can_schedule_the_next_assignment_after_accept()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services,
+            fixture.Result,
+            fixture.Handoff,
+            () => Task.CompletedTask);
+        var before = await fixture.Services.B1AuthorityRepository.LoadProjectStateAsync(
+            new ProjectRef(fixture.Result.Project.Id));
+        var currentAssignment = Assert.Single(
+            B1Projector.Build(before).AcceptedProjectState.CurrentDelegationAssignments);
+
+        await viewModel.InitializeAsync();
+        viewModel.SuccessorAssignmentContract = "Add a Reset button to the counter.";
+        await viewModel.PreviewDecisionCommand.ExecuteAsync(null);
+
+        Assert.Contains("successor Assignment", viewModel.PreviewText, StringComparison.Ordinal);
+
+        await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
+
+        var state = await fixture.Services.B1AuthorityRepository.LoadProjectStateAsync(
+            new ProjectRef(fixture.Result.Project.Id));
+        var projection = B1Projector.Build(state);
+        var successor = Assert.Single(
+            projection.AcceptedProjectState.CurrentDelegationAssignments
+                .Where(value => value != currentAssignment)
+                .Select(value => projection.AcceptedProjectState.Assignments[value]));
+        var successorRevision = projection.AcceptedProjectState.Revisions[
+            projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[successor.AssignmentRef]];
+
+        Assert.Equal("Add a Reset button to the counter.", successorRevision.Contract.WorkContract);
+    }
+
+    [Fact]
     public async Task Rejected_decision_does_not_create_a_successor_even_when_requested()
     {
         await using var fixture = await Fixture.CreateAsync();

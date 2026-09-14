@@ -40,3 +40,5 @@ round*-screen.png
 # Upstream spike clones are local-only references, not Alpha source identity.
 spikes/agent-shell-reuse/upstream/cline/
 spikes/agent-shell-reuse/upstream/kilocode/
+
+artifacts\anything2explainer\ai-game-workbench-codex-declaration-promo\build_prev

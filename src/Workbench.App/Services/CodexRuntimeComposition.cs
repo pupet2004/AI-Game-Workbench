@@ -5,7 +5,7 @@ using Workbench.Storage.Settings;
 
 namespace Workbench.App.Services;
 
-internal static class CodexRuntimeComposition
+public static class CodexRuntimeComposition
 {
     private static readonly ProviderId CodexProviderId = new("codex");
     private static readonly ProviderAccountId LocalAccountId =

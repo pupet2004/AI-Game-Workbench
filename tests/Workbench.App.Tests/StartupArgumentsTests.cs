@@ -33,4 +33,28 @@ public sealed class StartupArgumentsTests
 
         Assert.Null(path);
     }
+
+    [Fact]
+    public void Reads_database_path_from_separate_argument()
+    {
+        var path = StartupArguments.TryGetDatabasePath(["--database", "C:\\Temp\\Workbench\\isolated.db"]);
+
+        Assert.Equal("C:\\Temp\\Workbench\\isolated.db", path);
+    }
+
+    [Fact]
+    public void Reads_database_path_from_equals_argument()
+    {
+        var path = StartupArguments.TryGetDatabasePath(["--database=C:\\Temp\\Workbench\\isolated.db"]);
+
+        Assert.Equal("C:\\Temp\\Workbench\\isolated.db", path);
+    }
+
+    [Fact]
+    public void Ignores_database_switch_without_a_value()
+    {
+        var path = StartupArguments.TryGetDatabasePath(["--database"]);
+
+        Assert.Null(path);
+    }
 }

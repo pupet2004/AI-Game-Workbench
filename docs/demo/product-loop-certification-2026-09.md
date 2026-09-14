@@ -66,6 +66,39 @@ Real Codex
 docs/validation/godot-product-loop-live-20260914.md
 ```
 
+桌面 UI 的 Authority Accept 路径也已通过一次隔离认证。该认证使用
+`ProductLoopUiSeed` 建立 Pending Handoff，再由真实 Workbench 窗口执行
+Review、Preview 和 Confirm；seed 本身不写入 AcceptedProjectState。
+
+证据记录：
+
+```text
+docs/validation/product-loop-ui-accept-20260914.md
+```
+
+三轮桌面 UI 认证记录：
+
+```text
+docs/validation/product-loop-ui-three-rounds-20260914.md
+```
+
+真实 Codex 桌面 Worker 的完整认证记录：
+
+```text
+docs/validation/product-loop-ui-real-codex-20260914.md
+```
+
+该认证覆盖真实桌面 Worker 执行、Completion、Evidence、Claim、Handoff、
+UI Authority Accept 和进程级重启恢复。
+
+UI Accept 夹具可用以下工具生成 Pending Handoff：
+
+```powershell
+dotnet run --project .\tools\ProductLoopUiSeed\ProductLoopUiSeed.csproj -- `
+  --database ".\artifacts\local\product-loop-ui.db" `
+  --project ".\demos\product-loop-godot-counter"
+```
+
 ## Restart Gate
 
 1. 完全退出 Workbench 桌面进程。
@@ -136,10 +169,28 @@ dotnet run --project .\src\Workbench.App\Workbench.App.csproj -- --project .\dem
 .\Workbench.App.exe --project .\demos\product-loop-godot-counter
 ```
 
+桌面认证可以使用隔离数据库。Windows 路径包含空格时必须由调用方保留
+引号：
+
+```powershell
+.\Workbench.App.exe `
+  --project ".\demos\product-loop-godot-counter" `
+  --database ".\artifacts\local\product-loop-ui.db"
+```
+
 桌面进程级重启 harness：
 
 ```powershell
 pwsh -NoLogo -NoProfile -File .\tools\verify-product-loop-process-restart.ps1
+```
+
+也可以显式指定隔离数据库：
+
+```powershell
+pwsh -NoLogo -NoProfile -File .\tools\verify-product-loop-process-restart.ps1 `
+  -ProjectPath ".\demos\product-loop-godot-counter" `
+  -ExecutablePath ".\Workbench.App.exe" `
+  -DatabasePath ".\artifacts\local\product-loop-ui.db"
 ```
 
 该 harness 会构建 Workbench，使用同一个项目路径启动两次，并在两次启动

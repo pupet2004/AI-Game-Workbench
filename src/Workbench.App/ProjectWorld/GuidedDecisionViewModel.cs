@@ -46,6 +46,7 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
     [ObservableProperty] public partial ContributionDecisionMode SelectedContributionMode { get; set; } = ContributionDecisionMode.AdoptVerbatim;
     [ObservableProperty] public partial string EditedContributionStatement { get; set; } = string.Empty;
     [ObservableProperty] public partial string NewRevisionContract { get; set; } = string.Empty;
+    [ObservableProperty] public partial string SuccessorAssignmentContract { get; set; } = string.Empty;
     [ObservableProperty] public partial string? PreviewText { get; private set; }
     [ObservableProperty] public partial bool IsPreviewVisible { get; private set; }
     [ObservableProperty] public partial bool IsBusy { get; private set; }
@@ -122,5 +123,6 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
         SelectedDisposition,
         SelectedContributionMode,
         string.IsNullOrWhiteSpace(EditedContributionStatement) ? null : EditedContributionStatement,
-        string.IsNullOrWhiteSpace(NewRevisionContract) ? null : NewRevisionContract);
+        string.IsNullOrWhiteSpace(NewRevisionContract) ? null : NewRevisionContract,
+        string.IsNullOrWhiteSpace(SuccessorAssignmentContract) ? null : SuccessorAssignmentContract);
 }

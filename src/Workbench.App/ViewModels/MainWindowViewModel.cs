@@ -253,6 +253,11 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              openProjectHistory: () => ShowProjectHistoryAsync(result, ReturnToWorkspaceAsync),
              acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
         CurrentPage = workspace;
+        // Load Worker recovery before exposing the Leader draft confirmation.
+        // Otherwise a fast user click can start an execution while the Work
+        // pane is still reconciling startup state and classify that fresh
+        // execution as an interrupted pre-existing run.
+        await workspace.WorkPane.LoadAsync(result.Project.Id);
         await workspace.LeaderPane.InitializeAsync();
         await _services.CanonicalWorkerCompletionBridge.RecoverAsync(
             result.Project.Id,
@@ -260,7 +265,6 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await _services.LeaderReviewOrchestrator.RecoverAsync(result.Project.Id);
         await _services.LeaderReviewAutoProceed.RecoverAsync(result.Project.Id);
         await _services.LeaderReviewAskUserGate.RecoverAsync(result.Project.Id);
-        await workspace.WorkPane.LoadAsync(result.Project.Id);
         await workspace.LibraryPane.InitializeAsync();
     }
 

@@ -8,6 +8,7 @@ namespace Workbench.App;
 sealed class Program
 {
     internal static SingleInstanceCoordinator? Instance { get; private set; }
+    internal static IReadOnlyList<string> StartupArguments { get; private set; } = [];
 
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
@@ -15,6 +16,8 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        StartupArguments = args;
+
         if (args.Length == 1 && string.Equals(args[0], "--reset-local-data", StringComparison.Ordinal))
         {
             Workbench.Storage.Database.DatabasePathProvider.ResetDefaultData();
