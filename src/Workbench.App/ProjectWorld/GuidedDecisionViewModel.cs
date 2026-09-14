@@ -43,7 +43,7 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
     [ObservableProperty] public partial string PrimaryResultText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string ProposedContributionText { get; private set; } = string.Empty;
     [ObservableProperty] public partial AssignmentDisposition SelectedDisposition { get; set; } = AssignmentDisposition.Accepted;
-    [ObservableProperty] public partial ContributionDecisionMode SelectedContributionMode { get; set; } = ContributionDecisionMode.Ignore;
+    [ObservableProperty] public partial ContributionDecisionMode SelectedContributionMode { get; set; } = ContributionDecisionMode.AdoptVerbatim;
     [ObservableProperty] public partial string EditedContributionStatement { get; set; } = string.Empty;
     [ObservableProperty] public partial string NewRevisionContract { get; set; } = string.Empty;
     [ObservableProperty] public partial string? PreviewText { get; private set; }

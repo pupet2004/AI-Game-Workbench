@@ -55,13 +55,30 @@ public sealed class GuidedDecisionServiceTests
 
         await viewModel.InitializeAsync();
         viewModel.SelectedDisposition = AssignmentDisposition.Accepted;
-        viewModel.SelectedContributionMode = ContributionDecisionMode.AdoptVerbatim;
         await viewModel.PreviewDecisionCommand.ExecuteAsync(null);
         await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
 
         Assert.True(returnedToOverview);
         Assert.Contains("recorded", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
         Assert.False(viewModel.IsPreviewVisible);
+        Assert.Single((await fixture.Services.B1Projections.GetAcceptedProjectStateAsync(
+            new ProjectRef(fixture.Result.Project.Id))).CurrentContributions);
+    }
+
+    [Fact]
+    public async Task Accept_defaults_to_adopting_the_proposed_project_change()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services,
+            fixture.Result,
+            fixture.Handoff,
+            () => Task.CompletedTask);
+
+        await viewModel.InitializeAsync();
+
+        Assert.Equal(AssignmentDisposition.Accepted, viewModel.SelectedDisposition);
+        Assert.Equal(ContributionDecisionMode.AdoptVerbatim, viewModel.SelectedContributionMode);
     }
 
     [Fact]
