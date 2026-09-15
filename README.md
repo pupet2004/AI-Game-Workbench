@@ -1,93 +1,93 @@
 # AI Game Workbench
 
-> **The project persists. Agents don't have to.**
+> **AI sessions end. Projects should not forget.**
 
-AI Game Workbench is a Windows-first reference implementation for long-running AI project continuity. A Project World keeps accepted state, decisions, handoffs, evidence, and routing history durable while Leaders, Workers, models, sessions, and runtimes remain replaceable.
+AI Game Workbench is a Windows-first workspace for long-running AI projects.
+Agents can change, sessions can end, and providers can be replaced without
+losing track of what the project has actually accepted.
 
 ```text
-Codex / OpenCode / other Agents
-              |
-       Workbench Relay
-              |
-       Project World
-       |      |       |
-  Accepted  Decisions Handoffs
-    State              |
-                   Sources / Evidence
+Agent work
+    -> completion and evidence
+    -> review
+    -> authority decision
+    -> accepted project state
+    -> continuity for the next session
 ```
 
-Current release track: **Alpha** (`v0.1.0-alpha.20260827`, historical release snapshot). The real WEIQI3 cross-Agent acceptance path has been exercised locally through a dedicated gated integration run; the default full-suite test count does not imply live-provider execution.
+Workbench is not another chat window and it is not an automatic truth engine.
+It gives project changes a visible review boundary: Agent work can propose a
+change, but only an explicit acceptance decision changes the project's
+accepted state.
 
-The canonical source is this repository. See [Canonical Source and Documentation Export Policy](docs/CANONICAL_SOURCE.md) and the [Current Working-Tree Validation](docs/validation/current-working-tree-20260904.md) record for the current local state.
+## Download
+
+The current build is an **Alpha release candidate for Windows x64**.
+
+- [Windows Alpha package](https://github.com/pupet2004/AI-Game-Workbench/releases)
+- [Validation evidence](docs/validation/)
+- [Known limitations](docs/alpha-known-limitations.md)
+
+The package is self-contained. Extract it and run `Workbench.App.exe`, or run
+`install-windows.ps1` for a per-user installation with Start menu and desktop
+shortcuts. Uninstalling removes the application but preserves project data in
+`%LOCALAPPDATA%\AI Game Workbench`.
+
+## The product loop
+
+1. Open a project.
+2. Workbench checks the project, Git, engine, local data, and Agent provider.
+3. A Leader or Worker performs bounded work.
+4. Workbench records completion, changed files, and available evidence.
+5. You review the proposed change.
+6. Accept, request revision, or reject.
+7. Only acceptance updates the accepted project state.
+8. A later session resumes from that state, not from a stale transcript.
+
+## What is certified
+
+- Canonical Acceptance Spine
+- Product Loop with real Codex and OpenCode
+- DeepSeek model execution through OpenCode
+- Godot project changes
+- Overview, Work, Review, and first-use UI
+- Reject and revision retention
+- Normal exit and process restart recovery
+- Verification scope classification
+- Per-user Windows distribution
+- Read-only environment readiness detection
+- Provider-owned OpenCode authentication
+
+The latest validation records are in [`docs/validation`](docs/validation/).
+The default test suite deliberately skips live-provider tests unless their
+explicit environment switch is enabled.
+
+## Providers and editors
+
+Workbench currently exercises Codex and OpenCode as replaceable execution
+providers. Godot is the first tested project adapter. Provider credentials
+remain owned by the provider; Workbench only starts the provider's login flow
+and probes the runtime again afterward.
 
 ## Documentation
 
+- [Why Workbench](docs/why-workbench.md)
 - [Alpha whitepaper](docs/whitepaper/workbench-alpha-whitepaper.md)
-- [Architecture](docs/architecture/workbench-alpha-architecture.md)
-- [WEIQI3 demo script](docs/demo/weiqi3-cross-agent-demo.md)
-- [Alpha known limitations](docs/alpha-known-limitations.md)
-- [Release record](docs/releases/v0.1.0-alpha.20260827.md)
-- [Current working-tree validation](docs/validation/current-working-tree-20260904.md)
-- [Core continuity governance loop live verification](docs/validation/core-continuity-governance-loop-live-verified-20260908.md)
+- [Canonical Acceptance Spine](docs/architecture/canonical-acceptance-spine.md)
+- [Alpha architecture](docs/architecture/workbench-alpha-architecture.md)
+- [Known limitations](docs/alpha-known-limitations.md)
+- [Validation records](docs/validation/)
+- [Release notes](docs/releases/alpha-product-loop-20260915.md)
 
-## Windows Alpha Package
-
-Build the self-contained Windows package from a checkout:
+## Build locally
 
 ```powershell
+dotnet test --no-restore
 pwsh -NoLogo -NoProfile -File .\tools\publish-windows.ps1 -Version alpha
 ```
 
-The resulting ZIP is in `artifacts\release`. Extract it and run `Workbench.App.exe`; no .NET runtime, Node.js, Codex, OpenCode, or other Agent installation is required for Manual mode. Enable an Agent only when needed in `Settings`, where an optional executable path can override the detected local installation.
+The publish script writes the self-contained ZIP to `artifacts\release`.
 
-For a per-user installation with Start menu and desktop shortcuts, extract the
-ZIP and run `install-windows.ps1` from the extracted folder. The installer
-keeps Workbench project data in `%LOCALAPPDATA%\AI Game Workbench`. Use the
-created `uninstall-windows.ps1` to remove the application while preserving
-project data.
+## License
 
-## Local Native Surface
-
-To run the development build with the Native Agent Surface enabled, run the helper from any PowerShell directory:
-
-```powershell
-& 'C:\Users\pupet\Documents\ChatGPT\AI Game Workbench\tools\run-native-surface.cmd'
-```
-
-This helper resolves the project path and sets `WORKBENCH_NATIVE_AGENT_SURFACE=1` automatically.
-If Workbench is already open, close the existing window first so the development build can replace its DLLs.
-
-M0 — Empty Office
-Completed
-
-M1 — Leader Lives
-SEALED
-
-Completed:
-M1-01
-M1-02
-M1-02A
-M1-03
-M1-04
-M1-05A
-M1-05B
-M1-05C
-
-M1.5 — Project Memory
-
-M1.5A — Memory Foundation
-Completed
-
-M1.5B — Session-Derived Memory Intelligence
-Completed
-
-## Current Working-Tree Milestone — 2026-09-04
-
-The current canonical working tree extends the earlier Alpha baseline with:
-
-- provider-neutral B1 Agent participation and an OpenCode participation path;
-- B1 accepted-state and Project Library overview/category/time projections;
-- Worker completion normalization, workspace baseline checks, and completion verification records;
-- single-instance activation coordination and additional navigation/recovery coverage.
-
-These changes are verified locally and sealed in the pinned Phase F.1 release-candidate commit. Fresh provider acceptance remains a separate next gate. See [Current Working-Tree Validation](docs/validation/current-working-tree-20260904.md) and the Phase F.1 reconciliation report for the exact test/build result and boundaries.
+See [LICENSE](LICENSE).

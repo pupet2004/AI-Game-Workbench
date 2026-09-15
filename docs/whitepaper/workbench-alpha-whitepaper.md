@@ -2,10 +2,11 @@
 
 **The project persists. Agents don't have to.**
 
-Version `v0.1.0-alpha.20260827`  
-Recorded 2026-08-27
+Version `alpha-product-loop`
+Updated 2026-09-15
 
-> Historical Alpha whitepaper snapshot. Current implementation status must be read from the canonical repository's [Current Working-Tree Validation](../validation/current-working-tree-20260904.md), not inferred from this dated document.
+> This paper describes the current Alpha product direction. Validation claims
+> are backed by the dated records in [`docs/validation`](../validation/).
 
 ## Abstract
 
@@ -49,7 +50,13 @@ Leader understands the Project
 
 ## Evidence From Alpha
 
-On 2026-08-27, the real `立围` project completed a local cross-Agent acceptance run:
+The current Alpha has completed the product loop from installation and
+environment readiness through provider-owned authentication, Agent work,
+review, acceptance, and process restart recovery. It has been exercised with
+real Codex, OpenCode, DeepSeek, and Godot workflows as well as deterministic
+certification fixtures.
+
+Earlier, on 2026-08-27, the real `立围` project completed a local cross-Agent acceptance run:
 
 1. OpenCode with DeepSeek completed a bounded Worker assignment.
 2. Workbench recorded a non-authoritative Handoff.

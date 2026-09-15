@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Game Workbench</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b0e13; --panel:#151a22; --line:#2b3442; --text:#f4f6f8; --muted:#a8b2c0; --accent:#7dd3fc; --green:#86efac; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif; }
+    main { max-width:980px; margin:auto; padding:10vh 24px 12vh; } h1 { font-size:clamp(42px,8vw,76px); line-height:1; margin:0 0 24px; letter-spacing:0; }
+    h2 { margin-top:64px; font-size:28px; } p { color:var(--muted); max-width:700px; } .lead { font-size:24px; color:var(--text); max-width:720px; }
+    .actions { display:flex; gap:12px; flex-wrap:wrap; margin:32px 0; } a { color:var(--accent); } .button { border:1px solid var(--accent); padding:10px 16px; text-decoration:none; color:var(--text); border-radius:6px; }
+    .button.primary { background:var(--accent); color:#071018; } .flow { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-top:24px; }
+    .step { background:var(--panel); border:1px solid var(--line); padding:16px; min-height:112px; } .step strong { display:block; color:var(--green); margin-bottom:8px; }
+    .note { border-left:3px solid var(--accent); padding-left:16px; } footer { margin-top:72px; color:var(--muted); font-size:14px; }
+    @media (max-width:700px) { .flow { grid-template-columns:1fr; } .lead { font-size:20px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p>AI GAME WORKBENCH · WINDOWS ALPHA</p>
+    <h1>AI sessions end.<br>Projects should not forget.</h1>
+    <p class="lead">A project workspace where Agent work becomes project truth only after review and acceptance.</p>
+    <div class="actions">
+      <a class="button primary" href="https://github.com/pupet2004/AI-Game-Workbench/releases">Download the Alpha</a>
+      <a class="button" href="https://github.com/pupet2004/AI-Game-Workbench">View on GitHub</a>
+    </div>
+    <div class="flow">
+      <div class="step"><strong>01 · Work</strong>Agent performs a bounded change.</div>
+      <div class="step"><strong>02 · Evidence</strong>Completion and inspectable results are captured.</div>
+      <div class="step"><strong>03 · Review</strong>You see what changed and why.</div>
+      <div class="step"><strong>04 · Accept</strong>Only your decision changes project truth.</div>
+      <div class="step"><strong>05 · Continue</strong>The next session starts from accepted state.</div>
+    </div>
+    <h2>Why it exists</h2>
+    <p>Chat history is not project state. A handoff is not authority. Evidence is not truth. Workbench keeps those boundaries visible while letting Codex, OpenCode, DeepSeek, and other providers participate in the same long-running project.</p>
+    <p class="note">The project persists. Agents do not have to.</p>
+    <h2>Built and tested</h2>
+    <p>Windows x64 distribution, first-use UI, Godot project work, real provider authentication, review decisions, rejection retention, and process restart recovery are documented in the repository validation records.</p>
+    <footer><a href="https://github.com/pupet2004/AI-Game-Workbench/blob/master/docs/why-workbench.md">Why Workbench</a> · <a href="https://github.com/pupet2004/AI-Game-Workbench/tree/master/docs/validation">Validation</a> · <a href="https://github.com/pupet2004/AI-Game-Workbench">Source</a></footer>
+  </main>
+</body>
+</html>
