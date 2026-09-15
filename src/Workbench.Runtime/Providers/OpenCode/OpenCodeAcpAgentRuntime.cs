@@ -92,13 +92,32 @@ public sealed class OpenCodeAcpAgentRuntime : IAgentRuntime, IAsyncDisposable
         if (!_turns.TryAdd(externalId, turn)) throw new InvalidOperationException("An OpenCode turn is already active for this session.");
         try
         {
-            var response = await _client.SendRequestAsync("session/prompt", new { sessionId = externalId, prompt = new[] { new { type = "text", text = request.Text } } }, cancellationToken).ConfigureAwait(false);
+            var response = await _client.SendRequestAsync("session/prompt", new { sessionId = externalId, prompt = new[] { new { type = "text", text = BuildPromptText(request) } } }, cancellationToken).ConfigureAwait(false);
             foreach (var item in turn.Events) yield return item;
             var finalText = turn.Text.ToString().Trim();
             if (response.TryGetProperty("result", out var result) && result.TryGetProperty("text", out var resultText)) finalText = resultText.GetString() ?? finalText;
             yield return new AgentTurnCompleted(new AgentResult(session.Id, AgentSessionStatus.Completed, string.IsNullOrWhiteSpace(finalText) ? null : finalText, null), DateTimeOffset.UtcNow);
         }
         finally { _turns.TryRemove(externalId, out _); }
+    }
+
+    internal static string BuildPromptText(AgentRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.OutputSchema))
+            return request.Text;
+
+        // This ACP path has no native output-schema field. Keep the contract in
+        // the prompt; callers must still parse and validate the returned JSON.
+        return $"""
+            {request.Text}
+
+            WORKBENCH RESPONSE FORMAT
+            Return only valid JSON matching the following JSON Schema.
+            Do not include Markdown fences or prose outside the JSON.
+            This output format does not authorize execution or project acceptance.
+            JSON Schema:
+            {request.OutputSchema}
+            """;
     }
 
     public Task RespondToApprovalAsync(AgentSession session, AgentApprovalDecision decision, CancellationToken cancellationToken = default) =>

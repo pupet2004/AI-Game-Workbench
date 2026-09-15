@@ -60,7 +60,7 @@ invalidates the previous preview. A stale preview cannot be committed.
     access to its user-level telemetry log; this does not affect application
     compilation.
 - App test suite:
-  - `677 passed`
+  - `682 passed` after the live walkthrough fixes
   - `5 skipped` (live provider tests)
   - `0 failed`
 - First-run targeted tests cover:
@@ -72,6 +72,20 @@ invalidates the previous preview. A stale preview cannot be committed.
 
 ## Boundary
 
-This document does not certify a complete unfamiliar-user three-round
-Worker -> Review -> Accept journey. That remains covered by the existing
-Product Loop release gate and must be rerun after Product Shell changes.
+Latest evidence: `first-run-ui-three-rounds-20260915.md` records a fresh
+three-round UI run with normal tray Exit/reopen on a fixed App build.
+The UI continuity gate passed; automatic scope/deliverable verification
+reported failures in rounds 2 and 3 and remains an outstanding quality
+issue. Do not describe this as all-green verification.
+
+Earlier, a one-round clean-Workbench-configuration, no-seed desktop walkthrough passed
+on 2026-09-15, including Agent configuration recovery, task confirmation,
+Worker execution, Review/Accept, and accepted-state recovery after process
+termination/relaunch. See `first-run-ui-no-seed-20260915.md` for the exact
+evidence, fixes, failed attempts, and certification boundaries.
+
+That earlier one-round result does not certify a clean installer, first-time Provider authentication,
+a human unfamiliar-user study, normal tray exit, or three no-seed rounds.
+The seeded Product Loop regression in `product-shell-release-gate-20260915.md`
+is separate evidence and predates the latest prompt/routing fixes. Its
+additional rerun was not executed because build approval timed out.

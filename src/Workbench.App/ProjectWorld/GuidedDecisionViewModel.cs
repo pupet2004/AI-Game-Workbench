@@ -43,6 +43,10 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
     [ObservableProperty] public partial string SubmittedAsText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string PrimaryResultText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string ProposedContributionText { get; private set; } = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasProposedContributions))]
+    public partial IReadOnlyList<string> ProposedContributionStatements { get; private set; } = [];
+    public bool HasProposedContributions => ProposedContributionStatements.Count > 0;
     [ObservableProperty] public partial string VerificationSummaryText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string EvidenceSummaryText { get; private set; } = string.Empty;
     [ObservableProperty] public partial AssignmentDisposition SelectedDisposition { get; set; } = AssignmentDisposition.Accepted;
@@ -74,6 +78,7 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
             .Select(value => value.Statement)
             .ToArray();
         ProposedContributionText = proposed.Length == 0 ? LocalizationService.Current["Dynamic.NoContribution"] : string.Join("; ", proposed);
+        ProposedContributionStatements = proposed;
         var validations = handoff.ValidationClaimRefs
             .Where(claims.ContainsKey)
             .Select(value => claims[value].Payload)

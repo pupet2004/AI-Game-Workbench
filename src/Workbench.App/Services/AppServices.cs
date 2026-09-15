@@ -205,6 +205,8 @@ public sealed class AppServices : IAsyncDisposable
     public CanonicalWorkerCompletionRepository CanonicalWorkerCompletions { get; }
     public CanonicalWorkerCompletionBridgeService CanonicalWorkerCompletionBridge { get; }
     public CanonicalWorkerLaunchService CanonicalWorkerLaunch { get; }
+    public ConfirmedWorkerDraftLaunchService ConfirmedWorkerDraftLaunch =>
+        new(B1ProjectGovernance, B1AuthorityRepository, B1AuthorityCommands, B1WorkerExecutionBridge, CanonicalWorkerLaunch);
     public B1EvidenceRepository B1Evidence { get; }
     public B1NonAuthoritativeCommandService B1NonAuthoritativeCommands { get; }
     public B1AuthorityCommandService B1AuthorityCommands { get; }

@@ -201,8 +201,14 @@
                         <TextBlock Text="{Binding [Leader.DraftConfirmation]}"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                        <ScrollViewer x:Name="DraftDetailsScrollViewer"
+                                      MaxHeight="280"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="6">
                         <TextBlock Text="{Binding DraftConfirmation.Title}"
                                    FontWeight="SemiBold"
+                                   TextWrapping="Wrap"
                                    Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
                         <TextBlock Text="{Binding DraftConfirmation.Goal}"
                                    Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
@@ -231,7 +237,10 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
+                        </StackPanel>
+                        </ScrollViewer>
                         <Button Content="{Binding [Leader.ConfirmWorker]}"
+                                AutomationProperties.AutomationId="ConfirmWorkerDraft"
                                 Background="{DynamicResource SystemControlBackgroundAccentBrush}"
                                 Foreground="{DynamicResource SystemControlForegroundAltHighBrush}"
                                 Command="{Binding ConfirmDraftCommand}" />

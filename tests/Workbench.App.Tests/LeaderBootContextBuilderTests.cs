@@ -28,6 +28,21 @@ public sealed class LeaderBootContextBuilderTests
     }
 
     [Fact]
+    public void Explicit_worker_preparation_uses_a_pending_draft_not_a_change_observation_in_both_boot_paths()
+    {
+        const string request = "Prepare a bounded Worker task for my confirmation.";
+        foreach (var text in new[] {
+            LeaderBootContextBuilder.Build(Project, [], [], null, request).Text,
+            LeaderBootContextBuilder.BuildSelected(Project, [], request).Text })
+        {
+            Assert.Contains("return the task in draft_proposal and set evolution_candidates to []", text, StringComparison.Ordinal);
+            Assert.Contains("future work, not an observed project change", text, StringComparison.Ordinal);
+            Assert.Contains("does not start a Worker: wait for user confirmation", text, StringComparison.Ordinal);
+            Assert.Contains("must not implicitly start or draft Worker work", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Both_boot_paths_define_stage_end_library_judgment_and_user_confirmation_semantics()
     {
         var legacy = LeaderBootContextBuilder.Build(Project, [], [], null, "Close the stage.").Text;

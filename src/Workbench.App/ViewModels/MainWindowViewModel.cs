@@ -247,6 +247,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              agentHost: _services.AgentHost,
              workerExecutionRepository: _services.WorkerExecutionRepository,
              canonicalWorkerLaunch: _services.CanonicalWorkerLaunch,
+             confirmedWorkerDraftLaunch: _services.ConfirmedWorkerDraftLaunch,
              authorityRepository: _services.B1AuthorityRepository,
              workerExecutionBridge: _services.B1WorkerExecutionBridge,
              canonicalWorkerCompletions: _services.CanonicalWorkerCompletions,

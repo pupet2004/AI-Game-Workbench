@@ -61,7 +61,7 @@
                             <ItemsControl ItemsSource="{Binding AcceptedPreview}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="vm:AcceptedStateItemView">
-                                        <TextBlock Text="{Binding Statement}" FontSize="17" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" ToolTip.Tip="{Binding Statement}" />
+                                        <TextBlock Text="{Binding Statement}" AutomationProperties.AutomationId="OverviewAcceptedStatement" FontSize="17" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" ToolTip.Tip="{Binding Statement}" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

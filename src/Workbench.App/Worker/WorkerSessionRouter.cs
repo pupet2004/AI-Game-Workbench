@@ -850,7 +850,13 @@ public sealed class WorkerSessionRouter(
                 "Before implementation, use the numbered acceptance checklist as the execution plan. Work one item at a time, " +
                 "and emit each `WORKBENCH_STEP_COMPLETED: N` line immediately after item N is actually complete. " +
                 "Do not batch markers at the end, do not emit markers for unfinished work, and do not treat turn completion as " +
-                "completion of unreported items. Continue with the assignment and provide the final report normally.";
+                "completion of unreported items. Emit progress markers during execution, separate from the final response.\n\n" +
+                "Return the final response as a single JSON object matching the output schema, without Markdown fences. " +
+                "Use Kind=FinalReport when finished, or Kind=NeedsLeaderDecision when blocked on a decision. " +
+                "Message describes the actual result. ValidationSummary records checks actually run and their outcomes, " +
+                "including failures or checks not run. ProposedChanges lists concise project-state changes proposed for review, " +
+                "supported by the work actually completed; use an empty array when there is no supported project change. " +
+                "These are proposals only: completion does not authorize acceptance or establish accepted project facts.";
             var completionObserved = false;
             try
             {
@@ -859,6 +865,7 @@ public sealed class WorkerSessionRouter(
                                    new HostedAgentIntent(
                                        request.PromptSource,
                                        workerPrompt,
+                                       OutputSchema: WorkerHandoffPayloadParser.OutputSchema,
                                        AccessMode: request.AccessMode,
                                        DisplayText: request.LeaderPrompt),
                                    cancellationToken))

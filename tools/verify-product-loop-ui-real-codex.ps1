@@ -18,7 +18,9 @@ if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
     $ProjectPath = Join-Path $root 'counter'
     New-Item -ItemType Directory -Force -Path $ProjectPath | Out-Null
     $fixture = Join-Path $repo 'demos\product-loop-godot-counter'
-    Get-ChildItem -LiteralPath $fixture -Force | Copy-Item -Destination $ProjectPath -Recurse -Force
+    Get-ChildItem -LiteralPath $fixture -Force |
+        Where-Object { $_.Name -notin @('.godot', '.git') } |
+        Copy-Item -Destination $ProjectPath -Recurse -Force
     $createdProject = $true
 }
 
@@ -310,6 +312,8 @@ function Wait-ForReview {
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $started = Get-Date
+    $nextProgress = $started.AddSeconds(30)
     do {
         foreach ($approvalName in @('Approve once', 'Approve for session')) {
             $approvalCondition = [System.Windows.Automation.PropertyCondition]::new(
@@ -338,6 +342,10 @@ function Wait-ForReview {
         }
         catch {
             # UIA can briefly invalidate the tree while Avalonia swaps views.
+        }
+        if ((Get-Date) -ge $nextProgress) {
+            Write-Output "Worker review pending: $([int]((Get-Date) - $started).TotalSeconds)s elapsed."
+            $nextProgress = (Get-Date).AddSeconds(30)
         }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
@@ -469,6 +477,7 @@ try {
         Wait-ForAgentRuntime $root 90
         Invoke-UiElement (Wait-Element $root 'Confirm / Start Worker' 60) 'Confirm / Start Worker'
         Write-Output "Round ${round}: desktop UI started the configured Worker ($WorkerProvider)."
+        Save-ReviewScreenshot $first $root "round-$round-worker-started.png"
 
         Wait-ForReview $root 900
         Invoke-UiElement (Wait-Element $root 'Back to Project Overview') 'Back to Project Overview'
@@ -517,6 +526,18 @@ try {
         $second = $null
     }
     Write-Output "Configured Worker three-round product loop passed ($WorkerProvider)."
+}
+catch {
+    Write-Output "ProductLoopFailure=$($_.Exception.Message)"
+    if ($null -ne $first -and -not $first.HasExited -and $null -ne $root) {
+        try {
+            Save-ReviewScreenshot $first $root "round-$round-failure.png"
+        }
+        catch {
+            Write-Warning "Could not capture the failed review surface: $($_.Exception.Message)"
+        }
+    }
+    throw
 }
 finally {
     Stop-VerifiedProcess $first $resolvedExecutable

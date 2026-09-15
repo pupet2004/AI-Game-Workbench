@@ -20,6 +20,21 @@ public sealed class LeaderPaneViewTests
     }
 
     [Fact]
+    public void Draft_details_are_bounded_with_confirmation_outside_the_scroll_area()
+    {
+        var document = System.Xml.Linq.XDocument.Parse(ReadLeaderView());
+        System.Xml.Linq.XNamespace ui = "https://github.com/avaloniaui";
+        System.Xml.Linq.XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var details = Assert.Single(document.Descendants(ui + "ScrollViewer"),
+            element => (string?)element.Attribute(x + "Name") == "DraftDetailsScrollViewer");
+        Assert.Equal("280", (string?)details.Attribute("MaxHeight"));
+        Assert.DoesNotContain(details.Descendants(ui + "Button"), element =>
+            (string?)element.Attribute("Command") == "{Binding ConfirmDraftCommand}");
+        Assert.Contains(details.ElementsAfterSelf(ui + "Button"), element =>
+            (string?)element.Attribute("Command") == "{Binding ConfirmDraftCommand}");
+    }
+
+    [Fact]
     public void Native_surface_uses_explicit_steer_and_chat_keyboard_semantics()
     {
         var codeBehind = ReadLeaderSurfaceCodeBehind();

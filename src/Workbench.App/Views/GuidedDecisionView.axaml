@@ -23,7 +23,14 @@
             <Border Padding="0,16" BorderBrush="#40808080" BorderThickness="0,1">
                 <StackPanel Spacing="8">
                     <TextBlock Text="{Binding [Review.WhatChanged]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding ProposedContributionText}" TextWrapping="Wrap" FontSize="17" />
+                    <TextBlock Text="{Binding ProposedContributionText}" IsVisible="{Binding !HasProposedContributions}" TextWrapping="Wrap" FontSize="17" />
+                    <ItemsControl ItemsSource="{Binding ProposedContributionStatements}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" AutomationProperties.AutomationId="ReviewProposedStatement" TextWrapping="Wrap" FontSize="17" Margin="0,0,0,8" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                     <TextBlock Text="{Binding PrimaryResultText}" TextWrapping="Wrap" Opacity="0.8" />
                     <TextBlock Text="{Binding [Review.Verification]}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding VerificationSummaryText}" TextWrapping="Wrap" />

@@ -42,6 +42,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     private readonly TaskRevisionRepository? _taskRevisions;
     private readonly WorkerExecutionRepository? _workerExecutions;
     private readonly CanonicalWorkerLaunchService? _canonicalWorkerLaunch;
+    private readonly ConfirmedWorkerDraftLaunchService? _confirmedWorkerDraftLaunch;
     private readonly Func<HandoffRef, Task>? _openGuidedDecision;
     private readonly Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? _acceptAuthorityConfirmation;
     private readonly WorkerSessionRouter? _workerSessionRouter;
@@ -87,7 +88,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         WorkerExecutionRepository? workerExecutionRepository = null,
         CanonicalWorkerLaunchService? canonicalWorkerLaunch = null,
         Func<HandoffRef, Task>? openGuidedDecision = null,
-        Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? acceptAuthorityConfirmation = null)
+        Func<AuthorityConfirmationDraft, CancellationToken, Task<AuthorityDecision>>? acceptAuthorityConfirmation = null,
+        ConfirmedWorkerDraftLaunchService? confirmedWorkerDraftLaunch = null)
     {
         _project = project;
         _runtimeRegistry = runtimeRegistry;
@@ -104,6 +106,7 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         _taskRevisions = taskRevisionRepository;
         _workerExecutions = workerExecutionRepository;
         _canonicalWorkerLaunch = canonicalWorkerLaunch;
+        _confirmedWorkerDraftLaunch = confirmedWorkerDraftLaunch;
         _openGuidedDecision = openGuidedDecision;
         _acceptAuthorityConfirmation = acceptAuthorityConfirmation;
         _workerSessionRouter = workerSessionRouter;
@@ -516,6 +519,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     {
         var previous = _conversation.SelectedModel;
         var available = await _runtimeRegistry.GetAvailableModelsAsync(cancellationToken);
+        if (available.Count == 0 && _conversation.Session is not null)
+        {
+            throw new InvalidOperationException("No agent models are available for the existing Leader session.");
+        }
         AvailableModels.Clear();
         foreach (var profile in available)
         {
@@ -1124,6 +1131,10 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
         if (!CanChangeBrain) return;
         try
         {
+            if (_runtimeRegistry.Runtimes.Count == 0 && _reconnectRuntime is not null)
+            {
+                await _reconnectRuntime(cancellationToken);
+            }
             await LoadAvailableModelsAsync(cancellationToken);
             BrainTargetModel = SelectedModel;
             _conversation.IsBrainPickerVisible = true;
@@ -1794,6 +1805,23 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public async Task ConfirmDraftAsync(CancellationToken cancellationToken = default)
     {
         var confirmation = DraftConfirmation ?? throw new InvalidOperationException("No draft confirmation is active.");
+        try
+        {
+            await StartConfirmedDraftAsync(confirmation, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            AddErrorMessage($"无法启动 Worker：{exception.Message}");
+            NotifyAllState();
+        }
+    }
+
+    private async Task StartConfirmedDraftAsync(LeaderDraftConfirmation confirmation, CancellationToken cancellationToken)
+    {
         if (_workerSessionRouter is null)
         {
             AddErrorMessage("Worker 路由服务不可用，任务草案未启动。");
@@ -1831,9 +1859,11 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
                 ? null
                 : (completion, token) => DispatchAsync(() => _openGuidedDecision(completion.Facts.HandoffRef)));
         CanonicalWorkerLaunchContext? canonical = null;
-        if (_canonicalWorkerLaunch is not null)
+        if (_confirmedWorkerDraftLaunch is not null || _canonicalWorkerLaunch is not null)
         {
-            canonical = await _canonicalWorkerLaunch.PrepareAsync(_project.Id, confirmation.Revision, cancellationToken);
+            canonical = _confirmedWorkerDraftLaunch is not null
+                ? await _confirmedWorkerDraftLaunch.PrepareAsync(_project.Id, confirmation.Revision, cancellationToken)
+                : await _canonicalWorkerLaunch!.PrepareAsync(_project.Id, confirmation.Revision, cancellationToken);
             if (canonical is not null)
             {
                 request = request with

@@ -66,6 +66,11 @@ public sealed class CanonicalWorkerLaunchService(
         }
 
         var revisionRef = projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[assignment.AssignmentRef];
+        if (projection.AcceptedProjectState.RevisionDispositions.ContainsKey(revisionRef))
+        {
+            throw new B1CommandException(B1FailureCode.AlreadyDispositioned,
+                "This work already has a decision. Confirm a new task before starting another Worker.");
+        }
         if (!projection.EffectiveCurrentAttemptRefs.TryGetValue(assignment.AssignmentRef, out var selected) || selected is null)
         {
             projection.StoredAttemptSelections.TryGetValue(assignment.AssignmentRef, out var expected);

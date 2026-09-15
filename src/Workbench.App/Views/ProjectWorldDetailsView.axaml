@@ -45,7 +45,7 @@
                             <DataTemplate DataType="vm:AcceptedStateItemView">
                                 <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
                                     <StackPanel Spacing="3">
-                                        <TextBlock Text="{Binding Statement}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Statement}" AutomationProperties.AutomationId="WorldAcceptedStatement" FontWeight="SemiBold" TextWrapping="Wrap" />
                                         <TextBlock Text="{Binding Scope}" Opacity="0.75" />
                                         <TextBlock Text="{Binding DecisionText}" Opacity="0.75" />
                                         <TextBlock Text="{Binding SourceText}" Opacity="0.75" />

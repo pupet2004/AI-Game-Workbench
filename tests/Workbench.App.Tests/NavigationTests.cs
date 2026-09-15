@@ -5,6 +5,7 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Microsoft.Data.Sqlite;
 using Workbench.Core.Leaders;
+using Workbench.Core.Continuity;
 
 namespace Workbench.App.Tests;
 
@@ -300,6 +301,49 @@ public sealed class NavigationTests
         command.CommandText = "SELECT COUNT(*) FROM task_events WHERE project_id = $projectId AND event_type = 'WorkerSessionStarted'";
         command.Parameters.AddWithValue("$projectId", workspace.Result.Project.Id.ToString());
         Assert.Equal(1L, (long)(await command.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Failed_canonical_preparation_keeps_the_draft_without_starting_a_legacy_worker()
+    {
+        using var folder = new TemporaryDirectory();
+        var runtime = new FakeAgentRuntime();
+        await using var context = await AppTestContext.CreateAsync(runtimeRegistry: RegistryWith(runtime));
+        var project = new Workbench.Core.Projects.Project(Guid.NewGuid(), "Ambiguous work", folder.Path,
+            Workbench.Core.Projects.ProjectType.Generic, null, context.Time.GetUtcNow(), context.Time.GetUtcNow());
+        var governance = await context.Services.B1ProjectGovernance.CreateGovernedProjectAsync(project, new UserPrincipalRef("U1"));
+        var projectRef = new ProjectRef(project.Id);
+        var principal = governance.BootstrapPrincipalRef;
+        for (var index = 0; index < 2; index++)
+        {
+            await context.Services.B1AuthorityCommands.EstablishResponsibilityAsync(new EstablishResponsibilityCommand(
+                projectRef, principal, new DecidingAuthorityRef.UserPrincipal(principal),
+                new ResponsibilityContract($"Lane {index}", "Done", AuthorityBoundary.Empty),
+                new AssignmentDelegationInstruction(new ResponsibilityTarget.EstablishedByThisDecision(),
+                    new AssignmentAssigneeTarget.EstablishedByThisDecision(), new AssignmentRevisionContract("Work"), null),
+                RoleKind.Worker, [], []));
+        }
+        var main = context.CreateMain();
+        await main.InitializeAsync();
+        await ((HomeViewModel)main.CurrentPage).OpenPathAsync(folder.Path);
+        await Assert.IsType<ProjectWorldExplorerViewModel>(main.CurrentPage).OpenWorkspaceCommand.ExecuteAsync(null);
+        var workspace = Assert.IsType<WorkspaceViewModel>(main.CurrentPage);
+        runtime.QueueTurn(new AgentTurnCompleted(new AgentResult(AgentSessionId.New(), AgentSessionStatus.Completed,
+            "{\"response\":\"Draft ready.\",\"draft_proposal\":{\"title\":\"Reset\",\"goal\":\"Add Reset\",\"scope\":\"UI\",\"outOfScope\":\"Other files\",\"acceptance\":[\"Reset works\"],\"riskLevel\":\"Low\",\"recommendedExecutionProfile\":{\"providerHint\":\"fake-provider\",\"modelHint\":\"model-a\",\"runtimeHint\":\"fake-runtime\"}}}",
+            null), DateTimeOffset.UtcNow));
+        workspace.LeaderPane.DraftMessage = "Prepare Reset.";
+        await workspace.LeaderPane.SendAsync();
+        var draft = Assert.IsType<Workbench.App.Leader.LeaderDraftConfirmation>(workspace.LeaderPane.DraftConfirmation);
+        var before = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
+
+        await workspace.LeaderPane.ConfirmDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(draft, workspace.LeaderPane.DraftConfirmation);
+        Assert.Empty(await context.Services.WorkerRoutingStore.ListSessionsAsync(project.Id));
+        Assert.Empty(await context.Services.WorkerExecutionRepository.ListAsync(project.Id));
+        Assert.Contains(workspace.LeaderPane.Messages, message => message.Text.Contains("Select the work to continue", StringComparison.Ordinal));
+        Assert.Equal(before.AuthorityDecisions.Count,
+            (await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef)).AuthorityDecisions.Count);
     }
 
     [Fact]

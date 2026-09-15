@@ -9,6 +9,24 @@ namespace Workbench.App.Tests;
 
 public sealed class GuidedDecisionServiceTests
 {
+    [Fact]
+    public async Task Review_preserves_separate_proposals_including_embedded_semicolons()
+    {
+        string[] proposals = ["Reset button added; score returns to zero", "Each click still adds 2"];
+        await using var fixture = await Fixture.CreateAsync(proposals);
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services, fixture.Result, fixture.Handoff, () => Task.CompletedTask);
+        await viewModel.InitializeAsync();
+        Assert.True(viewModel.HasProposedContributions);
+        Assert.Equal(proposals, viewModel.ProposedContributionStatements);
+        await viewModel.AcceptCommand.ExecuteAsync(null);
+        Assert.Equal(0L, await fixture.CountAsync("b1_accepted_state_contributions"));
+        await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
+        Assert.Null(viewModel.ErrorMessage);
+        var state = await fixture.Services.B1Projections.GetAcceptedProjectStateAsync(new(fixture.Result.Project.Id));
+        Assert.Equal(proposals.Order(), state.CurrentContributions.Select(value => value.Statement).Order());
+    }
+
     [Theory]
     [InlineData("Accept", AssignmentDisposition.Accepted, ContributionDecisionMode.AdoptVerbatim)]
     [InlineData("RequestRevision", AssignmentDisposition.RevisionRequired, ContributionDecisionMode.Ignore)]
@@ -351,7 +369,7 @@ public sealed class GuidedDecisionServiceTests
         public UserPrincipalRef Principal { get; }
         public HandoffRef Handoff { get; }
 
-        public static async Task<Fixture> CreateAsync()
+        public static async Task<Fixture> CreateAsync(string[]? proposals = null)
         {
             var context = await AppTestContext.CreateAsync();
             var folder = new TemporaryDirectory("decision-project");
@@ -370,7 +388,7 @@ public sealed class GuidedDecisionServiceTests
             var handoff = await context.Services.GuidedHandoffComposer.RecordAsync(
                 attempt,
                 assignment,
-                new GuidedHandoffRequest(new(result.Project.Id), principal, "Prototype completed", [], [], ["Use card-based combat"], null, []));
+                new GuidedHandoffRequest(new(result.Project.Id), principal, "Prototype completed", [], [], proposals ?? ["Use card-based combat"], null, []));
             return new Fixture(context, folder, result, principal, handoff.HandoffRef);
         }
 

@@ -103,7 +103,8 @@ internal sealed class AppTestContext : IAsyncDisposable
             acceptedStateReader: Services.LibraryAcceptedStateReader,
             agentHost: Services.AgentHost,
             workerExecutionRepository: Services.WorkerExecutionRepository,
-            canonicalWorkerLaunch: Services.CanonicalWorkerLaunch);
+            canonicalWorkerLaunch: Services.CanonicalWorkerLaunch,
+            confirmedWorkerDraftLaunch: Services.ConfirmedWorkerDraftLaunch);
 
     public async Task<WorkspaceViewModel> CreateWorkspaceForNewProjectAsync(TimeSpan? debounce = null)
     {

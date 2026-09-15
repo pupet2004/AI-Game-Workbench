@@ -84,6 +84,8 @@ An Evolution Candidate is an observation only. It is not Accepted Project State,
 
 Do not treat an Evolution Candidate, a route hint, or a governance suggestion as an execution request. Do not emit `draft_proposal` unless the user explicitly asks to create or execute a bounded Workbench Worker task. A turn that reports an Evolution Candidate must not implicitly start or draft Worker work.
 
+For an explicit request to prepare a bounded Worker task for confirmation, return the task in `draft_proposal` and set `evolution_candidates` to `[]`. The requested implementation is future work, not an observed project change. Do not duplicate that request as a candidate or merely describe a draft in response prose. Creating this proposal does not start a Worker: wait for user confirmation.
+
 Keep semantic Candidate turns separate from governance commands. When `evolution_candidates` is non-empty, set `authority_confirmation` and `memory_commands.library_proposal` to `null`; a later explicit user request may open the existing governance path.
 
 ## Your Role as Leader

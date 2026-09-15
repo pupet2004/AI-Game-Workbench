@@ -74,7 +74,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
          Func<AuthorityConfirmationDraft, CancellationToken, Task<Workbench.Core.Continuity.AuthorityDecision>>? acceptAuthorityConfirmation = null,
          B1AuthorityRepository? authorityRepository = null,
          B1WorkerExecutionBridgeService? workerExecutionBridge = null,
-         CanonicalWorkerCompletionRepository? canonicalWorkerCompletions = null)
+         CanonicalWorkerCompletionRepository? canonicalWorkerCompletions = null,
+         ConfirmedWorkerDraftLaunchService? confirmedWorkerDraftLaunch = null)
     {
         Result = result;
         _layoutRepository = layoutRepository;
@@ -149,7 +150,8 @@ public partial class WorkspaceViewModel : ViewModelBase, IAsyncDisposable
             workerExecutionRepository: workerExecutionRepository,
             canonicalWorkerLaunch: canonicalWorkerLaunch,
             openGuidedDecision: openGuidedDecision,
-            acceptAuthorityConfirmation: acceptAuthorityConfirmation);
+            acceptAuthorityConfirmation: acceptAuthorityConfirmation,
+            confirmedWorkerDraftLaunch: confirmedWorkerDraftLaunch);
     }
 
     public ProjectOpenResult Result { get; }

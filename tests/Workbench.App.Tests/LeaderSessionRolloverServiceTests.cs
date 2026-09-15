@@ -338,6 +338,65 @@ public sealed class LeaderSessionRolloverServiceTests
     }
 
     [Fact]
+    public async Task Brain_picker_reconnects_a_missing_runtime_without_starting_a_new_session()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        var reconnects = 0;
+        var pane = new LeaderPaneViewModel(context.ProjectA, registry, context.CreateManager(),
+            () => Task.CompletedTask,
+            reconnectRuntime: _ =>
+            {
+                reconnects++;
+                registry.Register(runtime);
+                return Task.CompletedTask;
+            },
+            rolloverService: CreateService(context, registry));
+        await pane.InitializeAsync();
+        runtime.QueueTurn(context.Completed("First session"));
+        pane.DraftMessage = "Discuss the project.";
+        await pane.SendAsync();
+        var session = pane.Session;
+        registry.Unregister(runtime.Account.Id);
+
+        await pane.BeginBrainPickerAsync();
+
+        Assert.Equal(1, reconnects);
+        Assert.True(pane.IsBrainPickerVisible);
+        Assert.NotEmpty(pane.AvailableModels);
+        Assert.NotNull(pane.BrainTargetModel);
+        Assert.Same(session, pane.Session);
+        Assert.Single(runtime.CreateRequests);
+    }
+
+    [Fact]
+    public async Task Brain_picker_unavailable_models_do_not_erase_the_existing_selection()
+    {
+        await using var context = await PersistentLeaderContext.CreateAsync();
+        var runtime = context.CreateRuntime();
+        var registry = new AgentRuntimeRegistry();
+        registry.Register(runtime);
+        var pane = new LeaderPaneViewModel(context.ProjectA, registry, context.CreateManager(),
+            () => Task.CompletedTask, rolloverService: CreateService(context, registry));
+        await pane.InitializeAsync();
+        runtime.QueueTurn(context.Completed("First session"));
+        pane.DraftMessage = "Discuss the project.";
+        await pane.SendAsync();
+        var selected = pane.SelectedModel;
+        var models = pane.AvailableModels.ToArray();
+        registry.Unregister(runtime.Account.Id);
+
+        await pane.BeginBrainPickerAsync();
+
+        Assert.False(pane.IsBrainPickerVisible);
+        Assert.Same(selected, pane.SelectedModel);
+        Assert.Equal(models, pane.AvailableModels);
+        Assert.Single(runtime.CreateRequests);
+    }
+
+    [Fact]
     public async Task Unified_boot_context_uses_immediate_predecessor_and_is_not_persisted()
     {
         await using var context = await PersistentLeaderContext.CreateAsync();

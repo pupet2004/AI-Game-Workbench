@@ -31,6 +31,8 @@ public sealed class WorkerSessionRoutingTests
         var sent = fixture.Runtime.SentRequests.Single().Text;
         Assert.StartsWith("Leader prompt A", sent, StringComparison.Ordinal);
         Assert.Contains("# Workbench Worker", sent, StringComparison.Ordinal);
+        Assert.Equal(WorkerHandoffPayloadParser.OutputSchema, fixture.Runtime.SentRequests.Single().OutputSchema);
+        Assert.Contains("completion does not authorize acceptance", sent, StringComparison.Ordinal);
         var events = await fixture.ListAsync();
         Assert.Contains(events, item => item.Type == "WorkerSessionStarted");
         Assert.Contains(events, item => item.Type == "WorkerToLeaderHandoff" && item.Payload.Contains("Worker result A", StringComparison.Ordinal));
@@ -129,6 +131,7 @@ public sealed class WorkerSessionRoutingTests
         Assert.StartsWith("Prompt A", prompts[0], StringComparison.Ordinal);
         Assert.StartsWith("Correction B", prompts[1], StringComparison.Ordinal);
         Assert.All(prompts, prompt => Assert.Contains("# Workbench Worker", prompt, StringComparison.Ordinal));
+        Assert.All(fixture.Runtime.SentRequests, request => Assert.Equal(WorkerHandoffPayloadParser.OutputSchema, request.OutputSchema));
         var events = await fixture.ListAsync();
         Assert.Equal(2, events.Count(item => item.Type == "WorkerToLeaderHandoff"));
     }
