@@ -30,6 +30,8 @@ dotnet publish (Join-Path $root 'src\Workbench.App\Workbench.App.csproj') `
     -p:DebugSymbols=false
 
 Get-ChildItem -LiteralPath $publishDirectory -Filter '*.pdb' -File | Remove-Item -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install-windows.ps1') -Destination $publishDirectory
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'uninstall-windows.ps1') -Destination $publishDirectory
 Compress-Archive -Path (Join-Path $publishDirectory '*') -DestinationPath $archivePath
 if (-not $KeepPublishDirectory) {
     Remove-Item -LiteralPath $publishDirectory -Recurse -Force

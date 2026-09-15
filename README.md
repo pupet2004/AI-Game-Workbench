@@ -40,6 +40,12 @@ pwsh -NoLogo -NoProfile -File .\tools\publish-windows.ps1 -Version alpha
 
 The resulting ZIP is in `artifacts\release`. Extract it and run `Workbench.App.exe`; no .NET runtime, Node.js, Codex, OpenCode, or other Agent installation is required for Manual mode. Enable an Agent only when needed in `Settings`, where an optional executable path can override the detected local installation.
 
+For a per-user installation with Start menu and desktop shortcuts, extract the
+ZIP and run `install-windows.ps1` from the extracted folder. The installer
+keeps Workbench project data in `%LOCALAPPDATA%\AI Game Workbench`. Use the
+created `uninstall-windows.ps1` to remove the application while preserving
+project data.
+
 ## Local Native Surface
 
 To run the development build with the Native Agent Surface enabled, run the helper from any PowerShell directory:
