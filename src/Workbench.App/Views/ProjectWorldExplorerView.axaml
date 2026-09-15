@@ -1,265 +1,109 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Workbench.App.ProjectWorld"
+             xmlns:views="using:Workbench.App.Views"
              x:Class="Workbench.App.Views.ProjectWorldExplorerView"
              x:DataType="vm:ProjectWorldExplorerViewModel">
-    <ScrollViewer>
-        <StackPanel Margin="40" Spacing="16" MaxWidth="1000">
-            <Grid ColumnDefinitions="*,Auto">
+    <UserControl.Styles>
+        <Style Selector="Button.nav">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.nav.selected">
+            <Setter Property="Background" Value="#207AA89E" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Opacity" Value="0.65" />
+        </Style>
+    </UserControl.Styles>
+    <Grid ColumnDefinitions="168,*">
+        <Border BorderBrush="#40808080" BorderThickness="0,0,1,0" Padding="16,28,16,20">
+            <DockPanel LastChildFill="False">
+                <TextBlock DockPanel.Dock="Top" Text="WORKBENCH" FontWeight="SemiBold" Margin="10,0,0,24" />
+                <StackPanel DockPanel.Dock="Top" Spacing="4">
+                    <Button Classes="nav" Classes.selected="{Binding !IsWorldView}" Content="{Binding [Overview.Nav]}" Command="{Binding ShowOverviewCommand}" AutomationProperties.AutomationId="NavOverview" />
+                    <Button Classes="nav" Content="{Binding [Overview.Work]}" Command="{Binding OpenWorkspaceCommand}" AutomationProperties.AutomationId="NavWork" />
+                    <Button Classes="nav" Content="{Binding [Overview.Review]}" Command="{Binding OpenReviewCommand}" AutomationProperties.AutomationId="NavReview" />
+                    <Button Classes="nav" Classes.selected="{Binding IsWorldView}" Content="{Binding [Overview.World]}" Command="{Binding ShowWorldCommand}" AutomationProperties.AutomationId="NavWorld" />
+                    <Button Classes="nav" Content="{Binding [Explorer.History]}" Command="{Binding OpenHistoryCommand}" />
+                    <Button Classes="nav" Content="{Binding [Explorer.Settings]}" Command="{Binding OpenSettingsCommand}" />
+                </StackPanel>
+                <Button DockPanel.Dock="Bottom" Classes="nav" Content="{Binding [Explorer.Home]}" Command="{Binding BackCommand}" />
+            </DockPanel>
+        </Border>
+        <Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="28,24,28,16">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="24" Margin="0,0,0,20">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="{Binding [Explorer.Title]}" FontSize="28" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding ProjectName}" FontSize="20" />
-                    <TextBlock Text="{Binding ProjectPath}" TextWrapping="Wrap" Opacity="0.7" />
-                    <TextBlock Text="{Binding [Explorer.RecoveredProjectWorld]}" IsVisible="{Binding Recovery}" FontWeight="SemiBold" Opacity="0.8" />
+                    <TextBlock Text="{Binding ProjectName}" FontSize="26" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectName}" />
+                    <TextBlock Text="{Binding ProjectPath}" FontSize="12" Opacity="0.55" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectPath}" />
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                    <Button Content="{Binding [Explorer.Reload]}" Command="{Binding ReloadCommand}" IsEnabled="{Binding !IsBusy}" />
-                    <Button Content="{Binding [Explorer.Continue]}" Command="{Binding ContinueProjectCommand}" IsEnabled="{Binding !IsBusy}" />
-                    <Button Content="{Binding [Explorer.ReviewPending]}" Command="{Binding OpenReviewCommand}"
-                            IsVisible="{Binding HasPendingHandoffs}" IsEnabled="{Binding !IsBusy}" />
-                    <Button Content="{Binding [Explorer.OpenWorkspace]}" Command="{Binding OpenWorkspaceCommand}" IsEnabled="{Binding !IsBusy}" />
-                    <Button Content="{Binding [Explorer.Settings]}" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsBusy}" />
-                    <Button Content="{Binding [Explorer.History]}" Command="{Binding OpenHistoryCommand}" IsEnabled="{Binding !IsBusy}" />
-                    <Button Content="{Binding [Explorer.Home]}" Command="{Binding BackCommand}" IsEnabled="{Binding !IsBusy}" />
-                </StackPanel>
+                <Button Grid.Column="1" Content="{Binding [Explorer.Reload]}" Command="{Binding ReloadCommand}" IsEnabled="{Binding !Loading}" VerticalAlignment="Center" />
             </Grid>
-            <StackPanel Orientation="Horizontal" Spacing="4">
-                <TextBlock Text="{Binding [Explorer.SignedInAs]}" Opacity="0.75" />
-                <TextBlock Text="{Binding UserPrincipal}" Opacity="0.75" />
-            </StackPanel>
-            <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" />
-
-            <Border Padding="16" Background="#101828" CornerRadius="6">
-                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="24">
-                    <StackPanel Spacing="5">
-                        <TextBlock Text="{Binding [Explorer.CurrentState]}" Foreground="#FFFFFF" FontSize="18" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding ProjectStateLabel}" Foreground="#E4E7EC" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding ProjectPulseText}" Foreground="#B9C5D6" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="3" MinWidth="110">
-                        <TextBlock Text="{Binding AcceptedStatementCountText}" Foreground="#FFFFFF" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding [Explorer.Accepted]}" Foreground="#B9C5D6" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" Spacing="3" MinWidth="110">
-                        <TextBlock Text="{Binding PendingHandoffSummary}" Foreground="#FFFFFF" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding [Explorer.PendingHandoffs]}" Foreground="#B9C5D6" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="3" Spacing="3" MinWidth="110">
-                        <TextBlock Text="{Binding ActiveAssignmentSummary}" Foreground="#FFFFFF" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding [Explorer.ActiveWork]}" Foreground="#B9C5D6" TextWrapping="Wrap" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.Accepted]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding ProjectStateLabel}" IsVisible="{Binding HasAcceptedState}" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding AcceptedConstraintsSummary}" IsVisible="{Binding HasAcceptedState}" TextWrapping="Wrap" Opacity="0.8" />
-                    <TextBlock IsVisible="{Binding !HasAcceptedState}" Text="{Binding [Explorer.NoAccepted]}" Opacity="0.7" />
-                    <ItemsControl ItemsSource="{Binding AcceptedState}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:AcceptedStateItemView">
-                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="{Binding Statement}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding Scope}" Opacity="0.75" />
-                                        <TextBlock Text="{Binding DecisionText}" Opacity="0.75" />
-                                        <TextBlock Text="{Binding SourceText}" Opacity="0.75" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+            <ScrollViewer Grid.Row="1"
+                          IsVisible="{Binding !IsWorldView}"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalContentAlignment="Top"
+                          HorizontalContentAlignment="Stretch">
+                <StackPanel Spacing="18" HorizontalAlignment="Stretch">
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="IndianRed" TextWrapping="Wrap" IsVisible="{Binding ErrorMessage}" />
+                    <Grid ColumnDefinitions="3*,2*" ColumnSpacing="32">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="section" Text="{Binding [Overview.CurrentState]}" AutomationProperties.AutomationId="OverviewState" />
+                            <TextBlock Text="{Binding AcceptedStatementCountText}" Foreground="#398D78" FontWeight="SemiBold" />
+                            <TextBlock IsVisible="{Binding !HasAcceptedState}" Text="{Binding [Explorer.NoAccepted]}" TextWrapping="Wrap" />
+                            <ItemsControl ItemsSource="{Binding AcceptedPreview}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="vm:AcceptedStateItemView">
+                                        <TextBlock Text="{Binding Statement}" FontSize="17" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" ToolTip.Tip="{Binding Statement}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <Border Grid.Column="1" BorderBrush="#40808080" BorderThickness="1,0,0,0" Padding="24,0,0,0">
+                            <StackPanel Spacing="10">
+                                <TextBlock Classes="section" Text="{Binding [Overview.NeedsAttention]}" />
+                                <TextBlock Text="{Binding NeedsAttentionSummary}" FontWeight="SemiBold" TextWrapping="Wrap" Width="220" HorizontalAlignment="Left" TextAlignment="Left" AutomationProperties.AutomationId="OverviewAttention" />
+                                <TextBlock Text="{Binding NeedsAttentionHeadline}" IsVisible="{Binding HasPendingHandoffs}" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                <Button Content="{Binding [Overview.Review]}" Command="{Binding OpenReviewCommand}" IsVisible="{Binding HasPendingHandoffs}" HorizontalAlignment="Left" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <Border BorderBrush="#40808080" BorderThickness="0,1,0,1" Padding="0,18">
+                        <Grid ColumnDefinitions="3*,2*" ColumnSpacing="32">
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="section" Text="{Binding [Overview.CurrentWork]}" />
+                                <TextBlock Text="{Binding CurrentWorkHeadline}" FontSize="17" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CurrentWorkHeadline}" />
+                                <TextBlock Text="{Binding CurrentWorkStatus}" TextWrapping="Wrap" IsVisible="{Binding HasCurrentWork}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="8" Margin="24,0,0,0">
+                                <TextBlock Text="{Binding AgentStatusText}" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="OverviewAgents" />
+                                <TextBlock Text="{Binding CurrentProvider}" Opacity="0.65" TextWrapping="Wrap" />
+                                <Button Content="{Binding [Explorer.OpenWorkspace]}" Command="{Binding OpenWorkspaceCommand}" HorizontalAlignment="Left" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Grid ColumnDefinitions="3*,2*" ColumnSpacing="32">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="section" Text="{Binding [Overview.RecentChange]}" />
+                            <TextBlock Text="{Binding RecentChangeText}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RecentChangeText}" />
+                            <TextBlock Text="{Binding RecentChangeTime}" Opacity="0.55" FontSize="12" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="8" Margin="24,0,0,0">
+                            <TextBlock Classes="section" Text="{Binding [Overview.Next]}" />
+                            <TextBlock Text="{Binding NextStepText}" TextWrapping="Wrap" Width="220" HorizontalAlignment="Left" TextAlignment="Left" ToolTip.Tip="{Binding NextStepText}" />
+                            <Button Content="{Binding [Explorer.Continue]}" Command="{Binding ContinueProjectCommand}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6"
-                    IsVisible="{Binding HasAcceptedState}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.LibraryUpdate]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Explorer.LibraryUpdateDescription]}" TextWrapping="Wrap" Opacity="0.7" />
-                    <Button Content="{Binding [Explorer.AddToLibrary]}" Command="{Binding ShowLibraryComposerCommand}"
-                            IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
-                    <StackPanel Spacing="8" IsVisible="{Binding IsLibraryComposerVisible}">
-                        <TextBlock Text="{Binding [Explorer.AcceptedStatement]}" FontWeight="SemiBold" />
-                        <ComboBox ItemsSource="{Binding LibraryContributions}" SelectedItem="{Binding SelectedLibraryContribution}" />
-                        <TextBlock Text="{Binding [Explorer.Category]}" FontWeight="SemiBold" />
-                        <TextBox Text="{Binding LibraryCategory}" />
-                        <TextBlock Text="{Binding [Explorer.Topic]}" FontWeight="SemiBold" />
-                        <TextBox Text="{Binding LibraryTopic}" />
-                        <TextBlock Text="{Binding [Explorer.LibraryEntry]}" FontWeight="SemiBold" />
-                        <TextBox Text="{Binding LibraryNodeContent}" AcceptsReturn="True" TextWrapping="Wrap" />
-                        <Button Content="{Binding [Explorer.UpdateLibrary]}" Command="{Binding ProjectToLibraryCommand}"
-                                IsEnabled="{Binding CanProjectToLibrary}" HorizontalAlignment="Left" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding LibraryStatusMessage}" TextWrapping="Wrap" Opacity="0.8" />
-                </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.Attention]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Explorer.AttentionDescription]}" Opacity="0.7" TextWrapping="Wrap" />
-                    <ItemsControl ItemsSource="{Binding NeedsAttention}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:AttentionItemView">
-                                <StackPanel Spacing="2"><TextBlock Text="{Binding Label}" FontWeight="SemiBold" /><TextBlock Text="{Binding Detail}" TextWrapping="Wrap" /></StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
-            <Border IsVisible="{Binding Recovery}" Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding Recovery.Heading}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Explorer.AcceptedConstraints]}" FontWeight="SemiBold" />
-                    <ItemsControl ItemsSource="{Binding Recovery.AcceptedConstraints}" />
-                    <TextBlock Text="{Binding [Explorer.CompletedWork]}" FontWeight="SemiBold" />
-                    <ItemsControl ItemsSource="{Binding Recovery.CompletedWork}" />
-                    <TextBlock Text="{Binding [Explorer.RemainingWork]}" FontWeight="SemiBold" />
-                    <ItemsControl ItemsSource="{Binding Recovery.RemainingWork}" />
-                    <TextBlock Text="{Binding [Explorer.RecoverySources]}" Foreground="#667085" TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.Summaries]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Explorer.SummariesDescription]}" Opacity="0.7" TextWrapping="Wrap" />
-                    <TextBlock IsVisible="{Binding !RecentSummaries.Count}" Text="{Binding [Explorer.NoSummaries]}" Opacity="0.7" />
-                    <ItemsControl ItemsSource="{Binding RecentSummaries}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:ProjectSummaryItemView">
-                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="{Binding KindText}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding TimestampText}" Opacity="0.7" FontFamily="Consolas" />
-                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding SourceText}" Opacity="0.7" TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.ActiveWork]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Explorer.ActiveWorkDescription]}" Opacity="0.7" TextWrapping="Wrap" />
-                    <TextBlock IsVisible="{Binding !ActiveWork.Count}" Text="{Binding [Explorer.NoAssignments]}" Opacity="0.7" />
-                    <TextBlock Text="{Binding ActiveAssignmentSummary}" Opacity="0.8" />
-                    <ItemsControl ItemsSource="{Binding ActiveWork}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:ActiveAssignmentItemView">
-                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
-                                    <StackPanel Spacing="3"><TextBlock Text="{Binding AssignmentText}" FontWeight="SemiBold" /><TextBlock Text="{Binding ActorText}" /><TextBlock Text="{Binding ResponsibilityText}" /><TextBlock Text="{Binding RevisionText}" /><TextBlock Text="{Binding ContinuationText}" Opacity="0.75" /><Button Content="{Binding $parent[UserControl].DataContext[Explorer.BeginManual]}" Command="{Binding $parent[UserControl].DataContext.BeginManualWorkCommand}" CommandParameter="{Binding AssignmentRef}" HorizontalAlignment="Left" /></StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.AgentExecution]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Explorer.AgentExecutionDescription]}" Opacity="0.7" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding AgentExecutionSummary}" Opacity="0.8" />
-                    <TextBlock IsVisible="{Binding !AgentExecutions.Count}"
-                               Text="{Binding [Explorer.NoAgentExecutions]}"
-                               Opacity="0.7" />
-                    <ItemsControl ItemsSource="{Binding AgentExecutions}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:AgentExecutionItemView">
-                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
-                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="{Binding TaskText}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                            <TextBlock Text="{Binding ExecutionId}" Opacity="0.65" FontFamily="Consolas" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Spacing="3">
-                                            <TextBlock Text="{Binding StateText}" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding UpdatedAtText}" Opacity="0.7" FontFamily="Consolas" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding [Explorer.PendingHandoffs]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding PendingHandoffSummary}" />
-                    <TextBlock IsVisible="{Binding !PendingHandoffs.Count}" Text="{Binding [Explorer.NoPendingHandoffs]}" Opacity="0.7" />
-                    <ItemsControl ItemsSource="{Binding PendingHandoffs}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:PendingHandoffItemView">
-                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="{Binding HandoffRef}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding Result}" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding ProposedChanges}" TextWrapping="Wrap" Opacity="0.8" />
-                                        <TextBlock Text="{Binding Validation}" TextWrapping="Wrap" Opacity="0.8" />
-                                        <TextBlock Text="{Binding Evidence}" Opacity="0.8" />
-                                        <TextBlock Text="{Binding Status}" Opacity="0.8" />
-                                        <Button Content="{Binding $parent[UserControl].DataContext[Explorer.ReviewHandoff]}"
-                                                Command="{Binding $parent[UserControl].DataContext.ReviewHandoffCommand}"
-                                                CommandParameter="{Binding HandoffRef}"
-                                                IsEnabled="{Binding !$parent[UserControl].DataContext.IsBusy}"
-                                                HorizontalAlignment="Left" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.RecentDecisions]}" FontSize="18" FontWeight="SemiBold" />
-                    <ItemsControl ItemsSource="{Binding RecentDecisions}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:DecisionItemView">
-                                <StackPanel Spacing="2"><TextBlock Text="{Binding DecisionText}" FontWeight="SemiBold" /><TextBlock Text="{Binding EffectsText}" /><TextBlock Text="{Binding ContributionText}" TextWrapping="Wrap" Opacity="0.75" /></StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="6"><TextBlock Text="{Binding [Explorer.Legacy]}" FontSize="18" FontWeight="SemiBold" /><TextBlock Text="{Binding LegacyContextText}" TextWrapping="Wrap" /></StackPanel>
-            </Border>
-            <Border Padding="16" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="6">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Explorer.Evolution]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding [Explorer.EvolutionDescription]}" Opacity="0.7" TextWrapping="Wrap" />
-                    <ItemsControl ItemsSource="{Binding EvolutionEntries}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:ProjectEvolutionRecord">
-                                <Border Padding="10" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="{Binding Category}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding OccurredAt}" Opacity="0.7" />
-                                        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding ObjectRef}" Opacity="0.7" />
-                                        <TextBlock Text="{Binding AuthorityStatus}" Opacity="0.7" TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
-            <TextBlock Text="{Binding [Explorer.ProjectAreas]}" Opacity="0.65" />
-        </StackPanel>
-    </ScrollViewer>
+            </ScrollViewer>
+            <views:ProjectWorldDetailsView Grid.Row="1" IsVisible="{Binding IsWorldView}" />
+        </Grid>
+    </Grid>
 </UserControl>

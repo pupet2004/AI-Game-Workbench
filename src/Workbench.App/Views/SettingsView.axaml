@@ -79,6 +79,8 @@
                 <CheckBox Content="{Binding [Settings.EnableOpenCode]}" IsChecked="{Binding IsOpenCodeEnabled, Mode=TwoWay}" />
                 <TextBox Text="{Binding OpenCodeExecutablePath, Mode=TwoWay}"
                          PlaceholderText="{Binding [Settings.OpenCodePath]}" />
+                <TextBox Text="{Binding GodotExecutablePath, Mode=TwoWay}"
+                         PlaceholderText="{Binding [Settings.GodotPath]}" />
                 <TextBlock Text="{Binding [Settings.AgentDescription]}"
                            TextWrapping="Wrap" Opacity="0.75" />
                 <Button Content="{Binding [Settings.SaveAgents]}" Command="{Binding SaveAgentSettingsCommand}" />

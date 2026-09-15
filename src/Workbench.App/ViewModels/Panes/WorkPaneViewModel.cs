@@ -15,6 +15,7 @@ using Workbench.Core.Continuity;
 using Workbench.Core.Workers;
 using Workbench.Storage.Workers;
 using Workbench.Storage.Continuity;
+using Workbench.Core.Tasks;
 
 namespace Workbench.App.ViewModels.Panes;
 
@@ -70,7 +71,7 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
             item = await ReconcileStatusAsync(item, cancellationToken);
             var plan = await LoadPlanAsync(item, cancellationToken);
             var card = new WorkerSessionCardViewModel(item, plan,
-                compact: item.Session.Status == AgentSessionStatus.Completed && sessions.Count > 3);
+                compact: item.Session.Status == AgentSessionStatus.Completed && sessions.Count > 1);
             if (_workerExecutions is not null && item.ExecutionId is { } executionId &&
                 await _workerExecutions.GetAsync(item.ProjectId, executionId, cancellationToken) is { } execution)
             {
@@ -591,6 +592,22 @@ public sealed partial class WorkPaneViewModel : ViewModelBase, IAsyncDisposable
         return _agentHost.StopAsync(worker.Session, cancellationToken);
     }
 
+    [RelayCommand]
+    private async Task StopWorker(WorkerSessionCardViewModel worker)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        OpenError = null;
+        try
+        {
+            await StopWorkerAsync(worker);
+            await LoadAsync(worker.Record.ProjectId, reconcileInterruptedExecutions: false);
+        }
+        catch (Exception exception)
+        {
+            OpenError = exception.Message;
+        }
+    }
+
     [RelayCommand] private Task OpenWorker(WorkerSessionCardViewModel worker) => OpenWorkerAsync(worker);
     [RelayCommand] private Task ReviewHandoff(HandoffRef handoffRef) =>
         _openGuidedDecision is null ? Task.CompletedTask : _openGuidedDecision(handoffRef);
@@ -830,6 +847,7 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
 
     internal WorkerSessionRecord Record => record;
     public string TaskTitle => record.TaskTitle; public string WorkerLabel => record.Label; public string Profile => record.Profile.ModelProfileId; public AgentSession Session => record.Session;
+    public string AgentSummary => FormatAgentSummary(record.Profile);
     public string SessionId => record.Session.Id.Value.ToString();
     public string ExternalSessionId => record.Session.ExternalSessionId ?? "未提供";
     public string WorkingDirectory => record.Session.WorkingDirectory ?? "未提供";
@@ -845,11 +863,72 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
         WorkerExecutionState.RuntimeStarting or
         WorkerExecutionState.Running => LocalizationService.Current["Dynamic.Working"],
         WorkerExecutionState.Blocked => LocalizationService.Current["Dynamic.Waiting"],
-        WorkerExecutionState.CompletedPendingReview => LocalizationService.Current["Review.AwaitingDecision"],
+        WorkerExecutionState.CompletedPendingReview => LocalizationService.Current["Review.WaitingForDecision"],
         WorkerExecutionState.Interrupted => LocalizationService.Current["Dynamic.Interrupted"],
         WorkerExecutionState.Failed => LocalizationService.Current["Dynamic.Failed"],
         _ => string.Empty
     };
+    public bool IsWorking =>
+        record.Session.Status is AgentSessionStatus.Running or AgentSessionStatus.WaitingApproval ||
+        ExecutionState is WorkerExecutionState.Preparing or
+            WorkerExecutionState.WorkspaceCreating or
+            WorkerExecutionState.WorkspaceCreated or
+            WorkerExecutionState.RuntimeStarting or
+            WorkerExecutionState.Running;
+    public bool IsWaitingForDecision =>
+        HandoffDisplay?.CanReview == true ||
+        (ExecutionState == WorkerExecutionState.CompletedPendingReview && HandoffDisplay is null);
+    public bool HasAttention =>
+        record.Session.Status is AgentSessionStatus.Interrupted or AgentSessionStatus.Failed ||
+        ExecutionState is WorkerExecutionState.Interrupted or WorkerExecutionState.Failed;
+    public bool CanStop =>
+        (record.Session.Status is AgentSessionStatus.Running or AgentSessionStatus.WaitingApproval);
+    public string UserFacingStatus
+    {
+        get
+        {
+            if (IsWaitingForDecision)
+                return LocalizationService.Current["Worker.WaitingForDecision"];
+            if (HasAttention)
+                return LocalizationService.Current["Worker.NeedsAttention"];
+            if (IsWorking)
+                return LocalizationService.Current["Worker.Working"];
+            return record.Session.Status switch
+            {
+                AgentSessionStatus.Ready => LocalizationService.Current["Worker.Ready"],
+                AgentSessionStatus.Completed => LocalizationService.Current["Worker.Completed"],
+                AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Worker.Stopped"],
+                _ => Status
+            };
+        }
+    }
+    public string StatusDetail
+    {
+        get
+        {
+            if (IsWaitingForDecision)
+                return LocalizationService.Current["Worker.WaitingForDecisionDetail"];
+            if (HasAttention)
+                return LocalizationService.Current["Worker.NeedsAttentionDetail"];
+            if (IsWorking)
+                return string.IsNullOrWhiteSpace(CurrentPlanStep)
+                    ? LocalizationService.Current["Worker.WorkingDetail"]
+                    : CurrentPlanStep;
+            return record.Session.Status switch
+            {
+                AgentSessionStatus.Ready => LocalizationService.Current["Worker.ReadyDetail"],
+                AgentSessionStatus.Completed => LocalizationService.Current["Worker.CompletedDetail"],
+                AgentSessionStatus.Stopped or AgentSessionStatus.Archived => LocalizationService.Current["Worker.StoppedDetail"],
+                _ => string.Empty
+            };
+        }
+    }
+    public string AttentionText => LocalizationService.Current["Worker.ProjectStateUnchanged"];
+    public string OutcomeText =>
+        string.IsNullOrWhiteSpace(HandoffDisplay?.Result)
+            ? LocalizationService.Current["Worker.CompletedDetail"]
+            : HandoffDisplay.Result;
+    public bool HasStatusDetail => !string.IsNullOrWhiteSpace(StatusDetail);
     public bool CanContinue => record.Session.Status is AgentSessionStatus.Interrupted or AgentSessionStatus.Failed;
     public string LastActiveAtText => record.LastActiveAt.LocalDateTime.ToString("g");
     public string CompactTimeText => record.LastActiveAt.LocalDateTime.ToString("MM/dd HH:mm");
@@ -876,6 +955,11 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
     {
         HandoffDisplay = display;
         OnPropertyChanged(nameof(HandoffDisplay));
+        OnPropertyChanged(nameof(IsWaitingForDecision));
+        OnPropertyChanged(nameof(UserFacingStatus));
+        OnPropertyChanged(nameof(StatusDetail));
+        OnPropertyChanged(nameof(HasStatusDetail));
+        OnPropertyChanged(nameof(OutcomeText));
     }
 
     internal void SetExecutionState(WorkerExecutionState state)
@@ -883,6 +967,13 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
         ExecutionState = state;
         OnPropertyChanged(nameof(HasExecutionState));
         OnPropertyChanged(nameof(ExecutionStateText));
+        OnPropertyChanged(nameof(IsWorking));
+        OnPropertyChanged(nameof(IsWaitingForDecision));
+        OnPropertyChanged(nameof(HasAttention));
+        OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(UserFacingStatus));
+        OnPropertyChanged(nameof(StatusDetail));
+        OnPropertyChanged(nameof(HasStatusDetail));
     }
 
     internal void SetExternalCliActive(bool active, WorkerSessionSurfaceLease? lease = null)
@@ -905,6 +996,13 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
         OnPropertyChanged(nameof(LastActiveAtText));
         OnPropertyChanged(nameof(CompactTimeText));
         OnPropertyChanged(nameof(ProgressText));
+        OnPropertyChanged(nameof(IsWorking));
+        OnPropertyChanged(nameof(IsWaitingForDecision));
+        OnPropertyChanged(nameof(HasAttention));
+        OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(UserFacingStatus));
+        OnPropertyChanged(nameof(StatusDetail));
+        OnPropertyChanged(nameof(HasStatusDetail));
     }
 
     internal void ApplyProgress(int completedActivities)
@@ -924,6 +1022,7 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(ProgressText));
         OnPropertyChanged(nameof(CurrentPlanStep));
+        OnPropertyChanged(nameof(StatusDetail));
     }
 
     internal void ApplyProgressSnapshot(IReadOnlyList<WorkerProgressStep> steps)
@@ -945,6 +1044,7 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(ProgressText));
         OnPropertyChanged(nameof(CurrentPlanStep));
+        OnPropertyChanged(nameof(StatusDetail));
     }
 
     internal WorkerProgressSnapshot CreateProgressSnapshot()
@@ -985,6 +1085,22 @@ public sealed partial class WorkerSessionCardViewModel : ObservableObject
             index < completed ? "✓" : index == current ? "●" : record.Session.Status is AgentSessionStatus.Failed or AgentSessionStatus.Interrupted && index == current ? "!" : "○",
             text,
             index == current)).ToArray();
+    }
+
+    private static string FormatAgentSummary(ExecutionProfile profile)
+    {
+        var provider = profile.ProviderId.ToLowerInvariant() switch
+        {
+            "codex" => "Codex",
+            "opencode" when profile.ModelProfileId.StartsWith("deepseek/", StringComparison.OrdinalIgnoreCase) => "DeepSeek",
+            "opencode" => "OpenCode",
+            _ => profile.ProviderId
+        };
+        var separator = profile.ModelProfileId.IndexOf('/');
+        var model = separator >= 0 && separator < profile.ModelProfileId.Length - 1
+            ? profile.ModelProfileId[(separator + 1)..]
+            : profile.ModelProfileId;
+        return string.IsNullOrWhiteSpace(model) ? provider : $"{provider} · {model}";
     }
 }
 public sealed class WorkerPlanStepViewModel : ObservableObject

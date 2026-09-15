@@ -16,6 +16,7 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
     private readonly HandoffRef _handoffRef;
     private readonly Func<Task> _back;
     private readonly Func<Task>? _afterCommit;
+    private GuidedDecisionRequest? _previewedRequest;
 
     public GuidedDecisionViewModel(
         AppServices services,
@@ -42,6 +43,8 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
     [ObservableProperty] public partial string SubmittedAsText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string PrimaryResultText { get; private set; } = string.Empty;
     [ObservableProperty] public partial string ProposedContributionText { get; private set; } = string.Empty;
+    [ObservableProperty] public partial string VerificationSummaryText { get; private set; } = string.Empty;
+    [ObservableProperty] public partial string EvidenceSummaryText { get; private set; } = string.Empty;
     [ObservableProperty] public partial AssignmentDisposition SelectedDisposition { get; set; } = AssignmentDisposition.Accepted;
     [ObservableProperty] public partial ContributionDecisionMode SelectedContributionMode { get; set; } = ContributionDecisionMode.AdoptVerbatim;
     [ObservableProperty] public partial string EditedContributionStatement { get; set; } = string.Empty;
@@ -59,7 +62,7 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
         var handoff = state.Handoffs.SingleOrDefault(value => value.HandoffRef == _handoffRef)
             ?? throw new B1CommandException(B1FailureCode.InvalidReference, "The Handoff no longer exists.");
         var claims = state.Claims.ToDictionary(value => value.ClaimRef);
-        HandoffText = $"{LocalizationService.Current["Dynamic.Handoff"]} {handoff.HandoffRef}";
+        HandoffText = LocalizationService.Current["Decision.CompletedByWorker"];
         SubmittedAsText = handoff.ResultClaimRef is { } resultRef && claims.TryGetValue(resultRef, out var resultClaim)
             ? $"{LocalizationService.Current["Dynamic.SubmittedAs"]} {resultClaim.ClaimantRef}"
             : LocalizationService.Current["Dynamic.SubmittedLogicalActor"];
@@ -71,6 +74,18 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
             .Select(value => value.Statement)
             .ToArray();
         ProposedContributionText = proposed.Length == 0 ? LocalizationService.Current["Dynamic.NoContribution"] : string.Join("; ", proposed);
+        var validations = handoff.ValidationClaimRefs
+            .Where(claims.ContainsKey)
+            .Select(value => claims[value].Payload)
+            .OfType<ClaimPayload.Validation>()
+            .Select(value => value.Statement)
+            .ToArray();
+        VerificationSummaryText = validations.Length == 0
+            ? LocalizationService.Current["Review.NoVerification"]
+            : string.Join("\n", validations);
+        EvidenceSummaryText = handoff.EvidenceRefs.Count == 0
+            ? LocalizationService.Current["Review.NoEvidence"]
+            : string.Format(LocalizationService.Current["Review.EvidenceCount"], handoff.EvidenceRefs.Count);
     }
 
     [RelayCommand]
@@ -79,10 +94,14 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
         if (IsBusy) return;
         IsBusy = true;
         ErrorMessage = null;
+        InvalidatePreview();
         try
         {
-            var preview = await _services.GuidedDecision.PreviewAsync(BuildRequest());
-            PreviewText = $"{LocalizationService.Current["Dynamic.DecidingAs"]} {preview.DecidingAs}\n{LocalizationService.Current["Dynamic.Disposition"]} {preview.Disposition}\n{LocalizationService.Current["Dynamic.Effects"]} {string.Join(", ", preview.Effects)}\n\n{preview.ContributionSummary}";
+            var request = BuildRequest();
+            var preview = await _services.GuidedDecision.PreviewAsync(request);
+            if (request != BuildRequest()) return;
+            _previewedRequest = request;
+            PreviewText = BuildPreviewText(request, preview);
             IsPreviewVisible = true;
         }
         catch (Exception exception)
@@ -94,18 +113,45 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private Task AcceptAsync() =>
+        PreviewProductDecisionAsync(AssignmentDisposition.Accepted, ContributionDecisionMode.AdoptVerbatim);
+
+    [RelayCommand]
+    private Task RequestRevisionAsync() =>
+        PreviewProductDecisionAsync(AssignmentDisposition.RevisionRequired, ContributionDecisionMode.Ignore);
+
+    [RelayCommand]
+    private Task RejectAsync() =>
+        PreviewProductDecisionAsync(AssignmentDisposition.Rejected, ContributionDecisionMode.Ignore);
+
+    private async Task PreviewProductDecisionAsync(
+        AssignmentDisposition disposition,
+        ContributionDecisionMode contributionMode)
+    {
+        if (IsBusy) return;
+        SelectedDisposition = disposition;
+        SelectedContributionMode = contributionMode;
+        await PreviewDecisionAsync();
+    }
+
+    [RelayCommand]
     private async Task ConfirmDecisionAsync()
     {
-        if (!IsPreviewVisible || IsBusy) return;
+        if (!IsPreviewVisible || IsBusy || _previewedRequest is not { } request) return;
+        if (request != BuildRequest())
+        {
+            InvalidatePreview();
+            return;
+        }
         IsBusy = true;
         ErrorMessage = null;
         try
         {
-            var decision = await _services.GuidedDecision.CommitAsync(BuildRequest());
-            StatusMessage = SelectedContributionMode == ContributionDecisionMode.Ignore
+            var decision = await _services.GuidedDecision.CommitAsync(request);
+            StatusMessage = request.ContributionMode == ContributionDecisionMode.Ignore
                 ? string.Format(LocalizationService.Current["Dynamic.DecisionRecordedNoContribution"], decision.ProjectCommitSequence)
                 : string.Format(LocalizationService.Current["Dynamic.DecisionRecorded"], decision.ProjectCommitSequence);
-            IsPreviewVisible = false;
+            InvalidatePreview();
             if (_afterCommit is not null)
                 await _afterCommit();
         }
@@ -115,6 +161,42 @@ public sealed partial class GuidedDecisionViewModel : ViewModelBase
 
     [RelayCommand]
     private Task BackAsync() => _back();
+
+    partial void OnSelectedDispositionChanged(AssignmentDisposition value) => InvalidatePreview();
+    partial void OnSelectedContributionModeChanged(ContributionDecisionMode value) => InvalidatePreview();
+    partial void OnEditedContributionStatementChanged(string value) => InvalidatePreview();
+    partial void OnNewRevisionContractChanged(string value) => InvalidatePreview();
+    partial void OnSuccessorAssignmentContractChanged(string value) => InvalidatePreview();
+
+    private void InvalidatePreview()
+    {
+        _previewedRequest = null;
+        IsPreviewVisible = false;
+        PreviewText = null;
+    }
+
+    private static string BuildPreviewText(GuidedDecisionRequest request, GuidedDecisionPreview preview)
+    {
+        var labels = LocalizationService.Current;
+        var lines = new List<string>
+        {
+            labels[request.Disposition switch
+            {
+                AssignmentDisposition.Accepted => "Decision.AcceptPreview",
+                AssignmentDisposition.RevisionRequired => "Decision.RevisePreview",
+                _ => "Decision.RejectPreview"
+            }]
+        };
+        lines.Add(request.Disposition == AssignmentDisposition.Accepted &&
+                  request.ContributionMode != ContributionDecisionMode.Ignore
+            ? preview.ContributionSummary
+            : labels["Decision.StateUnchanged"]);
+        if (request.Disposition == AssignmentDisposition.RevisionRequired && request.NewRevisionContract is not null)
+            lines.Add($"{labels["Decision.RevisionWork"]}\n{request.NewRevisionContract}");
+        if (request.Disposition == AssignmentDisposition.Accepted && request.SuccessorAssignmentContract is not null)
+            lines.Add($"{labels["Decision.NextWork"]}\n{request.SuccessorAssignmentContract}");
+        return string.Join("\n\n", lines);
+    }
 
     private GuidedDecisionRequest BuildRequest() => new(
         new ProjectRef(_result.Project.Id),

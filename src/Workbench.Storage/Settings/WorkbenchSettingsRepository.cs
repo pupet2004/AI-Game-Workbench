@@ -9,6 +9,7 @@ public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
     private const string LeaderAuthorityKey = "leader_authority_mode";
     private const string AgentRuntimePrefix = "agent_runtime.";
     private const string LanguageKey = "workbench_language";
+    private const string GodotExecutablePathKey = "godot_executable_path";
     private readonly WorkbenchDatabase _database = database ?? throw new ArgumentNullException(nameof(database));
 
     public async Task<LeaderSessionRotationPolicy> GetLeaderSessionRotationPolicyAsync(
@@ -91,6 +92,12 @@ public sealed class WorkbenchSettingsRepository(WorkbenchDatabase database)
         ValidateWorkbenchLanguage(language);
         return SaveValueAsync(LanguageKey, language.ToString(), cancellationToken);
     }
+
+    public Task<string?> GetGodotExecutablePathAsync(CancellationToken cancellationToken = default) =>
+        GetValueAsync(GodotExecutablePathKey, cancellationToken);
+
+    public Task SaveGodotExecutablePathAsync(string? path, CancellationToken cancellationToken = default) =>
+        SaveValueAsync(GodotExecutablePathKey, path?.Trim() ?? string.Empty, cancellationToken);
 
     private async Task<string?> GetValueAsync(string key, CancellationToken cancellationToken)
     {

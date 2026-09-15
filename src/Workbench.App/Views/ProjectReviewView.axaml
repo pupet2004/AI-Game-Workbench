@@ -38,14 +38,14 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="vm:PendingHandoffItemView">
                         <Border Padding="12" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="5">
-                            <StackPanel Spacing="5">
-                                <TextBlock Text="{Binding HandoffRef}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding Result}" TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding ProposedChanges}" TextWrapping="Wrap" Opacity="0.8" />
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding $parent[UserControl].DataContext[Review.WhatChanged]}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding ProposedChanges}" TextWrapping="Wrap" FontSize="17" />
+                                <TextBlock Text="{Binding Result}" TextWrapping="Wrap" Opacity="0.8" />
+                                <TextBlock Text="{Binding $parent[UserControl].DataContext[Review.Verification]}" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding Validation}" TextWrapping="Wrap" Opacity="0.8" />
                                 <TextBlock Text="{Binding Evidence}" Opacity="0.8" />
-                                <TextBlock Text="{Binding Status}" Opacity="0.8" />
-                                <Button Content="{Binding $parent[UserControl].DataContext[Review.Handoff]}"
+                                <Button Content="{Binding $parent[UserControl].DataContext[Review.OpenChange]}"
                                         Command="{Binding $parent[UserControl].DataContext.ReviewHandoffCommand}"
                                         CommandParameter="{Binding HandoffRef}"
                                         IsEnabled="{Binding !$parent[UserControl].DataContext.Loading}"

@@ -13,6 +13,39 @@ namespace Workbench.App.Tests;
 
 public sealed class ProjectWorldExplorerViewModelTests
 {
+    [Theory]
+    [InlineData(AssignmentDisposition.Accepted, "Overview.Accepted")]
+    [InlineData(AssignmentDisposition.Rejected, "Overview.Rejected")]
+    [InlineData(AssignmentDisposition.RevisionRequired, "Overview.NeedsRevision")]
+    public void Execution_label_uses_authority_disposition_after_completion(AssignmentDisposition disposition, string key)
+    {
+        var execution = new AgentExecutionItemView(Guid.NewGuid(), "Counter", WorkerExecutionState.CompletedPendingReview,
+            DateTimeOffset.UtcNow, disposition);
+        Assert.Equal(LocalizationService.Current[key], execution.StateText);
+    }
+
+    [Fact]
+    public async Task Overview_prioritizes_live_work_over_newer_completed_work()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var explorer = new ProjectWorldExplorerViewModel(fixture.Services, fixture.OpenResult, () => Task.CompletedTask);
+        explorer.AgentExecutions.Add(new(Guid.NewGuid(), "Finished", WorkerExecutionState.CompletedPendingReview, DateTimeOffset.UtcNow));
+        explorer.AgentExecutions.Add(new(Guid.NewGuid(), "Still running", WorkerExecutionState.Running,
+            DateTimeOffset.UtcNow.AddHours(-1), IsLive: true));
+        Assert.Equal("Still running", explorer.CurrentWorkHeadline);
+        Assert.Equal(LocalizationService.Current["Dynamic.Working"], explorer.CurrentWorkStatus);
+    }
+
+    [Fact]
+    public async Task Overview_does_not_claim_a_persisted_running_execution_is_live_after_restart()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var explorer = new ProjectWorldExplorerViewModel(fixture.Services, fixture.OpenResult, () => Task.CompletedTask);
+        explorer.AgentExecutions.Add(new(Guid.NewGuid(), "Old session", WorkerExecutionState.Running, DateTimeOffset.UtcNow));
+        Assert.Equal(LocalizationService.Current["Overview.CheckExecution"], explorer.AgentStatusText);
+        Assert.Equal(LocalizationService.Current["Overview.CheckExecution"], explorer.CurrentWorkStatus);
+    }
+
     [Fact]
     public async Task Empty_project_world_is_shown_as_empty_without_fabricated_state()
     {
@@ -46,6 +79,19 @@ public sealed class ProjectWorldExplorerViewModelTests
         Assert.Single(explorer.ActiveWork);
         Assert.Single(explorer.RecentDecisions);
         Assert.Contains("Assignment + Revision", explorer.RecentDecisions[0].EffectsText);
+        Assert.Equal("Design the first combat prototype", explorer.CurrentWorkHeadline);
+    }
+
+    [Fact]
+    public async Task Overview_does_not_promote_summary_context_to_a_recent_accepted_change()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var explorer = new ProjectWorldExplorerViewModel(fixture.Services, fixture.OpenResult, () => Task.CompletedTask);
+        await explorer.InitializeAsync();
+        explorer.RecentSummaries.Add(new(DateTimeOffset.UtcNow,
+            Workbench.Storage.Memory.SummaryDeltaKind.Change, "Unaccepted proposal", []));
+
+        Assert.Equal(LocalizationService.Current["Overview.NoRecentChange"], explorer.RecentChangeText);
     }
 
     [Fact]

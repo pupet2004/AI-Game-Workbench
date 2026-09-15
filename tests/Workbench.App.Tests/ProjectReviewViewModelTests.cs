@@ -60,7 +60,10 @@ public sealed class ProjectReviewViewModelTests
         var pending = Assert.Single(review.PendingHandoffs);
         Assert.Equal(handoff.HandoffRef, pending.HandoffRef);
         Assert.Equal(1, review.PendingHandoffCount);
-        Assert.True(review.PendingHandoffSummary.Contains("1", StringComparison.Ordinal));
+        Assert.Contains("1", review.PendingHandoffSummary, StringComparison.Ordinal);
+        Assert.Contains("change", review.PendingHandoffSummary, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("handoff", review.PendingHandoffSummary, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Authority", pending.Status, StringComparison.Ordinal);
 
         await review.ReviewHandoffCommand.ExecuteAsync(pending.HandoffRef);
 

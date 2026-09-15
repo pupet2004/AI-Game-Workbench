@@ -10,7 +10,7 @@ var arguments = ParseArguments(args);
 if (!arguments.TryGetValue("database", out var databasePath) ||
     !arguments.TryGetValue("project", out var projectPath))
 {
-    Console.Error.WriteLine("Usage: ProductLoopUiSeed --database <path> --project <path> [--round <1|2|3>] [--real-worker]");
+    Console.Error.WriteLine("Usage: ProductLoopUiSeed --database <path> --project <path> [--round <1|2|3>] [--real-worker] [--provider <codex|opencode>] [--model <model-id>]");
     return 2;
 }
 
@@ -20,6 +20,14 @@ var round = arguments.TryGetValue("round", out var requestedRound) &&
     : 1;
 var configuration = CreateRoundConfiguration(round, arguments);
 var prepareRealWorker = arguments.ContainsKey("real-worker");
+var providerId = arguments.TryGetValue("provider", out var requestedProvider)
+    ? requestedProvider
+    : "codex";
+var requestedModel = arguments.TryGetValue("model", out var modelArgument)
+    ? modelArgument
+    : null;
+if (providerId is not ("codex" or "opencode"))
+    throw new ArgumentException($"Unsupported Worker provider: {providerId}");
 
 await using var services = AppServices.CreateForDatabasePath(databasePath);
 await services.InitializeAsync();
@@ -59,13 +67,22 @@ if (state.AuthorityDecisions.Count == 0)
 if (prepareRealWorker)
 {
     await services.WorkbenchSettingsRepository.SaveAgentRuntimeSettingsAsync(
-        new Workbench.Storage.Settings.AgentRuntimeSettings("codex", true, null));
+        new Workbench.Storage.Settings.AgentRuntimeSettings("codex", providerId == "codex", null));
+    await services.WorkbenchSettingsRepository.SaveAgentRuntimeSettingsAsync(
+        new Workbench.Storage.Settings.AgentRuntimeSettings("opencode", providerId == "opencode", null));
 
     IAgentRuntime? runtime = null;
     try
     {
-        runtime = await CodexRuntimeComposition.ConnectAsync(CancellationToken.None);
-        var model = (await runtime.GetModelsAsync()).First();
+        runtime = providerId == "opencode"
+            ? await OpenCodeRuntimeComposition.ConnectAsync(CancellationToken.None)
+            : await CodexRuntimeComposition.ConnectAsync(CancellationToken.None);
+        var models = await runtime.GetModelsAsync();
+        var model = requestedModel is null
+            ? models.First()
+            : models.FirstOrDefault(value => string.Equals(value.ModelId, requestedModel, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException(
+                    $"Requested model '{requestedModel}' is not available from {providerId}.");
         var godot = ResolveGodotExecutable();
         var profile = ExecutionProfile.Create(
             runtime.Provider.Id.Value,
@@ -113,6 +130,7 @@ if (prepareRealWorker)
                 services.TimeProvider.GetUtcNow(),
                 revision));
         Console.WriteLine($"TaskId={taskId}");
+        Console.WriteLine($"Provider={runtime.Provider.Id.Value}");
         Console.WriteLine($"Model={model.ModelId}");
         Console.WriteLine($"Round={round}");
         Console.WriteLine($"Statement={configuration.Statement}");

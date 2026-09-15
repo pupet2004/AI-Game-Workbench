@@ -110,6 +110,24 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Godot_executable_path_is_persisted_as_local_tooling_configuration()
+    {
+        await using var context = await AppTestContext.CreateAsync();
+        var settings = context.CreateSettings();
+        await settings.InitializeAsync();
+
+        settings.GodotExecutablePath = @"E:\Godot\_v4.6.3-stable\_win64.exe";
+        await settings.SaveAgentSettingsCommand.ExecuteAsync(null);
+
+        var recreated = Workbench.App.Services.AppServices.CreateForDatabasePath(context.DatabasePath, context.Time);
+        await recreated.InitializeAsync();
+        Assert.Equal(
+            @"E:\Godot\_v4.6.3-stable\_win64.exe",
+            await recreated.WorkbenchSettingsRepository.GetGodotExecutablePathAsync());
+        await recreated.DisposeAsync();
+    }
+
+    [Fact]
     public async Task Language_selection_applies_immediately_and_survives_service_recreation()
     {
         await using var context = await AppTestContext.CreateAsync();

@@ -34,7 +34,7 @@ public sealed partial class ProjectReviewViewModel : ViewModelBase
     public string PendingHandoffSummary =>
         PendingHandoffCount == 0
             ? LocalizationService.Current["Review.NoPending"]
-            : string.Format(LocalizationService.Current["Dynamic.PendingHandoffsCount"], PendingHandoffCount);
+            : string.Format(LocalizationService.Current["Review.PendingCount"], PendingHandoffCount);
 
     [ObservableProperty]
     public partial bool Loading { get; private set; }
@@ -76,11 +76,13 @@ public sealed partial class ProjectReviewViewModel : ViewModelBase
                     handoff.HandoffRef,
                     ClaimStatement(claims, handoff.ResultClaimRef),
                     JoinClaimStatements(claims, handoff.ProposedContributionClaimRefs),
-                    JoinClaimStatements(claims, handoff.ValidationClaimRefs),
+                    handoff.ValidationClaimRefs.Count == 0
+                        ? LocalizationService.Current["Review.NoVerification"]
+                        : JoinClaimStatements(claims, handoff.ValidationClaimRefs),
                     handoff.EvidenceRefs.Count == 0
-                        ? LocalizationService.Current["Dynamic.NoEvidence"]
-                        : string.Format(LocalizationService.Current["Dynamic.EvidenceCount"], handoff.EvidenceRefs.Count),
-                    LocalizationService.Current["Review.AwaitingDecision"]));
+                        ? LocalizationService.Current["Review.NoEvidence"]
+                        : string.Format(LocalizationService.Current["Review.EvidenceCount"], handoff.EvidenceRefs.Count),
+                    LocalizationService.Current["Review.WaitingForDecision"]));
             }
 
             PendingHandoffCount = PendingHandoffs.Count;

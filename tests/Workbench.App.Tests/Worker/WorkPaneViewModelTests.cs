@@ -7,6 +7,7 @@ using Workbench.Runtime.Agents;
 using Workbench.Runtime.Registry;
 using Workbench.Storage.Workers;
 using Workbench.App.AgentHost;
+using Workbench.App.ProjectWorld;
 
 namespace Workbench.App.Tests.Worker;
 
@@ -150,7 +151,7 @@ public sealed class WorkPaneViewModelTests
 
         var card = Assert.Single(pane.Workers);
         Assert.Equal("Completed", card.Status);
-        Assert.Equal("Awaiting Authority Decision", card.ExecutionStateText);
+        Assert.Equal("Waiting for your decision", card.ExecutionStateText);
     }
 
     [Fact]
@@ -419,8 +420,8 @@ public sealed class WorkPaneViewModelTests
         Assert.Contains("<ItemsControl IsVisible=\"{Binding HasWorkers}\"", markup, StringComparison.Ordinal);
         Assert.Contains("CornerRadius=\"8\"", markup, StringComparison.Ordinal);
         Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", markup, StringComparison.Ordinal);
-        Assert.Contains("标记为已结束", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("从 Workbench 移除", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Worker.MarkCompleted", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Worker.Remove", codeBehind, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -443,6 +444,137 @@ public sealed class WorkPaneViewModelTests
         var card = new WorkerSessionCardViewModel(new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Waiting task", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow));
 
         Assert.NotEqual("Working", card.Status);
+    }
+
+    [Fact]
+    public void Working_card_uses_product_language_and_exposes_the_current_step()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(),
+            runtime.Account.Id,
+            runtime.Provider.Id,
+            "model-a",
+            "C:/Project",
+            "thread-working",
+            AgentSessionStatus.Running,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(
+            new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Add a reset button", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow),
+            ["Inspect the scene", "Run validation"]);
+
+        card.ApplyProgress(1);
+
+        Assert.Equal("Working", card.UserFacingStatus);
+        Assert.Contains("Run validation", card.StatusDetail, StringComparison.Ordinal);
+        Assert.Contains("model-a", card.AgentSummary, StringComparison.Ordinal);
+        Assert.False(card.HasAttention);
+    }
+
+    [Fact]
+    public void Failed_card_explains_that_accepted_project_state_is_unchanged()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(),
+            runtime.Account.Id,
+            runtime.Provider.Id,
+            "model-a",
+            "C:/Project",
+            "thread-failed",
+            AgentSessionStatus.Failed,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(
+            new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Add a reset button", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow));
+
+        Assert.Equal("Needs attention", card.UserFacingStatus);
+        Assert.True(card.HasAttention);
+        Assert.Equal("Your project state has not changed.", card.AttentionText);
+        Assert.True(card.CanContinue);
+    }
+
+    [Fact]
+    public void Completed_review_card_prioritizes_the_review_decision()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(),
+            runtime.Account.Id,
+            runtime.Provider.Id,
+            "model-a",
+            "C:/Project",
+            "thread-completed",
+            AgentSessionStatus.Completed,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(
+            new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Add a reset button", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow));
+        var handoff = new HandoffDisplayViewModel(new HandoffDisplayModel(
+            HandoffDisplaySourceKind.B1Handoff,
+            "Reset button added.",
+            [],
+            [],
+            [],
+            [],
+            "Needs review; not Accepted Project State",
+            "Attempt / Execution",
+            Guid.NewGuid().ToString()));
+        card.SetHandoffDisplay(handoff);
+
+        Assert.Equal("Waiting for your decision", card.UserFacingStatus);
+        Assert.Contains("Review it", card.StatusDetail, StringComparison.Ordinal);
+        Assert.True(card.IsWaitingForDecision);
+    }
+
+    [Fact]
+    public void Completed_execution_with_a_non_reviewable_legacy_result_is_not_presented_as_pending()
+    {
+        var runtime = new FakeAgentRuntime();
+        var session = new AgentSession(
+            AgentSessionId.New(),
+            runtime.Account.Id,
+            runtime.Provider.Id,
+            "model-a",
+            "C:/Project",
+            "thread-completed",
+            AgentSessionStatus.Completed,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        var card = new WorkerSessionCardViewModel(
+            new WorkerSessionRecord(Guid.NewGuid(), Guid.NewGuid(), "Add a reset button", session, Profile(runtime), "Worker", DateTimeOffset.UtcNow));
+        card.SetExecutionState(WorkerExecutionState.CompletedPendingReview);
+        card.SetHandoffDisplay(new HandoffDisplayViewModel(new HandoffDisplayModel(
+            HandoffDisplaySourceKind.LegacyWorkerCompletion,
+            "Reset button added.",
+            [],
+            [],
+            [],
+            [],
+            "Legacy completion; not Accepted Project State",
+            "Legacy execution",
+            null)));
+
+        Assert.Equal("Completed", card.UserFacingStatus);
+        Assert.False(card.IsWaitingForDecision);
+    }
+
+    [Fact]
+    public void Completed_history_compacts_when_the_work_pane_has_multiple_sessions()
+    {
+        var runtime = new FakeAgentRuntime();
+        var store = new InMemoryWorkerRoutingStore();
+        var projectId = Guid.NewGuid();
+        var first = Session(projectId, Guid.NewGuid(), "First task", "Worker", AgentSessionStatus.Completed, TimeSpan.Zero);
+        var second = Session(projectId, Guid.NewGuid(), "Second task", "Worker", AgentSessionStatus.Completed, TimeSpan.FromMinutes(-1));
+        store.SaveSessionAsync(first).GetAwaiter().GetResult();
+        store.SaveSessionAsync(second).GetAwaiter().GetResult();
+        var pane = new WorkPaneViewModel(() => Task.CompletedTask, store, new AgentRuntimeRegistry());
+
+        pane.LoadAsync(projectId).GetAwaiter().GetResult();
+
+        Assert.All(pane.Workers, worker => Assert.True(worker.IsCompact));
     }
 
     [Fact]

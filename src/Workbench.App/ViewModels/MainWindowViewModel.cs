@@ -102,17 +102,28 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task ShowNewProjectSetupAsync(ProjectOpenResult result)
     {
-        var setup = new ProjectWorldSetupViewModel(
-            _services,
-            result,
-                new ProjectWorldEntryStatus(
-                new ProjectRef(result.Project.Id),
-                ProjectWorldEntryKind.UnmanagedProjectUnavailable,
-                false,
-                _localization["ProjectSetup.Required"]),
-            BackToHomeAsync,
-            ShowWorkspace);
+        var status = await _services.ProjectWorldEntryStatus.GetStatusAsync(result.Project);
+        if (status.Kind == ProjectWorldEntryKind.ProjectWorldReady)
+        {
+            await ShowProjectOverviewAsync(result);
+            return;
+        }
+        await ShowProjectSetupAsync(result, status);
+    }
+
+    private async Task ShowProjectSetupAsync(ProjectOpenResult result, ProjectWorldEntryStatus status)
+    {
+        ProjectWorldSetupViewModel? setup = null;
+        async Task ReturnToSetupAsync()
+        {
+            CurrentPage = setup!;
+            await setup!.InitializeAsync();
+        }
+        setup = new ProjectWorldSetupViewModel(_services, result, status,
+            BackToHomeAsync, ShowWorkspace,
+            () => ShowSettingsAsync(ReturnToSetupAsync, result.Project.Id));
         CurrentPage = setup;
+        await setup.InitializeAsync();
     }
 
     public Task ShowSettingsAsync() => ShowSettingsAsync(BackToHomeAsync);
@@ -172,13 +183,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         // already-governed empty Project World.
         if (entryStatus.Kind is ProjectWorldEntryKind.LegacySetupRequired or ProjectWorldEntryKind.ProjectWorldSetupIncomplete)
         {
-            var setup = new ProjectWorldSetupViewModel(
-                _services,
-                result,
-                entryStatus,
-                BackToHomeAsync,
-                ShowWorkspace);
-            CurrentPage = setup;
+            await ShowProjectSetupAsync(result, entryStatus);
             return;
         }
 
@@ -245,7 +250,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              authorityRepository: _services.B1AuthorityRepository,
              workerExecutionBridge: _services.B1WorkerExecutionBridge,
              canonicalWorkerCompletions: _services.CanonicalWorkerCompletions,
-             openGuidedDecision: handoffRef => ShowGuidedDecisionAsync(result, handoffRef),
+             openGuidedDecision: _ => ShowProjectReviewAsync(result),
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result),
              openProjectReview: () => ShowProjectReviewAsync(result),
@@ -276,6 +281,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             if (explorer is not null)
             {
                 CurrentPage = explorer;
+                await explorer.InitializeAsync();
                 return;
             }
 
@@ -339,7 +345,7 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             result,
             assignmentRef,
             () => ShowWorkspace(result),
-            handoffRef => ShowGuidedDecisionAsync(result, handoffRef));
+            _ => ShowProjectReviewAsync(result));
         CurrentPage = manualWork;
         await manualWork.InitializeAsync();
     }

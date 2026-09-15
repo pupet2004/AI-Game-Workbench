@@ -73,10 +73,10 @@
                             Orientation="Horizontal"
                             HorizontalAlignment="Right"
                             Spacing="6">
-                    <Button Content="收起全部"
+                    <Button Content="{Binding [Worker.CollapseAll]}"
                             Command="{Binding CollapseAllWorkersCommand}"
                             IsEnabled="{Binding CanCollapseAllWorkers}"
-                            ToolTip.Tip="收起所有 Worker 卡片" />
+                            ToolTip.Tip="{Binding [Worker.CollapseAll]}" />
                     <Button Content="{Binding [Worker.Focus]}"
                             Command="{Binding FocusCommand}" />
                 </StackPanel>
@@ -115,45 +115,54 @@
             <ItemsControl IsVisible="{Binding HasWorkers}" ItemsSource="{Binding Workers}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:WorkerSessionCardViewModel">
-                        <Border Classes="workerCard" Margin="0,0,0,5" Padding="10" Background="#000000" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
+                        <Border Classes="workerCard" Margin="0,0,0,8" Padding="12" Background="#000000" BorderBrush="#D0D4DC" BorderThickness="1" CornerRadius="8" Cursor="Hand" PointerPressed="OnWorkerCardPointerPressed">
                             <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="4">
                                 <Grid IsVisible="{Binding IsCompact}" ColumnDefinitions="*,Auto,Auto" Grid.ColumnSpan="3">
                                     <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
                                     <StackPanel Grid.Column="1" Spacing="2" Margin="8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding ExecutionStateText}" IsVisible="{Binding HasExecutionState}" Foreground="#84ADFF" />
+                                        <TextBlock Text="{Binding UserFacingStatus}" Foreground="#84ADFF" />
                                         <TextBlock Text="{Binding CompactTimeText}" Foreground="#8A8A8A" />
                                     </StackPanel>
                                     <Button Classes="workerCardButton" Grid.Column="2" Content="⌃" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="展开任务详情" />
                                 </Grid>
-                                <Grid IsVisible="{Binding !IsCompact}" Grid.RowSpan="2" Grid.ColumnSpan="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="4">
-                                <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" />
-                                <Button Classes="workerCardButton" Grid.Column="1" Content="⌄" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="收缩任务详情" VerticalAlignment="Top" />
-                                <Button Classes="workerCardButton" Grid.Column="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="Worker 操作" VerticalAlignment="Top" />
-                                <TextBlock Grid.Row="1" Text="{Binding WorkerLabel}" />
-                                <TextBlock Grid.Row="2" Text="{Binding Profile}" Foreground="#667085" />
-                                <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto,Auto">
-                                    <TextBlock Text="{Binding Status}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding ExecutionStateText}" IsVisible="{Binding HasExecutionState}" Foreground="#84ADFF" Margin="8,0" />
-                                    <TextBlock Grid.Column="2" Text="{Binding SurfaceStatus}" IsVisible="{Binding IsExternalCliActive}" Foreground="#D0D4DC" Margin="8,0" />
-                                    <TextBlock Grid.Column="3" Text="{Binding LastActiveAtText}" Foreground="#667085" />
+                                <Grid IsVisible="{Binding !IsCompact}" Grid.RowSpan="2" Grid.ColumnSpan="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto,Auto" RowSpacing="6">
+                                <TextBlock Text="{Binding TaskTitle}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
+                                <Button Classes="workerCardButton" Grid.Column="1" Content="⌄" Command="{Binding ToggleCompactCommand}" ToolTip.Tip="{Binding #WorkRoot.DataContext[Worker.Collapse]}" VerticalAlignment="Top" />
+                                <Button Classes="workerCardButton" Grid.Column="2" Content="..." Click="OnWorkerActionsClick" ToolTip.Tip="{Binding #WorkRoot.DataContext[Worker.Actions]}" VerticalAlignment="Top" />
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding AgentSummary}" Foreground="#D0D4DC" />
+                                <Grid Grid.Row="2" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="{Binding UserFacingStatus}" FontWeight="SemiBold" Foreground="#84ADFF" />
+                                    <TextBlock Grid.Column="1" Text="{Binding LastActiveAtText}" Foreground="#667085" />
                                 </Grid>
-                                <Border Grid.Row="4" IsVisible="{Binding HandoffDisplay}" Padding="8" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="5">
+                                <TextBlock Grid.Row="3" Grid.ColumnSpan="3" IsVisible="{Binding HasStatusDetail}" Text="{Binding StatusDetail}" TextWrapping="Wrap" Foreground="#D0D4DC" />
+                                <Border Grid.Row="4" Grid.ColumnSpan="3" IsVisible="{Binding HasAttention}" Padding="8" Background="#3A1F22" BorderBrush="#B42318" BorderThickness="1" CornerRadius="5">
                                     <StackPanel Spacing="3">
-                                        <TextBlock Text="{Binding #WorkRoot.DataContext[Worker.Handoff]}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding HandoffDisplay.SourceLabel}" Foreground="#475467" />
-                                        <TextBlock Text="{Binding HandoffDisplay.AuthorityStatus}" Foreground="#475467" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding HandoffDisplay.Result}" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding HandoffDisplay.Provenance}" Foreground="#667085" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding #WorkRoot.DataContext[Worker.Attention]}" FontWeight="SemiBold" Foreground="#FECACA" />
+                                        <TextBlock Text="{Binding AttentionText}" TextWrapping="Wrap" Foreground="#FECACA" />
+                                        <Button IsVisible="{Binding CanContinue}" Content="{Binding #WorkRoot.DataContext[Worker.Continue]}" Command="{Binding #WorkRoot.DataContext.ContinueWorkerCommand}" CommandParameter="{Binding}" HorizontalAlignment="Left" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Row="5" Grid.ColumnSpan="3" IsVisible="{Binding HandoffDisplay}" Padding="8" BorderBrush="#84ADFF" BorderThickness="1" CornerRadius="5">
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="{Binding #WorkRoot.DataContext[Worker.Outcome]}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding OutcomeText}" TextWrapping="Wrap" />
                                         <Button IsVisible="{Binding HandoffDisplay.CanReview}"
                                                 Content="{Binding #WorkRoot.DataContext[Worker.Review]}"
                                                 Command="{Binding #WorkRoot.DataContext.ReviewHandoffCommand}"
                                                 CommandParameter="{Binding HandoffDisplay.HandoffRef}"
                                                 HorizontalAlignment="Left" />
+                                        <Expander Header="{Binding #WorkRoot.DataContext[Worker.TechnicalDetails]}">
+                                            <StackPanel Spacing="3" Margin="0,6,0,0">
+                                                <TextBlock Text="{Binding HandoffDisplay.SourceLabel}" Foreground="#667085" />
+                                                <TextBlock Text="{Binding HandoffDisplay.Provenance}" Foreground="#667085" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding HandoffDisplay.AuthorityStatus}" Foreground="#667085" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Expander>
                                     </StackPanel>
                                 </Border>
-                                <StackPanel Grid.Row="5" IsVisible="{Binding HasPlan}" Spacing="3">
+                                <StackPanel Grid.Row="6" Grid.ColumnSpan="3" IsVisible="{Binding HasPlan}" Spacing="3">
                                     <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Text="任务进度" Foreground="#D0D4DC" FontSize="12" />
+                                        <TextBlock Text="{Binding #WorkRoot.DataContext[Worker.Progress]}" Foreground="#D0D4DC" FontSize="12" />
                                         <TextBlock Grid.Column="1" Text="{Binding ProgressText}" Foreground="#D0D4DC" FontSize="12" />
                                     </Grid>
                                     <ItemsControl ItemsSource="{Binding PlanSteps}">
@@ -167,7 +176,10 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
-                                <Button Grid.Row="6" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
+                                <WrapPanel Grid.Row="7" Grid.ColumnSpan="3">
+                                    <Button IsVisible="{Binding CanStop}" Margin="0,0,8,0" Content="{Binding #WorkRoot.DataContext[Worker.Stop]}" Command="{Binding #WorkRoot.DataContext.StopWorkerCommand}" CommandParameter="{Binding}" />
+                                    <Button IsVisible="{Binding !CanStop}" Content="{Binding #WorkRoot.DataContext[Worker.Open]}" Command="{Binding #WorkRoot.DataContext.OpenWorkerCommand}" CommandParameter="{Binding}" />
+                                </WrapPanel>
                                 </Grid>
                             </Grid>
                         </Border>

@@ -4,36 +4,51 @@
              x:Class="Workbench.App.Views.GuidedDecisionView"
              x:DataType="vm:GuidedDecisionViewModel">
     <ScrollViewer>
-        <StackPanel Margin="48" Spacing="16" MaxWidth="860">
+        <StackPanel Margin="40" Spacing="16" MaxWidth="980">
             <TextBlock Text="{Binding [Decision.Title]}" FontSize="28" FontWeight="SemiBold" />
             <TextBlock Text="{Binding ProjectName}" FontSize="20" />
             <TextBlock Text="{Binding HandoffText}" />
-            <StackPanel Orientation="Horizontal" Spacing="4">
-                <TextBlock Text="{Binding [Decision.SubmittedAs]}" />
-                <TextBlock Text="{Binding SubmittedAsText}" TextWrapping="Wrap" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="4">
-                <TextBlock Text="{Binding [Decision.DecidingAs]}" Opacity="0.75" />
-                <TextBlock Text="{Binding UserPrincipal}" Opacity="0.75" />
-            </StackPanel>
-            <Border Padding="16" BorderBrush="#D0D5DD" BorderThickness="1" CornerRadius="6">
+            <Expander Header="{Binding [Decision.Provenance]}" IsExpanded="False">
+                <StackPanel Spacing="6">
+                    <StackPanel>
+                        <TextBlock Text="{Binding [Decision.SubmittedAs]}" />
+                        <TextBlock Text="{Binding SubmittedAsText}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="{Binding [Decision.DecidingAs]}" Opacity="0.75" />
+                        <TextBlock Text="{Binding UserPrincipal}" TextWrapping="Wrap" Opacity="0.75" />
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
+            <Border Padding="0,16" BorderBrush="#40808080" BorderThickness="0,1">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [Decision.Primary]}" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding PrimaryResultText}" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding [Decision.ProposedChange]}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding ProposedContributionText}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding [Review.WhatChanged]}" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding ProposedContributionText}" TextWrapping="Wrap" FontSize="17" />
+                    <TextBlock Text="{Binding PrimaryResultText}" TextWrapping="Wrap" Opacity="0.8" />
+                    <TextBlock Text="{Binding [Review.Verification]}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding VerificationSummaryText}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding EvidenceSummaryText}" Opacity="0.7" />
                 </StackPanel>
             </Border>
-            <TextBlock Text="{Binding [Decision.Decision]}" FontWeight="SemiBold" />
-            <ComboBox ItemsSource="{Binding AvailableDispositions}" SelectedItem="{Binding SelectedDisposition}" />
-            <TextBlock Text="{Binding [Decision.Contribution]}" FontWeight="SemiBold" />
-            <ComboBox ItemsSource="{Binding AvailableContributionModes}" SelectedItem="{Binding SelectedContributionMode}" />
-            <TextBox Text="{Binding EditedContributionStatement}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="{Binding [Decision.EditedContributionPlaceholder]}" />
-            <TextBlock Text="{Binding [Decision.NewRevision]}" FontWeight="SemiBold" />
-            <TextBox Text="{Binding NewRevisionContract}" AcceptsReturn="True" TextWrapping="Wrap" />
-            <TextBlock Text="{Binding [Decision.SuccessorAssignment]}" FontWeight="SemiBold" />
-            <TextBox Text="{Binding SuccessorAssignmentContract}" AcceptsReturn="True" TextWrapping="Wrap" />
-            <Button Content="{Binding [Decision.Preview]}" Command="{Binding PreviewDecisionCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+            <WrapPanel>
+                <Button Margin="0,0,10,8" Content="{Binding [Decision.Accept]}" Command="{Binding AcceptCommand}" IsEnabled="{Binding !IsBusy}" />
+                <Button Margin="0,0,10,8" Content="{Binding [Decision.RequestRevision]}" Command="{Binding RequestRevisionCommand}" IsEnabled="{Binding !IsBusy}" />
+                <Button Margin="0,0,10,8" Content="{Binding [Decision.Reject]}" Command="{Binding RejectCommand}" IsEnabled="{Binding !IsBusy}" />
+            </WrapPanel>
+            <Expander Header="{Binding [Decision.Advanced]}" IsExpanded="False">
+                <StackPanel Spacing="10" Margin="0,12,0,0">
+                    <TextBlock Text="{Binding [Decision.Decision]}" FontWeight="SemiBold" />
+                    <ComboBox ItemsSource="{Binding AvailableDispositions}" SelectedItem="{Binding SelectedDisposition}" />
+                    <TextBlock Text="{Binding [Decision.Contribution]}" FontWeight="SemiBold" />
+                    <ComboBox ItemsSource="{Binding AvailableContributionModes}" SelectedItem="{Binding SelectedContributionMode}" />
+                    <TextBox Text="{Binding EditedContributionStatement}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="{Binding [Decision.EditedContributionPlaceholder]}" />
+                    <TextBlock Text="{Binding [Decision.NewRevision]}" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding NewRevisionContract}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding [Decision.SuccessorAssignment]}" FontWeight="SemiBold" />
+                    <TextBox AutomationProperties.AutomationId="ReviewNextWork" Text="{Binding SuccessorAssignmentContract}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <Button Content="{Binding [Decision.Preview]}" Command="{Binding PreviewDecisionCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Expander>
             <Border Padding="12" Background="#12000000" IsVisible="{Binding IsPreviewVisible}">
                 <StackPanel Spacing="8"><TextBlock Text="{Binding [Decision.PreviewHeading]}" FontWeight="SemiBold" /><TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" /><Button Content="{Binding [Decision.Confirm]}" Command="{Binding ConfirmDecisionCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" /></StackPanel>
             </Border>

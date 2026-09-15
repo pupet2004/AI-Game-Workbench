@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Threading;
 using Workbench.App.ViewModels.Panes;
 using Workbench.Runtime.Agents;
+using Workbench.App.Services;
 
 namespace Workbench.App.Views.Panes;
 
@@ -62,11 +63,11 @@ public partial class WorkPaneView : UserControl
     {
         var menu = new ContextMenu();
         if (worker.Session.Status is AgentSessionStatus.Interrupted or AgentSessionStatus.Failed)
-            menu.Items.Add(new MenuItem { Header = "继续当前任务", Command = pane.ContinueWorkerCommand, CommandParameter = worker });
-        menu.Items.Add(new MenuItem { Header = "重新检查状态", Command = pane.RefreshWorkerStatusCommand, CommandParameter = worker });
-        menu.Items.Add(new MenuItem { Header = "标记为已结束", Command = pane.MarkWorkerCompletedCommand, CommandParameter = worker });
-        menu.Items.Add(new MenuItem { Header = "查看详情", Command = pane.RequestWorkerDetailsCommand, CommandParameter = worker });
-        menu.Items.Add(new MenuItem { Header = "从 Workbench 移除", Command = pane.RequestWorkerRemovalCommand, CommandParameter = worker });
+            menu.Items.Add(new MenuItem { Header = LocalizationService.Current["Worker.Continue"], Command = pane.ContinueWorkerCommand, CommandParameter = worker });
+        menu.Items.Add(new MenuItem { Header = LocalizationService.Current["Worker.Refresh"], Command = pane.RefreshWorkerStatusCommand, CommandParameter = worker });
+        menu.Items.Add(new MenuItem { Header = LocalizationService.Current["Worker.MarkCompleted"], Command = pane.MarkWorkerCompletedCommand, CommandParameter = worker });
+        menu.Items.Add(new MenuItem { Header = LocalizationService.Current["Worker.TechnicalDetails"], Command = pane.RequestWorkerDetailsCommand, CommandParameter = worker });
+        menu.Items.Add(new MenuItem { Header = LocalizationService.Current["Worker.Remove"], Command = pane.RequestWorkerRemovalCommand, CommandParameter = worker });
         menu.Open(target);
     }
 

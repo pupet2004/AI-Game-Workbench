@@ -26,26 +26,40 @@ public sealed record ActiveAssignmentItemView(
     string ActorText,
     string ResponsibilityText,
     string RevisionText,
-    string ContinuationText);
+    string ContinuationText,
+    string WorkContract = "");
 
 public sealed record AgentExecutionItemView(
     Guid ExecutionId,
     string TaskText,
     WorkerExecutionState State,
-    DateTimeOffset UpdatedAt)
+    DateTimeOffset UpdatedAt,
+    AssignmentDisposition? Disposition = null,
+    string Provider = "",
+    bool IsLive = false)
 {
-    public string StateText => State switch
+    public bool IsUnfinished => Disposition is not (AssignmentDisposition.Accepted or AssignmentDisposition.Rejected);
+    public bool IsActiveState => State is WorkerExecutionState.Preparing or WorkerExecutionState.WorkspaceCreating
+        or WorkerExecutionState.WorkspaceCreated or WorkerExecutionState.RuntimeStarting or WorkerExecutionState.Running;
+    public string StateText => Disposition switch
+    {
+        AssignmentDisposition.Accepted => LocalizationService.Current["Overview.Accepted"],
+        AssignmentDisposition.Rejected => LocalizationService.Current["Overview.Rejected"],
+        AssignmentDisposition.RevisionRequired => LocalizationService.Current["Overview.NeedsRevision"],
+        _ => ExecutionStateText
+    };
+    private string ExecutionStateText => State switch
     {
         WorkerExecutionState.Preparing or
         WorkerExecutionState.WorkspaceCreating or
         WorkerExecutionState.WorkspaceCreated or
         WorkerExecutionState.RuntimeStarting or
-        WorkerExecutionState.Running => LocalizationService.Current["Dynamic.Working"],
+        WorkerExecutionState.Running => LocalizationService.Current[IsLive ? "Dynamic.Working" : "Overview.CheckExecution"],
         WorkerExecutionState.Blocked => LocalizationService.Current["Dynamic.Waiting"],
-        WorkerExecutionState.CompletedPendingReview => LocalizationService.Current["Review.AwaitingDecision"],
+        WorkerExecutionState.CompletedPendingReview => LocalizationService.Current["Review.WaitingForDecision"],
         WorkerExecutionState.Interrupted => LocalizationService.Current["Dynamic.Interrupted"],
         WorkerExecutionState.Failed => LocalizationService.Current["Dynamic.Failed"],
-        _ => State.ToString()
+        _ => LocalizationService.Current["Overview.CheckExecution"]
     };
 
     public string UpdatedAtText =>
@@ -166,6 +180,60 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                 ? LocalizationService.Current["Explorer.NextWork"]
                 : LocalizationService.Current["Explorer.NextLeader"];
 
+    private AgentExecutionItemView? CurrentExecution => AgentExecutions
+        .Where(value => value.IsUnfinished)
+        .OrderByDescending(value => value.IsLive)
+        .ThenByDescending(value => value.UpdatedAt).FirstOrDefault();
+    public bool HasCurrentWork => CurrentExecution is not null || ActiveWork.Count > 0;
+    public string CurrentWorkHeadline =>
+        CurrentExecution?.TaskText
+        ?? ActiveWork.FirstOrDefault()?.WorkContract
+        ?? LocalizationService.Current["Overview.NoCurrentWork"];
+
+    public string CurrentWorkStatus =>
+        CurrentExecution?.StateText
+        ?? (ActiveWork.Count > 0
+            ? LocalizationService.Current["Overview.ReadyToStart"]
+            : string.Empty);
+
+    public string NeedsAttentionHeadline =>
+        PendingHandoffs.FirstOrDefault() is { } pending
+            ? string.IsNullOrWhiteSpace(pending.ProposedChanges)
+                ? pending.Result
+                : pending.ProposedChanges
+            : LocalizationService.Current["Overview.NothingNeedsAttention"];
+
+    public string NeedsAttentionSummary =>
+        PendingHandoffCount == 0
+            ? LocalizationService.Current["Overview.NoPendingReview"]
+            : string.Format(
+                LocalizationService.Current["Overview.PendingReviewCount"],
+                PendingHandoffCount);
+
+    public string RecentChangeText { get; private set; } = LocalizationService.Current["Overview.NoRecentChange"];
+    public string RecentChangeTime { get; private set; } = "";
+    public IEnumerable<AcceptedStateItemView> AcceptedPreview => AcceptedState.Take(3);
+    public string CurrentProvider => CurrentExecution?.Provider ?? "";
+    public string AgentStatusText => AgentExecutions.Any(value => value.IsLive)
+        ? string.Format(LocalizationService.Current["Overview.RunningCount"], AgentExecutions.Count(value => value.IsLive))
+        : AgentExecutions.Any(value => value.IsUnfinished && value.IsActiveState)
+            ? LocalizationService.Current["Overview.CheckExecution"]
+            : LocalizationService.Current["Overview.NoRunningAgents"];
+
+    [ObservableProperty]
+    public partial bool IsWorldView { get; set; }
+
+    public string NextStepText =>
+        PendingHandoffCount > 0
+            ? LocalizationService.Current["Overview.NextReview"]
+            : AgentExecutions.Any(execution => execution.IsLive)
+                ? LocalizationService.Current["Overview.NextRunning"]
+                : CurrentExecution is not null
+                    ? CurrentWorkStatus
+                : ActiveWork.Count > 0
+                    ? ActiveWork[0].WorkContract
+                    : LocalizationService.Current["Overview.NextLeader"];
+
     [ObservableProperty]
     public partial RecoveryViewModel? Recovery { get; private set; }
 
@@ -247,7 +315,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
 
             AcceptedState.Clear();
             LibraryContributions.Clear();
-            foreach (var contribution in library.CurrentContributions)
+            foreach (var contribution in library.CurrentContributions.OrderByDescending(value => value.Decision.ProjectCommitSequence))
             {
                 LibraryContributions.Add(new(contribution.Contribution.ContributionRef, contribution.Contribution.Statement));
                 AcceptedState.Add(new(
@@ -268,6 +336,9 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                 var assignment = projection.AcceptedProjectState.Assignments[assignmentRef];
                 var revisionRef = projection.AcceptedProjectState.CurrentEffectiveRevisionRefs[assignment.AssignmentRef];
                 var revision = projection.AcceptedProjectState.Revisions[revisionRef];
+                if (projection.AcceptedProjectState.RevisionDispositions.TryGetValue(revisionRef, out var disposition)
+                    && disposition.Disposition is AssignmentDisposition.Accepted or AssignmentDisposition.Rejected)
+                    continue;
                 var actor = projection.AcceptedProjectState.LogicalActors[assignment.AssigneeActorRef];
                 var responsibility = projection.AcceptedProjectState.Responsibilities[assignment.ResponsibilityRef];
                 var continuation = projection.EffectiveCurrentAttemptRefs.TryGetValue(assignment.AssignmentRef, out var attempt) && attempt is not null
@@ -279,7 +350,8 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                     $"{LocalizationService.Current["Dynamic.Actor"]} {actor.RoleKind}",
                     $"{LocalizationService.Current["Dynamic.Responsibility"]} {responsibility.Contract.Obligation}",
                     $"{LocalizationService.Current["Dynamic.Revision"]} {revision.RevisionRef}",
-                    continuation));
+                    continuation,
+                    revision.Contract.WorkContract));
             }
 
             OnPropertyChanged(nameof(AcceptedConstraintsSummary));
@@ -291,19 +363,30 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
                     cancellationToken))
                 .ToDictionary(value => value.TaskId);
             AgentExecutions.Clear();
+            var sessions = await _services.WorkerRoutingStore.ListSessionsAsync(_result.Project.Id, cancellationToken);
             foreach (var execution in (await _services.WorkerExecutionRepository.ListAsync(
                          _result.Project.Id,
                          cancellationToken))
-                .OrderByDescending(value => value.UpdatedAt)
-                .Take(10))
+                .OrderByDescending(value => value.UpdatedAt))
             {
+                var completion = await _services.CanonicalWorkerCompletions.GetByWorkerExecutionAsync(
+                    _result.Project.Id, execution.ExecutionId, cancellationToken);
+                var decision = completion is null ? null : state.AuthorityDecisions
+                    .OrderByDescending(value => value.ProjectCommitSequence)
+                    .FirstOrDefault(value => value.ConsideredRefs.OfType<ConsideredRef.Handoff>()
+                        .Any(reference => reference.HandoffRef == completion.Facts.HandoffRef));
+                var session = sessions.FirstOrDefault(value => value.ExecutionId == execution.ExecutionId);
+                var isLive = session is not null && _services.AgentHost.Attach(session.Session).HasActiveTurn;
                 AgentExecutions.Add(new(
                     execution.ExecutionId,
                     tasks.TryGetValue(execution.TaskId, out var task)
                         ? task.Title
-                        : $"Task {execution.TaskId}",
+                        : LocalizationService.Current["Overview.UntitledWork"],
                     execution.State,
-                    execution.UpdatedAt));
+                    execution.UpdatedAt,
+                    decision?.AssignmentDispositionEffect?.Disposition,
+                    execution.ExecutionProfile.ProviderId,
+                    isLive));
             }
             OnPropertyChanged(nameof(AgentExecutionSummary));
 
@@ -356,6 +439,11 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
             }
 
             RecentDecisions.Clear();
+            var lastAccepted = state.AuthorityDecisions.OrderByDescending(value => value.ProjectCommitSequence)
+                .FirstOrDefault(value => value.AcceptedStateContributions.Count > 0);
+            RecentChangeText = lastAccepted is null ? LocalizationService.Current["Overview.NoRecentChange"]
+                : string.Join("; ", lastAccepted.AcceptedStateContributions.Select(value => value.Statement));
+            RecentChangeTime = lastAccepted?.CreatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture) ?? "";
             foreach (var decision in state.AuthorityDecisions.OrderByDescending(value => value.ProjectCommitSequence).Take(10))
             {
                 var effects = new List<string>();
@@ -389,6 +477,17 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
 
             HasAcceptedState = AcceptedState.Count > 0;
             HasLegacyContext = (await _services.B1ProjectGovernance.GetAsync(projectRef, cancellationToken))?.Origin == B1GovernanceOrigin.Adopted;
+            OnPropertyChanged(nameof(CurrentWorkHeadline));
+            OnPropertyChanged(nameof(HasCurrentWork));
+            OnPropertyChanged(nameof(CurrentWorkStatus));
+            OnPropertyChanged(nameof(NeedsAttentionHeadline));
+            OnPropertyChanged(nameof(NeedsAttentionSummary));
+            OnPropertyChanged(nameof(RecentChangeText));
+            OnPropertyChanged(nameof(NextStepText));
+            OnPropertyChanged(nameof(RecentChangeTime));
+            OnPropertyChanged(nameof(AcceptedPreview));
+            OnPropertyChanged(nameof(CurrentProvider));
+            OnPropertyChanged(nameof(AgentStatusText));
         }
         catch (Exception exception)
         {
@@ -409,8 +508,14 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     [RelayCommand]
     private Task ContinueProjectAsync() =>
         PendingHandoffs.FirstOrDefault() is { } pending
-            ? _openGuidedDecision(pending.HandoffRef)
+            ? _openReview()
             : _openWorkspace();
+
+    [RelayCommand]
+    private void ShowOverview() => IsWorldView = false;
+
+    [RelayCommand]
+    private void ShowWorld() => IsWorldView = true;
 
     [RelayCommand]
     private Task OpenReviewAsync() => _openReview();
@@ -425,7 +530,7 @@ public partial class ProjectWorldExplorerViewModel : ViewModelBase
     private Task BeginManualWorkAsync(AssignmentRef assignmentRef) => _beginManualWork(assignmentRef);
 
     [RelayCommand]
-    private Task ReviewHandoffAsync(HandoffRef handoffRef) => _openGuidedDecision(handoffRef);
+    private Task ReviewHandoffAsync(HandoffRef handoffRef) => _openReview();
 
     [RelayCommand]
     private void ShowLibraryComposer()

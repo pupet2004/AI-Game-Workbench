@@ -111,6 +111,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public partial string OpenCodeExecutablePath { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string GodotExecutablePath { get; set; } = string.Empty;
+
+    [ObservableProperty]
     public partial string? AgentSettingsStatus { get; set; }
 
     [ObservableProperty]
@@ -144,6 +147,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         CodexExecutablePath = codex.ExecutablePath ?? string.Empty;
         IsOpenCodeEnabled = openCode.IsEnabled;
         OpenCodeExecutablePath = openCode.ExecutablePath ?? string.Empty;
+        GodotExecutablePath = await _settings.GetGodotExecutablePathAsync(cancellationToken) ?? string.Empty;
         SelectedLanguage = LanguageOptions.Single(option => option.Language == _localization.Language);
     }
 
@@ -236,6 +240,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         await _settings.SaveAgentRuntimeSettingsAsync(new("codex", IsCodexEnabled, CodexExecutablePath));
         await _settings.SaveAgentRuntimeSettingsAsync(new("opencode", IsOpenCodeEnabled, OpenCodeExecutablePath));
+        await _settings.SaveGodotExecutablePathAsync(GodotExecutablePath);
         AgentSettingsStatus = _localization["Settings.AgentSaved"];
     }
 

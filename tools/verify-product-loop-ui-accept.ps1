@@ -74,11 +74,12 @@ function Wait-Element {
     param(
         [System.Windows.Automation.AutomationElement]$Root,
         [string]$Name,
-        [int]$TimeoutSeconds = 30
+        [int]$TimeoutSeconds = 30,
+        [switch]$ById
     )
 
     $condition = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::NameProperty,
+        $(if ($ById) { [System.Windows.Automation.AutomationElement]::AutomationIdProperty } else { [System.Windows.Automation.AutomationElement]::NameProperty }),
         $Name)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     do {
@@ -216,24 +217,18 @@ $second = $null
 try {
     $first = Start-Workbench $resolvedExecutable $resolvedProject $resolvedDatabase
     $firstRoot = [System.Windows.Automation.AutomationElement]::FromHandle($first.MainWindowHandle)
-    [void](Wait-Element $firstRoot 'PROJECT OVERVIEW')
-    Invoke-UiElement (Wait-Element $firstRoot 'Review pending') 'Review pending'
-    Invoke-UiElement (Wait-Element $firstRoot 'Review Handoff') 'Review Handoff'
+    [void](Wait-Element $firstRoot 'OverviewState' -ById)
+    Invoke-UiElement (Wait-Element $firstRoot 'NavReview' -ById) 'Review'
+    Invoke-UiElement (Wait-Element $firstRoot 'Review change') 'Review change'
     if (-not [string]::IsNullOrWhiteSpace($SuccessorAssignmentContract)) {
-        $editCondition = [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-            [System.Windows.Automation.ControlType]::Edit)
-        $edits = $firstRoot.FindAll(
-            [System.Windows.Automation.TreeScope]::Descendants,
-            $editCondition)
-        if ($edits.Count -lt 3) {
-            throw "Expected a successor Assignment input, found $($edits.Count) edit controls."
-        }
-        Set-UiValue $edits[$edits.Count - 1] $SuccessorAssignmentContract
+        $advanced = Wait-Element $firstRoot 'Advanced decision options'
+        $advanced.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+        Set-UiValue (Wait-Element $firstRoot 'ReviewNextWork' -ById) $SuccessorAssignmentContract
+        $advanced.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Collapse()
     }
-    Invoke-UiElement (Wait-Element $firstRoot 'Preview what will change') 'Preview what will change'
+    Invoke-UiElement (Wait-Element $firstRoot 'Accept') 'Accept'
     if (-not [string]::IsNullOrWhiteSpace($SuccessorAssignmentContract)) {
-        [void](Wait-TextContaining $firstRoot 'Create a successor Assignment')
+        [void](Wait-TextContaining $firstRoot 'Next work')
     }
     Invoke-UiElement (Wait-Element $firstRoot 'Confirm Decision') 'Confirm Decision'
     Start-Sleep -Seconds 2
@@ -244,12 +239,12 @@ try {
 
     $second = Start-Workbench $resolvedExecutable $resolvedProject $resolvedDatabase
     $secondRoot = [System.Windows.Automation.AutomationElement]::FromHandle($second.MainWindowHandle)
-    [void](Wait-Element $secondRoot 'Recovered from Project World')
-    [void](Wait-Element $secondRoot "$ExpectedAcceptedStatementCount accepted statement(s).")
-    [void](Wait-Element $secondRoot 'No handoffs are awaiting review.')
-    [void](Wait-Element $secondRoot $Statement)
+    [void](Wait-Element $secondRoot 'OverviewState' -ById)
+    [void](Wait-TextContaining $secondRoot "$ExpectedAcceptedStatementCount accepted statement(s).")
+    [void](Wait-TextContaining $secondRoot 'No action needed.')
+    [void](Wait-TextContaining $secondRoot $Statement)
     if (-not [string]::IsNullOrWhiteSpace($SuccessorAssignmentContract)) {
-        [void](Wait-Element $secondRoot 'ACTIVE WORK')
+        [void](Wait-TextContaining $secondRoot $SuccessorAssignmentContract)
     }
     Write-Output 'Desktop UI restart recovery passed.'
 }

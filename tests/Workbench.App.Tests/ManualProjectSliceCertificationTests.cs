@@ -56,14 +56,14 @@ public sealed class ManualProjectSliceCertificationTests
         var afterHandoff = await context.Services.B1AuthorityRepository.LoadProjectStateAsync(projectRef);
         Assert.Single(afterHandoff.Handoffs);
         Assert.Empty(B1Projector.Build(afterHandoff).AcceptedProjectState.CurrentContributions);
-        HandoffRef? reviewedHandoffRef = null;
+        var reviewQueueVisits = 0;
         var explorerWithPendingHandoff = new ProjectWorldExplorerViewModel(
             context.Services,
             opened,
             () => Task.CompletedTask,
-            openGuidedDecision: handoffRef =>
+            openReview: () =>
             {
-                reviewedHandoffRef = handoffRef;
+                reviewQueueVisits++;
                 return Task.CompletedTask;
             });
         await explorerWithPendingHandoff.InitializeAsync();
@@ -72,7 +72,7 @@ public sealed class ManualProjectSliceCertificationTests
         Assert.Contains("Combat prototype implemented", pending.Result);
         Assert.Contains("Use card-based combat", pending.ProposedChanges);
         await explorerWithPendingHandoff.ReviewHandoffCommand.ExecuteAsync(pending.HandoffRef);
-        Assert.Equal(pending.HandoffRef, reviewedHandoffRef);
+        Assert.Equal(1, reviewQueueVisits);
         // Primary Result and Proposed Project Changes are two distinct typed Claims.
         Assert.Equal(2L, await CountAsync(context.Services, "b1_claims", opened.Project.Id));
         Assert.Equal(1L, await CountAsync(context.Services, "b1_handoffs", opened.Project.Id));

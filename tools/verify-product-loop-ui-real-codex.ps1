@@ -3,7 +3,10 @@ param(
     [string]$ProjectPath = '',
     [string]$ExecutablePath = '',
     [string]$SeedDllPath = '',
-    [string]$DatabasePath = ''
+    [string]$DatabasePath = '',
+    [ValidateSet('codex', 'opencode')]
+    [string]$WorkerProvider = 'codex',
+    [string]$WorkerModel = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,24 +71,63 @@ $resolvedExecutable = (Resolve-Path -LiteralPath $ExecutablePath).Path
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Drawing
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class ReviewCaptureWindow {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr handle);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+}
+'@
+
+$screenshotDirectory = [System.IO.Path]::ChangeExtension($resolvedDatabase, 'screenshots')
+New-Item -ItemType Directory -Force -Path $screenshotDirectory | Out-Null
+
+function Save-ReviewScreenshot {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [System.Windows.Automation.AutomationElement]$Root,
+        [string]$Name
+    )
+    [void][ReviewCaptureWindow]::SetForegroundWindow($Process.MainWindowHandle)
+    Start-Sleep -Milliseconds 600
+    $bounds = $Root.Current.BoundingRectangle
+    $bitmap = [System.Drawing.Bitmap]::new([int]$bounds.Width, [int]$bounds.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen([int]$bounds.X, [int]$bounds.Y, 0, 0, $bitmap.Size)
+        $bitmap.Save((Join-Path $screenshotDirectory $Name), [System.Drawing.Imaging.ImageFormat]::Png)
+    }
+    finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+}
 
 function Wait-Element {
     param(
         [System.Windows.Automation.AutomationElement]$Root,
         [string]$Name,
-        [int]$TimeoutSeconds = 180
+        [int]$TimeoutSeconds = 180,
+        [switch]$ById
     )
 
-    $condition = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::NameProperty,
-        $Name)
+    $property = if ($ById) { [System.Windows.Automation.AutomationElement]::AutomationIdProperty } else { [System.Windows.Automation.AutomationElement]::NameProperty }
+    $condition = [System.Windows.Automation.PropertyCondition]::new($property, $Name)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     do {
-        $element = $Root.FindFirst(
-            [System.Windows.Automation.TreeScope]::Descendants,
-            $condition)
-        if ($null -ne $element) {
-            return $element
+        try {
+            $element = $Root.FindFirst(
+                [System.Windows.Automation.TreeScope]::Descendants,
+                $condition)
+            if ($null -ne $element) {
+                return $element
+            }
+        }
+        catch {
+            # A navigation can invalidate the UIA tree for one poll.
         }
         Start-Sleep -Milliseconds 250
     } while ((Get-Date) -lt $deadline)
@@ -107,7 +149,13 @@ function Wait-TextContaining {
                 [System.Windows.Automation.TreeScope]::Descendants,
                 [System.Windows.Automation.Condition]::TrueCondition)
             foreach ($item in $items) {
-                if ($item.Current.Name -and $item.Current.Name.Contains($Text, [StringComparison]::Ordinal)) {
+                $actual = if ($item.Current.Name) {
+                    [Regex]::Replace($item.Current.Name, '\s+', '')
+                } else {
+                    ''
+                }
+                $expected = [Regex]::Replace($Text, '\s+', '')
+                if ($actual.Contains($expected, [StringComparison]::Ordinal)) {
                     return $item
                 }
             }
@@ -147,6 +195,38 @@ function Invoke-UiElement {
     }
     catch {
         throw "Could not invoke UI element '$Name': $($_.Exception.Message)"
+    }
+}
+
+function Expand-UiElement {
+    param(
+        [System.Windows.Automation.AutomationElement]$Element,
+        [string]$Name
+    )
+
+    try {
+        $pattern = $Element.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+        $pattern.Expand()
+        return
+    }
+    catch {
+        try {
+            $pattern = $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+            $pattern.Invoke()
+            return
+        }
+        catch {
+            $bounds = $Element.Current.BoundingRectangle
+            if ($bounds.Width -le 0 -or $bounds.Height -le 0) {
+                throw "Could not expand UI element '$Name': the element has no visible bounds."
+            }
+            [void][ReviewCaptureWindow]::SetCursorPos(
+                [int]($bounds.X + ($bounds.Width / 2)),
+                [int]($bounds.Y + ($bounds.Height / 2)))
+            [ReviewCaptureWindow]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+            [ReviewCaptureWindow]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 500
+        }
     }
 }
 
@@ -245,7 +325,7 @@ function Wait-ForReview {
         }
 
         try {
-            foreach ($reviewText in @('REVIEW WORK RESULT', 'Preview what will change')) {
+            foreach ($reviewText in @('REVIEW QUEUE', 'REVIEW WORK RESULT')) {
                 $items = $Root.FindAll(
                     [System.Windows.Automation.TreeScope]::Descendants,
                     [System.Windows.Automation.Condition]::TrueCondition)
@@ -262,7 +342,39 @@ function Wait-ForReview {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
 
-    throw 'Timed out waiting for the real Codex Worker review surface.'
+    throw 'Timed out waiting for the configured Worker review surface.'
+}
+
+function Wait-ForAgentRuntime {
+    param(
+        [System.Windows.Automation.AutomationElement]$Root,
+        [int]$TimeoutSeconds = 90
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        try {
+            $retry = Find-Element $Root 'Retry'
+            if ($null -ne $retry -and $retry.Current.IsEnabled -and -not $retry.Current.IsOffscreen) {
+                Invoke-UiElement $retry 'Retry runtime'
+                Start-Sleep -Seconds 2
+            }
+
+            $error = Wait-TextContaining $Root 'Worker runtime is not connected.' 1
+            if ($null -eq $error) {
+                return
+            }
+        }
+        catch {
+            # The runtime surface is still settling or the transient error is gone.
+            if ($_.Exception.Message -like '*Timed out waiting for UI text*') {
+                return
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    throw 'Timed out waiting for the configured Agent runtime.'
 }
 
 function Stop-VerifiedProcess {
@@ -339,28 +451,45 @@ try {
             --database $resolvedDatabase `
             --project $resolvedProject `
             --round $round `
-            --real-worker
+            --real-worker `
+            --provider $WorkerProvider `
+            $(if ([string]::IsNullOrWhiteSpace($WorkerModel)) { @() } else { @('--model', $WorkerModel) })
         if ($LASTEXITCODE -ne 0) {
             throw "Real Codex seed failed for round $round with exit code $LASTEXITCODE."
         }
 
         $first = Start-Workbench $resolvedExecutable $resolvedProject $resolvedDatabase
         $root = [System.Windows.Automation.AutomationElement]::FromHandle($first.MainWindowHandle)
-        [void](Wait-Element $root 'PROJECT OVERVIEW')
+        [void](Wait-Element $root 'OverviewState' -ById)
         $openWorkspace = Find-Element $root 'Open workspace'
         if ($null -ne $openWorkspace -and $openWorkspace.Current.IsEnabled) {
             Invoke-UiElement $openWorkspace 'Open workspace'
         }
 
+        Wait-ForAgentRuntime $root 90
         Invoke-UiElement (Wait-Element $root 'Confirm / Start Worker' 60) 'Confirm / Start Worker'
-        Write-Output "Round ${round}: desktop UI started the real Codex Worker."
+        Write-Output "Round ${round}: desktop UI started the configured Worker ($WorkerProvider)."
 
         Wait-ForReview $root 900
+        Invoke-UiElement (Wait-Element $root 'Back to Project Overview') 'Back to Project Overview'
+        [void](Wait-Element $root 'OverviewState' -ById)
+        [void](Wait-TextContaining $root "$($round - 1) accepted statement(s).")
+        [void](Wait-TextContaining $root '1 change(s) waiting for review.')
+        Write-Output "Round ${round}: completion is pending; accepted count is still $($round - 1)."
+        Invoke-UiElement (Wait-Element $root 'NavReview' -ById) 'Review'
+        $reviewChange = Wait-Element $root 'Review change'
+        Save-ReviewScreenshot $first $root "round-$round-review-queue.png"
+        Invoke-UiElement $reviewChange 'Review change'
+        [void](Wait-Element $root 'Accept')
+        Save-ReviewScreenshot $first $root "round-$round-review-change.png"
         if (-not [string]::IsNullOrWhiteSpace($configuration.Successor)) {
-            $edits = Wait-EditElements $root 3 60
-            Set-UiValue $edits[$edits.Count - 1] $configuration.Successor
+            $advanced = Wait-Element $root 'Advanced decision options'
+            Expand-UiElement $advanced 'Advanced decision options'
+            Set-UiValue (Wait-Element $root 'ReviewNextWork' 60 -ById) $configuration.Successor
         }
-        Invoke-UiElement (Wait-Element $root 'Preview what will change' 60) 'Preview what will change'
+        Invoke-UiElement (Wait-Element $root 'Accept' 60) 'Accept'
+        [void](Wait-Element $root 'Confirm Decision' 60)
+        Save-ReviewScreenshot $first $root "round-$round-review-preview.png"
         Invoke-UiElement (Wait-Element $root 'Confirm Decision' 60) 'Confirm Decision'
         Start-Sleep -Seconds 2
 
@@ -375,18 +504,19 @@ try {
         $first = $null
         $second = Start-Workbench $resolvedExecutable $resolvedProject $resolvedDatabase
         $secondRoot = [System.Windows.Automation.AutomationElement]::FromHandle($second.MainWindowHandle)
-        [void](Wait-Element $secondRoot 'PROJECT OVERVIEW')
+        [void](Wait-Element $secondRoot 'OverviewState' -ById)
         [void](Wait-TextContaining $secondRoot "$round accepted statement(s).")
         [void](Wait-TextContaining $secondRoot $configuration.Statement)
-        [void](Wait-TextContaining $secondRoot 'No handoffs are awaiting review.')
+        [void](Wait-TextContaining $secondRoot 'No action needed.')
+        [void](Wait-TextContaining $secondRoot 'No Agents running')
         if (-not [string]::IsNullOrWhiteSpace($configuration.Successor)) {
-            [void](Wait-TextContaining $secondRoot 'ACTIVE WORK')
+            [void](Wait-TextContaining $secondRoot $configuration.Successor)
         }
         Write-Output "Round ${round}: accepted state recovered after process restart."
         Stop-VerifiedProcess $second $resolvedExecutable
         $second = $null
     }
-    Write-Output 'Real Codex desktop Worker three-round product loop passed.'
+    Write-Output "Configured Worker three-round product loop passed ($WorkerProvider)."
 }
 finally {
     Stop-VerifiedProcess $first $resolvedExecutable
@@ -401,3 +531,4 @@ finally {
 
 Write-Output "ProjectPath=$resolvedProject"
 Write-Output "DatabasePath=$resolvedDatabase"
+Write-Output "Screenshots=$screenshotDirectory"

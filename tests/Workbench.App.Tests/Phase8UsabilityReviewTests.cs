@@ -37,7 +37,8 @@ public sealed class Phase8UsabilityReviewTests
 
         Assert.Contains("[Decision.SubmittedAs]", markup, StringComparison.Ordinal);
         Assert.Contains("[Decision.DecidingAs]", markup, StringComparison.Ordinal);
-        Assert.Contains("[Decision.Preview]", markup, StringComparison.Ordinal);
+        Assert.Contains("AcceptCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("IsPreviewVisible", markup, StringComparison.Ordinal);
         Assert.Contains("[Decision.Confirm]", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("authority effects", markup, StringComparison.OrdinalIgnoreCase);
     }
@@ -63,14 +64,14 @@ public sealed class Phase8UsabilityReviewTests
     {
         var markup = ReadView("ProjectWorldExplorerView.axaml");
 
-        Assert.Contains("[Explorer.CurrentState]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Overview.CurrentState]", markup, StringComparison.Ordinal);
         Assert.Contains("[Explorer.Continue]", markup, StringComparison.Ordinal);
         Assert.Contains("ContinueProjectCommand", markup, StringComparison.Ordinal);
         Assert.Contains("AcceptedStatementCountText", markup, StringComparison.Ordinal);
-        Assert.Contains("PendingHandoffSummary", markup, StringComparison.Ordinal);
-        Assert.Contains("ActiveAssignmentSummary", markup, StringComparison.Ordinal);
+        Assert.Contains("NeedsAttentionSummary", markup, StringComparison.Ordinal);
+        Assert.Contains("CurrentWorkHeadline", markup, StringComparison.Ordinal);
         Assert.Contains("OpenReviewCommand", markup, StringComparison.Ordinal);
-        Assert.Contains("[Explorer.ReviewPending]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Overview.Review]", markup, StringComparison.Ordinal);
         Assert.Contains("[Explorer.Settings]", markup, StringComparison.Ordinal);
         Assert.Contains("OpenSettingsCommand", markup, StringComparison.Ordinal);
         Assert.Contains("[Explorer.History]", markup, StringComparison.Ordinal);
@@ -86,6 +87,21 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("PendingHandoffs", markup, StringComparison.Ordinal);
         Assert.Contains("ReviewHandoffCommand", markup, StringComparison.Ordinal);
         Assert.Contains("[Review.Back]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Review.WhatChanged]", markup, StringComparison.Ordinal);
+        Assert.Contains("[Review.Verification]", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"{Binding HandoffRef}\"", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Decision_surface_exposes_product_actions_before_the_advanced_form()
+    {
+        var markup = ReadView("GuidedDecisionView.axaml");
+
+        Assert.Contains("AcceptCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("RequestRevisionCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("RejectCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("[Decision.Advanced]", markup, StringComparison.Ordinal);
+        Assert.Contains("PreviewDecisionCommand", markup, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -167,6 +183,24 @@ public sealed class Phase8UsabilityReviewTests
         Assert.Contains("HandoffDisplay.CanReview", markup, StringComparison.Ordinal);
         Assert.Contains("ReviewHandoffCommand", markup, StringComparison.Ordinal);
         Assert.Contains("[Worker.Review]", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Work_cards_lead_with_product_status_and_keep_technical_details_secondary()
+    {
+        var markup = ReadView(Path.Combine("Panes", "WorkPaneView.axaml"));
+        var viewModel = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "Workbench.App", "ViewModels", "Panes", "WorkPaneViewModel.cs"));
+
+        Assert.Contains("AgentSummary", markup, StringComparison.Ordinal);
+        Assert.Contains("UserFacingStatus", markup, StringComparison.Ordinal);
+        Assert.Contains("StatusDetail", markup, StringComparison.Ordinal);
+        Assert.Contains("[Worker.Attention]", markup, StringComparison.Ordinal);
+        Assert.Contains("AttentionText", markup, StringComparison.Ordinal);
+        Assert.Contains("[\"Worker.ProjectStateUnchanged\"]", viewModel, StringComparison.Ordinal);
+        Assert.Contains("[Worker.TechnicalDetails]", markup, StringComparison.Ordinal);
+        Assert.Contains("StopWorkerCommand", markup, StringComparison.Ordinal);
+        Assert.Contains("ContinueWorkerCommand", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExecutionStateText", markup, StringComparison.Ordinal);
     }
 
     [Fact]

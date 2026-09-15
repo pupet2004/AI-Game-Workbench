@@ -9,6 +9,158 @@ namespace Workbench.App.Tests;
 
 public sealed class GuidedDecisionServiceTests
 {
+    [Theory]
+    [InlineData("Accept", AssignmentDisposition.Accepted, ContributionDecisionMode.AdoptVerbatim)]
+    [InlineData("RequestRevision", AssignmentDisposition.RevisionRequired, ContributionDecisionMode.Ignore)]
+    [InlineData("Reject", AssignmentDisposition.Rejected, ContributionDecisionMode.Ignore)]
+    public async Task Product_review_actions_preview_the_selected_disposition_without_committing(
+        string action,
+        AssignmentDisposition expectedDisposition,
+        ContributionDecisionMode expectedContributionMode)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services,
+            fixture.Result,
+            fixture.Handoff,
+            () => Task.CompletedTask);
+
+        await viewModel.InitializeAsync();
+        switch (action)
+        {
+            case "Accept":
+                await viewModel.AcceptCommand.ExecuteAsync(null);
+                break;
+            case "RequestRevision":
+                await viewModel.RequestRevisionCommand.ExecuteAsync(null);
+                break;
+            case "Reject":
+                await viewModel.RejectCommand.ExecuteAsync(null);
+                break;
+        }
+
+        Assert.Equal(expectedDisposition, viewModel.SelectedDisposition);
+        Assert.Equal(expectedContributionMode, viewModel.SelectedContributionMode);
+        Assert.True(viewModel.IsPreviewVisible);
+        Assert.DoesNotContain("Assignment", viewModel.PreviewText, StringComparison.Ordinal);
+        Assert.DoesNotContain("UserPrincipal", viewModel.PreviewText, StringComparison.Ordinal);
+        Assert.Equal(1L, await fixture.CountAsync("b1_authority_decisions"));
+        Assert.Equal(0L, await fixture.CountAsync("b1_accepted_state_contributions"));
+    }
+
+    [Theory]
+    [InlineData("disposition")]
+    [InlineData("contribution")]
+    [InlineData("statement")]
+    [InlineData("revision")]
+    [InlineData("successor")]
+    public async Task Editing_a_decision_invalidates_preview_and_prevents_unpreviewed_commit(string field)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services, fixture.Result, fixture.Handoff, () => Task.CompletedTask);
+        await viewModel.InitializeAsync();
+        await viewModel.AcceptCommand.ExecuteAsync(null);
+        Assert.True(viewModel.IsPreviewVisible);
+
+        switch (field)
+        {
+            case "disposition": viewModel.SelectedDisposition = AssignmentDisposition.Rejected; break;
+            case "contribution": viewModel.SelectedContributionMode = ContributionDecisionMode.Ignore; break;
+            case "statement": viewModel.EditedContributionStatement = "Edited change"; break;
+            case "revision": viewModel.NewRevisionContract = "Fix validation"; break;
+            case "successor": viewModel.SuccessorAssignmentContract = "Next work"; break;
+        }
+
+        Assert.False(viewModel.IsPreviewVisible);
+        Assert.Null(viewModel.PreviewText);
+        await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
+        Assert.Equal(1L, await fixture.CountAsync("b1_authority_decisions"));
+        Assert.Equal(0L, await fixture.CountAsync("b1_accepted_state_contributions"));
+    }
+
+    [Theory]
+    [InlineData(AssignmentDisposition.Rejected)]
+    [InlineData(AssignmentDisposition.RevisionRequired)]
+    public async Task Product_review_confirm_retains_submission_without_accepting_changes(
+        AssignmentDisposition disposition)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services, fixture.Result, fixture.Handoff, () => Task.CompletedTask);
+        await viewModel.InitializeAsync();
+        var claimCount = await fixture.CountAsync("b1_claims");
+        if (disposition == AssignmentDisposition.Rejected)
+            await viewModel.RejectCommand.ExecuteAsync(null);
+        else
+            await viewModel.RequestRevisionCommand.ExecuteAsync(null);
+        await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
+
+        Assert.Null(viewModel.ErrorMessage);
+        Assert.Equal(2L, await fixture.CountAsync("b1_authority_decisions"));
+        Assert.Equal(0L, await fixture.CountAsync("b1_accepted_state_contributions"));
+        Assert.Equal(claimCount, await fixture.CountAsync("b1_claims"));
+        var state = await fixture.Services.B1AuthorityRepository.LoadProjectStateAsync(new(fixture.Result.Project.Id));
+        Assert.Contains(state.Handoffs, value => value.HandoffRef == fixture.Handoff);
+        Assert.Contains(state.AuthorityDecisions, value => value.AssignmentDispositionEffect?.Disposition == disposition);
+    }
+
+    [Fact]
+    public async Task Advanced_preview_preserves_edited_contribution_mode()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var viewModel = new GuidedDecisionViewModel(
+            fixture.Services, fixture.Result, fixture.Handoff, () => Task.CompletedTask);
+        await viewModel.InitializeAsync();
+        viewModel.SelectedContributionMode = ContributionDecisionMode.EditAndEstablish;
+        viewModel.EditedContributionStatement = "Use turn-based card combat";
+        await viewModel.PreviewDecisionCommand.ExecuteAsync(null);
+        Assert.Contains(viewModel.EditedContributionStatement, viewModel.PreviewText, StringComparison.Ordinal);
+        await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
+        var state = await fixture.Services.B1Projections.GetAcceptedProjectStateAsync(new(fixture.Result.Project.Id));
+        Assert.Equal("Use turn-based card combat", Assert.Single(state.CurrentContributions).Statement);
+    }
+
+    [Fact]
+    public async Task Overview_continue_and_review_both_open_the_queue_without_making_a_decision()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var queueVisits = 0;
+        var directVisits = 0;
+        var overview = new ProjectWorldExplorerViewModel(fixture.Services, fixture.Result,
+            () => Task.CompletedTask,
+            openReview: () => { queueVisits++; return Task.CompletedTask; },
+            openGuidedDecision: _ => { directVisits++; return Task.CompletedTask; });
+        await overview.InitializeAsync();
+        await overview.ContinueProjectCommand.ExecuteAsync(null);
+        await overview.ReviewHandoffCommand.ExecuteAsync(fixture.Handoff);
+
+        Assert.Equal(2, queueVisits);
+        Assert.Equal(0, directVisits);
+        Assert.Equal(1L, await fixture.CountAsync("b1_authority_decisions"));
+    }
+
+    [Fact]
+    public async Task Overview_removes_finished_work_only_after_accept_and_shows_the_accepted_change()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var overview = new ProjectWorldExplorerViewModel(fixture.Services, fixture.Result, () => Task.CompletedTask);
+        await overview.InitializeAsync();
+        Assert.Single(overview.ActiveWork);
+        Assert.Single(overview.PendingHandoffs);
+        Assert.Empty(overview.AcceptedState);
+
+        await fixture.Services.GuidedDecision.CommitAsync(new GuidedDecisionRequest(
+            new(fixture.Result.Project.Id), fixture.Principal, fixture.Handoff,
+            AssignmentDisposition.Accepted, ContributionDecisionMode.AdoptVerbatim, null, null));
+        await overview.InitializeAsync();
+
+        Assert.Null(overview.ErrorMessage);
+        Assert.Empty(overview.ActiveWork);
+        Assert.Empty(overview.PendingHandoffs);
+        Assert.Equal("Use card-based combat", overview.RecentChangeText);
+    }
+
     [Fact]
     public async Task Preview_is_non_persistent_and_confirm_commits_disposition_and_contribution()
     {
@@ -138,7 +290,8 @@ public sealed class GuidedDecisionServiceTests
         viewModel.SuccessorAssignmentContract = "Add a Reset button to the counter.";
         await viewModel.PreviewDecisionCommand.ExecuteAsync(null);
 
-        Assert.Contains("successor Assignment", viewModel.PreviewText, StringComparison.Ordinal);
+        Assert.Contains("Next work", viewModel.PreviewText, StringComparison.Ordinal);
+        Assert.Contains(viewModel.SuccessorAssignmentContract, viewModel.PreviewText, StringComparison.Ordinal);
 
         await viewModel.ConfirmDecisionCommand.ExecuteAsync(null);
 

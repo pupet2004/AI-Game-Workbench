@@ -4,7 +4,10 @@ param(
     [string]$ExecutablePath = '',
     [string]$SeedDllPath = '',
     [string]$DatabasePath = '',
-    [string]$GodotExecutablePath = ''
+    [string]$GodotExecutablePath = '',
+    [ValidateSet('codex', 'opencode')]
+    [string]$WorkerProvider = 'codex',
+    [string]$WorkerModel = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,7 +39,9 @@ foreach ($pair in @(
     @('-ProjectPath', $ProjectPath),
     @('-ExecutablePath', $ExecutablePath),
     @('-SeedDllPath', $SeedDllPath),
-    @('-DatabasePath', $DatabasePath)
+    @('-DatabasePath', $DatabasePath),
+    @('-WorkerProvider', $WorkerProvider),
+    @('-WorkerModel', $WorkerModel)
 )) {
     if (-not [string]::IsNullOrWhiteSpace($pair[1])) {
         $liveArgs += $pair
@@ -50,4 +55,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Output 'ProductLoopReleaseGate=Passed'
 Write-Output 'KernelFreeze=Acceptance Spine, Authority, AcceptedProjectState, Recovery'
-Write-Output 'CertifiedPath=Godot fixture + real Codex Worker + UI Accept + process restart'
+Write-Output "CertifiedPath=Godot fixture + $WorkerProvider Worker + UI Accept + process restart"
