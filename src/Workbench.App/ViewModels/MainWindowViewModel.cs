@@ -153,7 +153,8 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
             _localization,
             () => ShowDiagnosticsAsync(ReturnToSettingsAsync),
             _services.ProjectSettingsRepository,
-            projectId);
+            projectId,
+            _services.RetryRuntimeAsync);
         CurrentPage = settings;
         await settings.InitializeAsync();
     }

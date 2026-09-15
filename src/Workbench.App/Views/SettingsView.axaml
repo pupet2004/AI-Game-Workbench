@@ -84,6 +84,7 @@
                 <TextBlock Text="{Binding [Settings.AgentDescription]}"
                            TextWrapping="Wrap" Opacity="0.75" />
                 <Button Content="{Binding [Settings.SaveAgents]}" Command="{Binding SaveAgentSettingsCommand}" />
+                <Button Content="{Binding [Settings.AgentSignIn]}" Command="{Binding SignInOpenCodeCommand}" IsEnabled="{Binding !IsSigningIn}" />
                 <TextBlock Text="{Binding AgentSettingsStatus}" TextWrapping="Wrap" />
             </StackPanel>
         </StackPanel>

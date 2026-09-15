@@ -13,6 +13,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly Func<Task> _openDiagnostics;
     private readonly ProjectSettingsRepository? _projectSettings;
     private readonly Guid? _projectId;
+    private readonly Func<CancellationToken, Task>? _retryRuntime;
 
     public SettingsViewModel(
         WorkbenchSettingsRepository settings,
@@ -20,7 +21,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
         LocalizationService? localization = null,
         Func<Task>? openDiagnostics = null,
         ProjectSettingsRepository? projectSettings = null,
-        Guid? projectId = null)
+        Guid? projectId = null,
+        Func<CancellationToken, Task>? retryRuntime = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         BackToProjects = backToProjects ?? throw new ArgumentNullException(nameof(backToProjects));
@@ -28,6 +30,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _openDiagnostics = openDiagnostics ?? (() => Task.CompletedTask);
         _projectSettings = projectSettings;
         _projectId = projectId;
+        _retryRuntime = retryRuntime;
         _localization.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName is "Item[]" or nameof(LocalizationService.Language))
@@ -115,6 +118,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string? AgentSettingsStatus { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsSigningIn { get; set; }
 
     [ObservableProperty]
     public partial LanguageOption? SelectedLanguage { get; set; }
@@ -242,6 +248,34 @@ public sealed partial class SettingsViewModel : ViewModelBase
         await _settings.SaveAgentRuntimeSettingsAsync(new("opencode", IsOpenCodeEnabled, OpenCodeExecutablePath));
         await _settings.SaveGodotExecutablePathAsync(GodotExecutablePath);
         AgentSettingsStatus = _localization["Settings.AgentSaved"];
+    }
+
+    [RelayCommand]
+    private async Task SignInOpenCode()
+    {
+        if (IsSigningIn)
+            return;
+
+        IsSigningIn = true;
+        AgentSettingsStatus = _localization["Settings.AgentSignInStarted"];
+        try
+        {
+            var settings = new AgentRuntimeSettings("opencode", true, OpenCodeExecutablePath);
+            var result = await new AgentAuthenticationService().SignInAsync(settings);
+            AgentSettingsStatus = result.Succeeded
+                ? _localization["Settings.AgentSignInChecking"]
+                : result.Message;
+            if (result.Succeeded && _retryRuntime is not null)
+                await _retryRuntime(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            AgentSettingsStatus = _localization["Settings.AgentSignInFailed"];
+        }
+        finally
+        {
+            IsSigningIn = false;
+        }
     }
 
     [RelayCommand]
