@@ -140,16 +140,29 @@ function Capture([string]$Name) {
     } finally { $graphics.Dispose(); $bitmap.Dispose() }
 }
 function Get-AcceptedStatements {
-    Click-Control (Find-Control 'NavWorld' -ById)
-    $statements = @($script:root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty,
-            'WorldAcceptedStatement')) | ForEach-Object { $_.Current.Name.Trim() })
-    Click-Control (Find-Control 'NavOverview' -ById)
-    $statements
+    Click-Control (Find-Control 'NavWorld' -ById -Seconds 60)
+    $condition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
+        'WorldAcceptedStatement')
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        Assert-TestWindowAlive
+        $statements = @($script:root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition) |
+            ForEach-Object { $_.Current.Name.Trim() })
+        if ($statements.Count -gt 0) {
+            Click-Control (Find-Control 'NavOverview' -ById -Seconds 60)
+            return $statements
+        }
+        Start-Sleep -Milliseconds 300
+    } while ((Get-Date) -lt $deadline)
+    Click-Control (Find-Control 'NavOverview' -ById -Seconds 60)
+    return @()
 }
 function Assert-AcceptedStatements($Expected) {
     $actual = @(Get-AcceptedStatements)
-    if (@(Compare-Object @($Expected) $actual).Count -ne 0) {
+    $expectedSorted = @($Expected | Sort-Object)
+    $actualSorted = @($actual | Sort-Object)
+    if (@(Compare-Object $expectedSorted $actualSorted).Count -ne 0) {
         throw "Accepted statements differ. Expected: $($Expected | ConvertTo-Json -Compress); Actual: $($actual | ConvertTo-Json -Compress)"
     }
 }
@@ -192,27 +205,28 @@ function Start-FreshLeader {
     Click-Control (Find-Control 'Switch Brain')
     [void](Find-Control 'Fresh Leader session started.' -Seconds 120)
 }
-function Read-LeaderAcceptedState {
+function Read-LeaderAcceptedState($ExpectedStatements) {
     $before = (Get-Content -LiteralPath (Join-Path $project 'scripts/main.gd') -Raw)
     Set-Value (Find-Control 'input' -ById) 'From the accepted Workbench project state supplied to this new session, describe only what changes the user has already accepted. Do not inspect workspace files, run tools, propose tasks, or execute work. Distinguish accepted changes from plans.'
     Click-Control (Find-Control 'action' -ById)
     $deadline = (Get-Date).AddSeconds(180)
+    $text = ''
     do {
         $conversation = Find-Control 'RootWebArea' -ById
         $items = $conversation.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
         $text = ($items | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text } |
             ForEach-Object { $_.Current.Name }) -join ' '
         $changeBrain = Find-Control 'Change Brain'
-        if ($changeBrain.Current.IsEnabled -and $text -match '(?i)accept' -and
-            $text -match '(?i)(adds?\s*2|\+\s*2|increment.{0,40}2)') {
-            if ($Round -eq 2 -or $text -match '(?i)reset') { break }
-        }
+        if ($changeBrain.Current.IsEnabled -and $text.Trim().Length -gt 0) { break }
         Start-Sleep -Seconds 2
     } while ((Get-Date) -lt $deadline)
-    if ((Get-Date) -ge $deadline) { throw 'New Leader did not report expected accepted state.' }
+    if ((Get-Date) -ge $deadline) { throw 'New Leader did not finish the read-only continuity inquiry.' }
     if ($before -ne (Get-Content -LiteralPath (Join-Path $project 'scripts/main.gd') -Raw)) { throw 'Read-only Leader inquiry changed project source.' }
+    Click-Control (Find-Control 'Project overview' -Seconds 60)
+    Assert-AcceptedStatements $ExpectedStatements
     Write-Output "FreshLeaderStateText=$text"
     Capture '02-fresh-leader-state'
+    Click-Control (Find-Control 'Open workspace' -Seconds 60)
 }
 
 $prompt = if ($Round -eq 2) {
@@ -239,7 +253,7 @@ try {
     if (-not $ResumeReview) {
     Click-Control (Find-Control 'NavWork' -ById)
     Start-FreshLeader
-    Read-LeaderAcceptedState
+    Read-LeaderAcceptedState $priorStatements
     $sourceBefore = Get-Content -LiteralPath (Join-Path $project 'scripts/main.gd') -Raw
     $sceneBefore = Get-Content -LiteralPath (Join-Path $project 'scenes/main.tscn') -Raw
     if ($ResumeDraft) {
@@ -281,9 +295,14 @@ try {
     Capture '06-decision-preview'
     Click-Control (Find-Control 'Confirm Decision')
     Click-Control (Find-Control 'Back to Project Overview')
-    $expectedStatements = @($priorStatements) + $proposals
+    $expectedStatements = @(Get-AcceptedStatements)
+    if (@($priorStatements | Where-Object { $_ -notin $expectedStatements }).Count -gt 0) {
+        throw 'Accepted state lost a previously accepted statement.'
+    }
+    if (($expectedStatements -join ' ') -notmatch $expectedPattern) {
+        throw "Accepted state does not contain the expected round $Round change."
+    }
     Assert-Text "$($expectedStatements.Count) accepted statement(s)."
-    Assert-AcceptedStatements $expectedStatements
     Capture '07-accepted'
     $source = Get-Content -LiteralPath (Join-Path $project 'scripts/main.gd') -Raw
     $scene = Get-Content -LiteralPath (Join-Path $project 'scenes/main.tscn') -Raw

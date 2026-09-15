@@ -85,6 +85,7 @@ public sealed record WorkspaceSnapshot(IReadOnlyDictionary<string, string> Files
             if (process.ExitCode != 0) return null;
             return output.Split('\0', StringSplitOptions.RemoveEmptyEntries)
                 .Select(path => path.Trim().Replace('/', Path.DirectorySeparatorChar))
+                .Where(path => !IsGeneratedOrMetadataPath(workspace, Path.Combine(workspace, path)))
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested) { return null; }
@@ -134,6 +135,9 @@ public sealed record WorkspaceSnapshot(IReadOnlyDictionary<string, string> Files
 public sealed class WorkerCompletionVerifier
 {
     private static readonly Regex BacktickToken = new("`(?<value>[^`]+)`", RegexOptions.Compiled);
+    private static readonly Regex RelativeFilePath = new(
+        @"(?<![A-Za-z0-9_:])(?<value>[A-Za-z0-9_.-]+[\\/][A-Za-z0-9_.-]+(?:[\\/][A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+)",
+        RegexOptions.Compiled);
 
     public async Task<WorkerCompletionVerification> VerifyAsync(
         CoreProject project,
@@ -198,15 +202,39 @@ public sealed class WorkerCompletionVerifier
         {
             foreach (Match match in BacktickToken.Matches(text))
             {
-                var value = match.Groups["value"].Value.Trim().Replace('/', Path.DirectorySeparatorChar);
-                if (value.Contains(Path.DirectorySeparatorChar) && !value.EndsWith(Path.DirectorySeparatorChar))
-                    values.Add(value);
+                var value = match.Groups["value"].Value.Trim().Trim('"', '\'')
+                    .Replace('/', Path.DirectorySeparatorChar);
+                var scriptMatch = Regex.Match(value, @"(?:^|\s)--script\s+(?<path>[^\s]+)",
+                    RegexOptions.IgnoreCase);
+                if (scriptMatch.Success)
+                {
+                    AddTargetPath(values, scriptMatch.Groups["path"].Value);
+                    continue;
+                }
+                AddTargetPath(values, value);
             }
+            foreach (Match match in RelativeFilePath.Matches(text))
+                AddTargetPath(values, match.Groups["value"].Value);
         }
         return values;
     }
 
+    private static void AddTargetPath(HashSet<string> values, string rawValue)
+    {
+        var value = rawValue.Trim().Trim('"', '\'').Replace('/', Path.DirectorySeparatorChar);
+        if (LooksLikeCommand(value) || !value.Contains(Path.DirectorySeparatorChar) ||
+            value.EndsWith(Path.DirectorySeparatorChar) || value.Contains(Path.VolumeSeparatorChar))
+            return;
+        values.Add(value);
+    }
+
     private static string NormalizeRelativePath(string path) => path.Trim().Replace('/', Path.DirectorySeparatorChar);
+
+    private static bool LooksLikeCommand(string value) =>
+        value.Contains(" --", StringComparison.Ordinal) ||
+        value.StartsWith("--", StringComparison.Ordinal) ||
+        value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains(".exe ", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<IReadOnlyList<string>?> ReadChangedPathsAsync(string workspace, CancellationToken cancellationToken)
     {

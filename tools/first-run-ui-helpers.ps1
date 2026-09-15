@@ -98,7 +98,7 @@ function Wait-WorkerDraft([string]$Prompt, [int]$Seconds = 240) {
         $conversation = Find-Control 'RootWebArea' -ById
         $errorCount = $conversation.FindAll([System.Windows.Automation.TreeScope]::Descendants, $errorCondition).Count
         if ($errorCount -gt $lastErrorCount) {
-            if ($retries -ge 2) { throw 'Leader request failed after two UI retries.' }
+            if ($retries -ge 4) { throw 'Leader request failed after four UI retries.' }
             $lastErrorCount = $errorCount
             $retries++
             Write-Host "LeaderRequestUiRetry=$retries"

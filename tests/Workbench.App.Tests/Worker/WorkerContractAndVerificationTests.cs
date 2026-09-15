@@ -107,6 +107,67 @@ public sealed class WorkerContractAndVerificationTests
     }
 
     [Fact]
+    public async Task Verification_ignores_godot_generated_files_and_command_tokens_in_scope()
+    {
+        using var directory = new TemporaryDirectory("worker-verification-godot");
+        var projectId = Guid.NewGuid();
+        var taskId = Guid.NewGuid();
+        var revision = new TaskRevision(taskId, 1, "Update counter",
+            """Modify only `scripts/main.gd` and `scenes/main.tscn`. Validate with `E:\Godot\Godot_console.exe --headless --check-only --script scripts\main.gd`.""",
+            "No generated files",
+            ["The files `scripts/main.gd` and `scenes/main.tscn` contain the requested change."],
+            TaskRiskLevel.Low, ExecutionProfile.Create("provider", Guid.NewGuid().ToString(), "model", "runtime"),
+            "test", TaskRevisionApprover.User, DateTimeOffset.UtcNow, null);
+        var profile = revision.RecommendedExecutionProfile;
+        var project = new CoreProject(projectId, "Godot", directory.Path, ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var execution = new StoredWorkerExecution(Guid.NewGuid(), projectId, taskId, revision.CreateReference(),
+            revision.CreateReference(), "base", "main", ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId),
+            profile, "worker", directory.Path, WorkerExecutionState.CompletedPendingReview, "agent", "external",
+            directory.Path, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        Directory.CreateDirectory(Path.Combine(directory.Path, ".godot", "editor"));
+        File.WriteAllText(Path.Combine(directory.Path, ".godot", "editor", "cache"), "generated");
+        Directory.CreateDirectory(Path.Combine(directory.Path, "scripts"));
+        Directory.CreateDirectory(Path.Combine(directory.Path, "scenes"));
+        File.WriteAllText(Path.Combine(directory.Path, "scripts", "main.gd"), "extends Control");
+        File.WriteAllText(Path.Combine(directory.Path, "scenes", "main.tscn"), "[gd_scene]");
+
+        var result = await new WorkerCompletionVerifier().VerifyAsync(project, revision, execution, "completed",
+            ["scripts/main.gd", "scenes/main.tscn"]);
+
+        Assert.Equal(WorkerCompletionVerificationResult.NotVerifiable, result.Result);
+        Assert.All(result.Checks.Where(check => check.Name is "declared-deliverable" or "scope"),
+            check => Assert.Equal(WorkerCompletionVerificationResult.Passed, check.Result));
+    }
+
+    [Fact]
+    public async Task Verification_extracts_script_target_from_a_godot_check_command()
+    {
+        using var directory = new TemporaryDirectory("worker-verification-command");
+        var project = new CoreProject(Guid.NewGuid(), "Godot", directory.Path, ProjectType.Generic, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var profile = ExecutionProfile.Create("provider", Guid.NewGuid().ToString(), "model", "runtime");
+        var revision = new TaskRevision(Guid.NewGuid(), 1, "Check script",
+            """Run `E:\Godot\Godot_console.exe --headless --check-only --script scripts\main.gd`.""",
+            "No other files", ["`scripts/main.gd` is valid"], TaskRiskLevel.Low, profile, "test",
+            TaskRevisionApprover.User, DateTimeOffset.UtcNow, null);
+        Directory.CreateDirectory(Path.Combine(directory.Path, "scripts"));
+        File.WriteAllText(Path.Combine(directory.Path, "scripts", "main.gd"), "extends Control");
+        var execution = new StoredWorkerExecution(Guid.NewGuid(), project.Id, revision.TaskId,
+            revision.CreateReference(), revision.CreateReference(), "base", "main",
+            ProviderAccountBinding.Create(profile.ProviderId, profile.ProviderAccountId), profile, "worker",
+            directory.Path, WorkerExecutionState.CompletedPendingReview, "agent", "external", directory.Path,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+        var result = await new WorkerCompletionVerifier().VerifyAsync(project, revision, execution, "completed",
+            ["scripts/main.gd"]);
+
+        Assert.Equal(WorkerCompletionVerificationResult.NotVerifiable, result.Result);
+        Assert.Equal(WorkerCompletionVerificationResult.Passed,
+            result.Checks.Single(check => check.Name == "declared-deliverable").Result);
+        Assert.Equal(WorkerCompletionVerificationResult.Passed,
+            result.Checks.Single(check => check.Name == "scope").Result);
+    }
+
+    [Fact]
     public async Task Workspace_baseline_attributes_execution_delta_without_git()
     {
         using var directory = new TemporaryDirectory("worker-baseline-no-git");
