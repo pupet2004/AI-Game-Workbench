@@ -90,4 +90,4 @@ The publish script writes the self-contained ZIP to `artifacts\release`.
 
 ## License
 
-See [LICENSE](LICENSE).
+Licensed under the [Apache License 2.0](LICENSE).

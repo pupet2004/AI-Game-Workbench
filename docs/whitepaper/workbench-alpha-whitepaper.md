@@ -1,85 +1,143 @@
 # AI Game Workbench Alpha
 
-**The project persists. Agents don't have to.**
-
-Version `alpha-product-loop`
-Updated 2026-09-15
-
-> This paper describes the current Alpha product direction. Validation claims
-> are backed by the dated records in [`docs/validation`](../validation/).
+Version: `alpha-product-loop`  
+Updated: 2026-09-15
 
 ## Abstract
 
-AI work often outlives the model, provider, session, and interface that started it. AI Game Workbench explores a small answer to that problem: make the Project World durable, make Agent participation bounded, and keep accepted meaning separate from conversation output.
+AI projects outlive individual models, providers, sessions, and interfaces.
+AI Game Workbench is a Windows-first continuity and acceptance layer for that
+reality. It keeps project state durable, Agent work bounded, and accepted
+meaning separate from conversation output.
 
-Workbench is not the intelligence of a project. It is the continuity substrate around replaceable intelligence.
+The central claim is:
 
-## Thesis
+> **A project should not have to restart merely because its Agent changed.**
 
-The central design claim is simple:
+## 1. Problem
 
-> **A project should not have to restart merely because its agent changed.**
+Chat transcripts preserve conversation, not project truth. Memory and summaries
+reduce context loss, but repetition does not grant authority. Git records
+artifact history, but does not by itself record which proposed meaning a user
+accepted. Handoffs carry context without transferring authority.
 
-The system therefore treats Project, Assignment, Attempt, Claim, Handoff, Authority Decision, and Accepted Project State as durable concepts. Sessions, models, providers, and runtimes are connectivity and execution details.
+Long-running AI work therefore needs a project-level layer that answers:
 
-## Semantic Separation
+> What has this project formally accepted, and what should the next session
+> treat as its starting point?
 
-Workbench keeps three lanes distinct:
+## 2. Design Principles
+
+Workbench separates three lanes:
 
 ```text
 Authority  -> what the project formally accepts
 Context    -> what helps a participant understand the project
-Execution  -> what agents and tools are doing now
+Execution  -> what Agents and tools are doing now
 ```
 
-Claims and Handoffs can propose useful work. Only an attributable Authority Decision changes Accepted Project State. Summary and Library views reduce re-comprehension cost but never gain authority through repetition or compression.
-
-## Replaceable Participation
-
-A bounded Assignment may be performed by a Worker using one runtime and continued by another Agent later. The runtime adapter translates provider events into provider-neutral Workbench events. The host preserves Assignment, Attempt, SessionBinding, transcript recovery, and approval correlation.
-
-The user can therefore follow a path such as:
+The key boundaries are:
 
 ```text
-Leader understands the Project
-  -> Worker performs a bounded Assignment
-  -> Handoff returns Claims and evidence
-  -> user or Leader makes an Authority Decision
-  -> another Agent continues the Project
+Completion      != Acceptance
+Evidence        != Truth
+Handoff         != Authority transfer
+Summary         != Authority
 ```
 
-## Evidence From Alpha
+Only an attributable Authority Decision changes Accepted Project State.
 
-The current Alpha has completed the product loop from installation and
-environment readiness through provider-owned authentication, Agent work,
-review, acceptance, and process restart recovery. It has been exercised with
-real Codex, OpenCode, DeepSeek, and Godot workflows as well as deterministic
-certification fixtures.
+## 3. Project World Model
 
-Earlier, on 2026-08-27, the real `立围` project completed a local cross-Agent acceptance run:
+The durable Project World contains the identity, responsibilities,
+assignments, attempts, claims, evidence, decisions, accepted state, summaries,
+and recovery information needed to continue work.
 
-1. OpenCode with DeepSeek completed a bounded Worker assignment.
-2. Workbench recorded a non-authoritative Handoff.
-3. Codex continued the same Assignment from the prior Attempt.
-4. A Guided Decision accepted the final result.
-5. Workbench services restarted and recovered the accepted state.
+Sessions, models, providers, runtimes, and editor windows are replaceable
+participants or connections. They may produce useful output, but they do not
+become the project's formal state merely by producing it.
 
-The project files were not modified by the acceptance test; the existing `README.md` change was pre-existing.
+## 4. Canonical Acceptance Spine
 
-## What This Alpha Is
+The canonical path is:
 
-- A working Windows-first continuity reference implementation.
-- A replaceable Agent routing and relay experiment.
-- A concrete demonstration that a Project World can outlive an Agent session.
-- A foundation for further dogfooding and independent review.
+```text
+Task / Assignment
+    -> Worker execution
+    -> Completion package
+    -> diff, evidence, and verification
+    -> Claim / proposed change
+    -> Authority queue
+    -> Accept, Reject, or Revise
+    -> Accepted Project State
+    -> Summary and next-session continuity
+```
 
-## What This Alpha Is Not
+Completion records remain durable when a proposal is rejected or revised.
+Projection services summarize authority history; they do not make decisions.
 
-- A promise of legal, organizational, or regulatory accountability.
-- A full IDE, terminal, Git client, or browser automation suite.
-- A universal drop-in replacement for Codex, OpenCode, Claude, or Kilo UI.
-- An automatic truth, verification, or causal-inference engine.
+## 5. Continuity and Recovery
 
-## Closing
+After an accepted decision, a later Leader or Worker reads the accepted state
+and continues from it. Normal process exit, service/database reopen, and
+runtime recovery are treated as separate concerns. Recovery restores durable
+state without promoting incomplete execution into accepted truth.
 
-Workbench's intended unit of persistence is the Project, not the chat window. A Session may end. A model may change. The Project continues.
+## 6. Product Implementation
+
+The Alpha presents the kernel through a small product shell:
+
+- **Overview** answers what the project is now.
+- **Work** answers what the Agent is doing.
+- **Review** answers what change awaits a decision.
+- **World** exposes accepted project facts.
+- **History** explains how the current state was reached.
+- **Settings** controls providers and runtime configuration.
+
+Codex and OpenCode are replaceable execution providers. Godot is the first
+tested vertical adapter. Provider credentials remain provider-owned; Workbench
+starts the provider's authentication flow and probes the runtime afterward.
+
+## 7. Evaluation and Certification
+
+The current Alpha has been exercised with:
+
+- deterministic acceptance fixtures;
+- real Codex and OpenCode participation;
+- DeepSeek model execution through OpenCode;
+- Godot project changes;
+- first-use UI without seeded Workbench state;
+- Review Accept, Reject, and Revision paths;
+- normal process exit and restart recovery;
+- verification scope classification;
+- provider-owned authentication.
+
+The release-candidate application test run covered the `Workbench.App` suite:
+`700 passed, 5 skipped, 0 failed`. Live-provider tests are opt-in. The dated
+records in [`docs/validation`](../validation/) state the conditions and
+boundaries of each result.
+
+## 8. Limitations
+
+This Alpha is Windows x64 focused. Godot is the first certified project
+adapter; Unity is not certified. Free-text acceptance criteria may remain
+`NotVerifiable` when no machine evidence exists. Upgrade migration, automatic
+updates, crash export, and clean-machine certification are outside this
+release.
+
+Workbench is not a full IDE, terminal, Git client, browser automation suite,
+or automatic truth and causal-inference engine.
+
+## 9. Related Systems
+
+Workbench complements, rather than replaces, chat interfaces, Agent runtimes,
+editors, Git, and project-specific tools. Those systems handle conversation,
+execution, editing, artifact history, or domain work. Workbench supplies the
+project-level acceptance and continuity layer that connects their outputs over
+time.
+
+## 10. Conclusion
+
+The intended unit of persistence is the Project, not the chat window. An Agent
+may finish, a provider may change, and a process may restart. The next
+participant can still begin from the same accepted project truth.
