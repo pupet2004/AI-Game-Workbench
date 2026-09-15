@@ -1,43 +1,476 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI Game Workbench</title>
-  <style>
-    :root { color-scheme: dark; --bg:#0b0e13; --panel:#151a22; --line:#2b3442; --text:#f4f6f8; --muted:#a8b2c0; --accent:#7dd3fc; --green:#86efac; }
-    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif; }
-    main { max-width:980px; margin:auto; padding:10vh 24px 12vh; } h1 { font-size:clamp(42px,8vw,76px); line-height:1; margin:0 0 24px; letter-spacing:0; }
-    h2 { margin-top:64px; font-size:28px; } p { color:var(--muted); max-width:700px; } .lead { font-size:24px; color:var(--text); max-width:720px; }
-    .actions { display:flex; gap:12px; flex-wrap:wrap; margin:32px 0; } a { color:var(--accent); } .button { border:1px solid var(--accent); padding:10px 16px; text-decoration:none; color:var(--text); border-radius:6px; }
-    .button.primary { background:var(--accent); color:#071018; } .flow { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-top:24px; }
-    .step { background:var(--panel); border:1px solid var(--line); padding:16px; min-height:112px; } .step strong { display:block; color:var(--green); margin-bottom:8px; }
-    .note { border-left:3px solid var(--accent); padding-left:16px; } footer { margin-top:72px; color:var(--muted); font-size:14px; }
-    @media (max-width:700px) { .flow { grid-template-columns:1fr; } .lead { font-size:20px; } }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Game Workbench · Certified Project Continuity & Acceptance Layer</title>
+<style>
+  :root{
+    --bg:#07090c;
+    --panel:#0d1117;
+    --panel2:#111720;
+    --text:#f7f8fa;
+    --muted:#98a2b3;
+    --line:#252d3a;
+    --context:#7dd3fc;
+    --authority:#fbbf24;
+    --execution:#86efac;
+    --danger:#fb7185;
+    --soft:#161d27;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    line-height:1.55;overflow-x:hidden;
+  }
+  body:before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:-2;
+    background:
+      radial-gradient(900px 550px at 50% -10%,rgba(125,211,252,.10),transparent 60%),
+      radial-gradient(700px 500px at 92% 22%,rgba(134,239,172,.06),transparent 65%),
+      radial-gradient(650px 420px at 8% 65%,rgba(251,191,36,.05),transparent 65%);
+  }
+  .progress{position:fixed;left:0;top:0;height:3px;width:0;background:linear-gradient(90deg,var(--context),var(--authority),var(--execution));z-index:50}
+  .nav{
+    position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:40;
+    display:flex;gap:6px;padding:6px;border:1px solid rgba(255,255,255,.08);border-radius:999px;
+    background:rgba(7,9,12,.72);backdrop-filter:blur(16px);
+  }
+  .nav a{color:#aeb7c4;text-decoration:none;font-size:12px;padding:7px 10px;border-radius:999px;white-space:nowrap}
+  .nav a:hover,.nav a.active{color:#fff;background:#171d26}
+  .wrap{width:min(1180px,calc(100% - 40px));margin:0 auto}
+  section{padding:110px 0;position:relative}
+  .hero{min-height:100vh;display:flex;align-items:center;padding-top:120px}
+  .eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#8d97a6;margin-bottom:18px}
+  h1{font-size:clamp(52px,8vw,110px);line-height:.93;letter-spacing:-.055em;margin:0;max-width:1050px}
+  h2{font-size:clamp(36px,5vw,68px);line-height:1.02;letter-spacing:-.045em;margin:0 0 20px}
+  h3{font-size:22px;margin:0}
+  .hero .lead{font-size:clamp(20px,2.6vw,32px);color:#c6ccd5;max-width:850px;margin:34px 0 0}
+  .hero .lead strong{color:#fff}
+  .hero-rule{margin-top:54px;display:flex;align-items:center;gap:18px;color:#8993a2;font-size:13px}
+  .hero-rule:before{content:"";width:80px;height:1px;background:#394250}
+  .big-quote{margin-top:32px;font-size:clamp(28px,4vw,56px);letter-spacing:-.03em;color:#fff;font-weight:700}
+  .big-quote span{color:#8993a2;font-weight:500}
+  .section-head{display:grid;grid-template-columns:1fr minmax(280px,430px);gap:48px;align-items:end;margin-bottom:56px}
+  .section-head p{margin:0;color:var(--muted);font-size:17px}
+  .kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#7f8998;margin-bottom:14px}
+  .grid{display:grid;gap:18px}
+  .cards-3{grid-template-columns:repeat(3,1fr)}
+  .cards-2{grid-template-columns:repeat(2,1fr)}
+  .card{border:1px solid var(--line);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.008));padding:28px}
+  .card p{color:var(--muted);margin:10px 0 0}
+  .fail-card{min-height:180px;display:flex;flex-direction:column;justify-content:space-between}
+  .num{font-variant-numeric:tabular-nums;color:#5d6776;font-size:12px}
+  .fail-card strong{font-size:22px;line-height:1.25}
+  .danger{color:var(--danger)}
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .compare-panel{padding:30px;border-radius:26px;border:1px solid var(--line);background:#0b0f15;min-height:640px;position:relative;overflow:hidden}
+  .compare-panel.good{background:linear-gradient(180deg,rgba(125,211,252,.045),#0b0f15 35%)}
+  .panel-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
+  .panel-label span{font-size:12px;letter-spacing:.14em;color:#8c96a4;text-transform:uppercase}
+  .flow{display:flex;flex-direction:column;align-items:center;gap:11px}
+  .node{width:min(100%,410px);padding:15px 18px;border-radius:14px;border:1px solid #303846;background:#111720;text-align:center;font-weight:650}
+  .node.muted{font-weight:500;color:#b0b9c5}
+  .node.project{border-color:rgba(125,211,252,.48);box-shadow:inset 0 0 0 1px rgba(125,211,252,.08)}
+  .arrow{height:25px;width:1px;background:#46505f;position:relative}
+  .arrow:after{content:"";position:absolute;bottom:-1px;left:50%;transform:translateX(-50%) rotate(45deg);width:6px;height:6px;border-right:1px solid #5d6878;border-bottom:1px solid #5d6878}
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}
+  .badge{font-size:12px;color:#aeb7c4;padding:7px 10px;border:1px solid #2b3441;background:#10151d;border-radius:999px}
+  .badge.red{border-color:rgba(251,113,133,.28);color:#fda4af;background:rgba(251,113,133,.06)}
+  .good-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0 22px}
+  .mini{border:1px solid #2c3643;padding:14px 12px;border-radius:14px;text-align:center;font-size:13px;color:#d5d9df;background:#0e141c}
+  .mini.context{border-color:rgba(125,211,252,.35)}
+  .mini.authority{border-color:rgba(251,191,36,.35)}
+  .mini.execution{border-color:rgba(134,239,172,.35)}
+  .architecture-shell{border:1px solid var(--line);border-radius:28px;padding:36px;background:#0a0e14;position:relative;overflow:hidden}
+  .arch-title{text-align:center;margin-bottom:28px;color:#9aa4b3;font-size:12px;letter-spacing:.14em;text-transform:uppercase}
+  .arch-top{display:flex;justify-content:center;align-items:center;gap:12px;margin-bottom:28px}
+  .human{padding:12px 18px;border:1px solid #384251;border-radius:999px;font-weight:700;background:#111720}
+  .vline{width:1px;height:44px;background:#3c4654;margin:0 auto}
+  .project-world{width:min(620px,100%);margin:0 auto 26px;padding:27px;border:1px solid #465264;border-radius:22px;background:linear-gradient(180deg,#151c26,#0e131a);text-align:center;position:relative}
+  .project-world strong{font-size:31px;letter-spacing:-.03em}
+  .project-world small{display:block;color:#929cab;margin-top:6px}
+  .spine-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .spine{border-radius:18px;padding:22px;background:#10161e;border:1px solid #303947;min-height:186px}
+  .spine .spine-name{font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px;font-weight:800}
+  .spine.context{border-color:rgba(125,211,252,.38)} .spine.context .spine-name{color:var(--context)}
+  .spine.authority{border-color:rgba(251,191,36,.38)} .spine.authority .spine-name{color:var(--authority)}
+  .spine.execution{border-color:rgba(134,239,172,.38)} .spine.execution .spine-name{color:var(--execution)}
+  .spine strong{font-size:18px}
+  .spine p{font-size:13px;color:#94a0af;margin:10px 0 0}
+  .leader-zone{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;margin:26px auto 0;max-width:760px}
+  .leader,.worker{padding:18px 22px;border-radius:16px;background:#151b24;border:1px solid #384250;text-align:center;font-weight:800}
+  .leader-zone .connector{height:1px;width:90px;background:#4b5666;position:relative}
+  .leader-zone .connector:after{content:"→";position:absolute;right:-5px;top:-13px;color:#697587}
+  .lifecycle{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;align-items:stretch}
+  .life-node{position:relative;min-height:150px;padding:18px 14px;border-radius:16px;border:1px solid #2d3643;background:#0e131a}
+  .life-node:not(:last-child):after{content:"→";position:absolute;right:-12px;top:50%;transform:translateY(-50%);color:#5f6a79;z-index:3}
+  .life-node span{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#687485}
+  .life-node strong{display:block;margin-top:16px;font-size:17px;line-height:1.2}
+  .life-node.context{border-color:rgba(125,211,252,.4)}
+  .life-node.authority{border-color:rgba(251,191,36,.4)}
+  .life-node.execution{border-color:rgba(134,239,172,.4)}
+  .life-caption{margin-top:22px;color:#8f9aaa;text-align:center}
+  .spine-detail{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .spine-detail .card{min-height:380px}
+  .spine-detail h3{font-size:30px;letter-spacing:-.03em;margin-bottom:8px}
+  .spine-detail .question{color:#fff;font-weight:700;margin-bottom:26px}
+  .chain{display:flex;flex-direction:column;gap:7px;margin-top:22px}
+  .chain .step{padding:12px 13px;border:1px solid #2b3440;border-radius:12px;background:#0d1218;font-size:13px}
+  .chain .small-arrow{text-align:center;color:#5d6776;line-height:1}
+  .role-statement{font-size:clamp(34px,5vw,72px);letter-spacing:-.045em;line-height:1.05;margin:24px 0 42px}
+  .role-statement .human-t{color:#fff}.role-statement .leader-t{color:var(--context)}.role-statement .worker-t{color:var(--execution)}
+  .roles{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .role{padding:24px;border:1px solid #2c3541;border-radius:18px;background:#0d1218}
+  .role .r{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#8792a1;margin-bottom:14px}
+  .role ul{padding-left:18px;color:#a8b1be;margin:0}.role li{margin:9px 0}
+  .boundary-list{display:flex;flex-direction:column;gap:10px}
+  .boundary{display:grid;grid-template-columns:220px 1fr 280px;gap:20px;align-items:center;padding:18px 20px;border:1px solid #2a3340;border-radius:15px;background:#0d1218}
+  .boundary .source{font-weight:800}.boundary .effect{color:#a8b1be}.boundary .stop{font-size:13px;color:#d8dde5}
+  .boundary .stop b{color:var(--danger)}
+  details{border:1px solid #2b3440;border-radius:16px;background:#0d1218;padding:0 20px}
+  summary{cursor:pointer;padding:19px 0;font-weight:750;display:flex;justify-content:space-between;gap:20px}
+  summary::-webkit-details-marker{display:none}
+  summary:after{content:"＋";color:#778293}
+  details[open] summary:after{content:"−"}
+  details p{color:#9ba6b5;margin:0 0 20px}
+  .details-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .questions{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .q{padding:26px;border-radius:18px;border:1px solid #2b3440;background:#0d1218}
+  .q span{color:#6f7b8a;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+  .q strong{display:block;font-size:22px;margin-top:12px}
+  .finale{min-height:85vh;display:flex;align-items:center}
+  .finale h2{max-width:1000px}
+  .finale p{max-width:780px;font-size:20px;color:#aab3c0}
+  .finale .signature{margin-top:44px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#657080}
+  .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}
+  .reveal.show{opacity:1;transform:none}
+  .muted{color:var(--muted)}
+  .accent-context{color:var(--context)}.accent-authority{color:var(--authority)}.accent-execution{color:var(--execution)}
+  .divider{height:1px;background:linear-gradient(90deg,transparent,#2a3340,transparent)}
+
+  /* Closed-loop architecture */
+  .arch-loop-wrap{position:relative;margin:8px auto 30px;max-width:1040px;padding:70px 56px 58px;border:1px solid #26303d;border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.018),rgba(255,255,255,.004));overflow:hidden}
+  .arch-loop-human{position:absolute;left:56px;top:16px;display:flex;align-items:center;gap:10px;color:#dfe5ec;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+  .arch-loop-human:after{content:"governs";font-size:10px;font-weight:600;letter-spacing:.10em;color:#707b8a;padding-left:10px;border-left:1px solid #36404d}
+  .loop-grid{display:grid;grid-template-columns:1.45fr 1fr 1fr 1.45fr;grid-template-rows:auto 76px auto;gap:12px 22px;align-items:center;position:relative;z-index:2}
+  .loop-node{position:relative;min-height:140px;border:1px solid #303a47;border-radius:18px;background:#0f151d;padding:18px;display:flex;flex-direction:column;justify-content:center}
+  .loop-node .tag{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#6f7a89;margin-bottom:9px;font-weight:800}
+  .loop-node strong{font-size:19px;line-height:1.15}
+  .loop-node small{display:block;margin-top:8px;color:#8f9aa9;line-height:1.45;font-size:12px}
+  .loop-node.project{grid-column:1;grid-row:1;border-color:rgba(255,255,255,.28);background:linear-gradient(180deg,#17202b,#10161e)}
+  .loop-node.project strong{font-size:24px;letter-spacing:-.025em}.loop-node.state strong{font-size:17px}.loop-node.claim strong,.loop-node.handoff strong,.loop-node.evidence strong{font-size:18px}
+  .loop-node.leader{grid-column:2;grid-row:1;border-color:rgba(125,211,252,.38)}
+  .loop-node.worker{grid-column:3;grid-row:1;border-color:rgba(134,239,172,.36)}
+  .loop-node.execution{grid-column:4;grid-row:1;border-color:rgba(134,239,172,.42)}
+  .loop-node.evidence{grid-column:4;grid-row:3;border-color:rgba(134,239,172,.28)}
+  .loop-node.handoff{grid-column:3;grid-row:3;border-color:rgba(125,211,252,.42)}
+  .loop-node.claim{grid-column:2;grid-row:3;border-color:rgba(251,191,36,.42)}
+  .loop-node.state{grid-column:1;grid-row:3;border-color:rgba(251,191,36,.38)}
+  .loop-middle{grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr;gap:18px;align-items:center}
+  .middle-chip{border:1px solid #293341;border-radius:999px;padding:10px 14px;text-align:center;font-size:11px;font-weight:750;letter-spacing:.05em;background:#0c1118;color:#9aa5b4}
+  .middle-chip.context{border-color:rgba(125,211,252,.30);color:var(--context)}
+  .middle-chip.authority{border-color:rgba(251,191,36,.30);color:var(--authority)}
+  .middle-chip.execution{border-color:rgba(134,239,172,.30);color:var(--execution)}
+  .flow-right:after,.flow-left:after{position:absolute;top:50%;transform:translateY(-50%);font-size:22px;color:#596574;z-index:4}
+  .flow-right:after{content:"→";right:-21px}
+  .flow-left:after{content:"←";left:-21px}
+  .loop-rail-right{position:absolute;right:28px;top:126px;height:292px;width:26px;border-right:1px solid #3b4654;border-bottom:1px solid #3b4654;border-radius:0 0 18px 0;z-index:1}
+  .loop-rail-right:after{content:"↓";position:absolute;right:-8px;bottom:43%;color:#667282;font-size:18px}
+  .loop-rail-left{position:absolute;left:28px;top:126px;height:292px;width:26px;border-left:1px solid #3b4654;border-bottom:1px solid #3b4654;border-radius:0 0 0 18px;z-index:1}
+  .loop-rail-left:after{content:"↑";position:absolute;left:-8px;top:43%;color:#667282;font-size:18px}
+  .loop-return{position:absolute;left:50%;bottom:17px;transform:translateX(-50%);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#657181;background:#0a0e14;padding:0 10px;z-index:3;white-space:nowrap}
+  .loop-legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin:24px 0 0}
+  .loop-legend span{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#8f9aa8}
+  .loop-legend i{width:8px;height:8px;border-radius:999px;display:block;background:#7f8997}
+  .loop-legend .c i{background:var(--context)}.loop-legend .a i{background:var(--authority)}.loop-legend .e i{background:var(--execution)}
+  .spine-row.compact{margin-top:20px}.spine-row.compact .spine{min-height:150px;padding:19px}
+
+
+  .loop-grid{display:flex;flex-direction:column;gap:20px;position:relative;z-index:2}
+  .loop-row{display:flex;gap:22px;align-items:stretch}
+  .loop-row .loop-node{flex:1;min-width:0}
+  .loop-node.project,.loop-node.leader,.loop-node.worker,.loop-node.execution,.loop-node.evidence,.loop-node.handoff,.loop-node.claim,.loop-node.state{grid-column:auto;grid-row:auto}
+  .loop-middle{display:flex;gap:14px;align-items:center;justify-content:center}
+  .loop-middle .middle-chip{flex:1;min-width:0}
+
+  @media(max-width:900px){
+    .nav{display:none}.section-head{grid-template-columns:1fr;gap:18px}.cards-3,.cards-2,.compare,.spine-row,.spine-detail,.roles,.questions{grid-template-columns:1fr}.compare-panel{min-height:auto}.good-grid{grid-template-columns:1fr}.lifecycle{grid-template-columns:1fr}.life-node{min-height:auto}.life-node:not(:last-child):after{content:"↓";right:50%;top:auto;bottom:-19px;transform:translateX(50%)}.boundary{grid-template-columns:1fr;gap:8px}.leader-zone{grid-template-columns:1fr}.leader-zone .connector{width:1px;height:30px;margin:auto}.leader-zone .connector:after{content:"↓";right:-6px;top:5px}.hero{min-height:88vh}section{padding:86px 0}.architecture-shell{padding:24px 18px}.details-grid{grid-template-columns:1fr}
+    .arch-loop-wrap{padding:64px 18px 48px}.arch-loop-human{left:18px}.loop-grid{gap:10px}.loop-row{flex-direction:column;gap:10px}.loop-row-bottom{flex-direction:column-reverse}.loop-node{width:100%;min-height:auto}.loop-node.flow-right:after,.loop-node.flow-left:after{content:"↓";left:50%;right:auto;top:auto;bottom:-22px;transform:translateX(-50%);font-size:18px}.loop-node.execution:after{content:"↓";position:absolute;left:50%;right:auto;top:auto;bottom:-22px;transform:translateX(-50%);font-size:18px;color:#596574;z-index:4}.loop-middle{display:none}.middle-chip{width:100%;border-radius:14px}.loop-rail-left,.loop-rail-right{display:none}.loop-return{position:static;transform:none;display:block;margin:10px 0 0;text-align:center;white-space:normal}.spine-row.compact{grid-template-columns:1fr}
+  }
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal{opacity:1;transform:none;transition:none}}
+</style>
 </head>
 <body>
-  <main>
-    <p>AI GAME WORKBENCH · WINDOWS ALPHA</p>
-    <h1>AI sessions end.<br>Projects should not forget.</h1>
-    <p class="lead">A project workspace where Agent work becomes project truth only after review and acceptance.</p>
-    <div class="actions">
-      <a class="button primary" href="https://github.com/pupet2004/AI-Game-Workbench/releases">Download the Alpha</a>
-      <a class="button" href="https://github.com/pupet2004/AI-Game-Workbench">View on GitHub</a>
+<div class="progress" id="progress"></div>
+<nav class="nav" aria-label="Section navigation">
+  <a href="#problem">Problem</a><a href="#compare">Compare</a><a href="#architecture">Architecture</a><a href="#flow">Flow</a><a href="#certified">Certified</a><a href="#boundaries">Boundaries</a><a href="#open-questions">Open</a><a href="state-of-project-and-field.html">State of the Project →</a>
+</nav>
+
+<header class="hero wrap" id="top">
+  <div class="reveal">
+    <div class="eyebrow">AI Game Workbench · Certified Alpha · September 2026</div>
+    <h1>The project persists.<br><span class="muted">Agents don’t have to.</span></h1>
+    <p class="lead">我们不试图让一个 Agent 永远记住项目。<br><strong>我们让项目自己保存：什么真的发生过，什么被正式接受，下一位 Agent 应该从哪里继续。</strong></p>
+    <div class="hero-rule">Session-Centered → Project-Centered · Execution → Evidence → Review → Accepted State → Continuity</div>
+  </div>
+</header>
+
+<div class="divider"></div>
+
+<section id="problem">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">01 · The problem changed</div><h2>Agent 已经越来越能做事。<br>真正难的是：<span class="muted">项目能不能持续存在？</span></h2></div>
+      <p>当一次执行从“回答一段代码”变成数小时的阅读、修改、测试、恢复与迭代，Session 开始被迫承担它并不擅长承担的角色：项目状态容器。</p>
     </div>
-    <div class="flow">
-      <div class="step"><strong>01 · Work</strong>Agent performs a bounded change.</div>
-      <div class="step"><strong>02 · Evidence</strong>Completion and inspectable results are captured.</div>
-      <div class="step"><strong>03 · Review</strong>You see what changed and why.</div>
-      <div class="step"><strong>04 · Accept</strong>Only your decision changes project truth.</div>
-      <div class="step"><strong>05 · Continue</strong>The next session starts from accepted state.</div>
+    <div class="grid cards-3">
+      <div class="card fail-card reveal"><span class="num">01</span><strong>Session 越来越长</strong><p>历史不断累积，每次重新加载的 token 和注意力成本持续增长。</p></div>
+      <div class="card fail-card reveal"><span class="num">02</span><strong>新 Session 不知道旧 Session 做过什么</strong><p>项目认知依赖聊天窗口，换会话就要重新解释。</p></div>
+      <div class="card fail-card reveal"><span class="num">03</span><strong>Summary 会发生语义漂移</strong><p>“暂时考虑”经过多轮压缩，可能悄悄变成“已经决定”。</p></div>
+      <div class="card fail-card reveal"><span class="num">04</span><strong>Agent 说“完成” ≠ 项目真的完成</strong><p>执行结果、自然语言声明与正式项目状态被混在一起。</p></div>
+      <div class="card fail-card reveal"><span class="num">05</span><strong>运行中断，项目跟着失忆</strong><p>崩溃、限流、重启之后，人重新成为上下文恢复器。</p></div>
+      <div class="card fail-card reveal"><span class="num">06</span><strong>Agent 越多，人反而越像调度器</strong><p>不断切窗口、回忆状态、检查输出、决定下一步，人类注意力成为瓶颈。</p></div>
     </div>
-    <h2>Why it exists</h2>
-    <p>Chat history is not project state. A handoff is not authority. Evidence is not truth. Workbench keeps those boundaries visible while letting Codex, OpenCode, DeepSeek, and other providers participate in the same long-running project.</p>
-    <p class="note">The project persists. Agents do not have to.</p>
-    <h2>Built and tested</h2>
-    <p>Windows x64 distribution, first-use UI, Godot project work, real provider authentication, review decisions, rejection retention, and process restart recovery are documented in the repository validation records.</p>
-    <footer><a href="https://github.com/pupet2004/AI-Game-Workbench/blob/master/docs/why-workbench.md">Why Workbench</a> · <a href="https://github.com/pupet2004/AI-Game-Workbench/tree/master/docs/validation">Validation</a> · <a href="https://github.com/pupet2004/AI-Game-Workbench">Source</a></footer>
-  </main>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">02 · Core contrast</div><h2>Session-Centered<br><span class="muted">vs.</span> Project-Centered</h2></div>
+      <p>Workbench 的关键不是再加一个更聪明的 Agent，而是把长期存在的 Project World 从临时 Session 里拆出来。</p>
+    </div>
+    <div class="compare">
+      <div class="compare-panel reveal">
+        <div class="panel-label"><h3>Session-Centered</h3><span>传统工作方式</span></div>
+        <div class="flow">
+          <div class="node">Human</div><div class="arrow"></div>
+          <div class="node">Agent / Session</div><div class="arrow"></div>
+          <div class="node muted">Conversation + Context</div><div class="arrow"></div>
+          <div class="node muted">Code / Tool Execution</div><div class="arrow"></div>
+          <div class="node muted">Summary / Memory</div><div class="arrow"></div>
+          <div class="node danger">Session Ends</div>
+        </div>
+        <div class="badges">
+          <span class="badge red">Context 在聊天里</span><span class="badge red">State 在聊天里</span><span class="badge red">Decision 在聊天里</span><span class="badge red">换 Agent = 重建认知</span>
+        </div>
+      </div>
+      <div class="compare-panel good reveal">
+        <div class="panel-label"><h3>Project-Centered</h3><span>Workbench</span></div>
+        <div class="flow">
+          <div class="node">Human</div><div class="arrow"></div>
+          <div class="node project">Project World</div>
+        </div>
+        <div class="good-grid">
+          <div class="mini context">Context Spine</div><div class="mini authority">Authority Spine</div><div class="mini execution">Execution Spine</div>
+        </div>
+        <div class="flow">
+          <div class="node">Leader</div><div class="arrow"></div>
+          <div class="node">Worker</div><div class="arrow"></div>
+          <div class="node muted">Codex / OpenCode / Other Provider</div>
+        </div>
+        <div class="badges"><span class="badge">Session 可以轮换</span><span class="badge">Agent 可以更换</span><span class="badge">Provider 可以变化</span><span class="badge">Project World 仍然存在</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">03 · Main architecture</div><h2>一个 Project World，<br>三条互相独立的系统脊柱。</h2></div>
+      <p>过去经常被塞进“聊天记录”里的三个问题，被重新拆开：项目正式相信什么、下一位 Agent 需要知道什么、实际发生了什么。现在这三条 Spine 已经通过真实桌面闭环共同工作。</p>
+    </div>
+    <div class="architecture-shell reveal">
+      <div class="arch-title">Project-centered continuity architecture · closed loop</div>
+      <div class="arch-loop-wrap">
+        <div class="arch-loop-human">HUMAN · Goals / High-impact decisions</div>
+        <div class="loop-rail-left"></div><div class="loop-rail-right"></div>
+        <div class="loop-grid">
+          <div class="loop-row loop-row-top">
+            <div class="loop-node project flow-right"><div class="tag">Persistent world</div><strong>PROJECT WORLD</strong><small>正式状态、项目语义、知识索引与执行来源长期存在。</small></div>
+            <div class="loop-node leader flow-right"><div class="tag">Interpret & coordinate</div><strong>LEADER</strong><small>读取 Project World，把全局语义收紧成局部任务与 Context。</small></div>
+            <div class="loop-node worker flow-right"><div class="tag">Bounded worker</div><strong>WORKER</strong><small>接收 Assignment / Context / Authority Packet，在受控边界中工作。</small></div>
+            <div class="loop-node execution"><div class="tag">Execution spine</div><strong>EXECUTION</strong><small>基于冻结执行前提实际修改、验证、中断或恢复。</small></div>
+          </div>
+          <div class="loop-middle">
+            <div class="middle-chip context">Selected Context → next round</div>
+            <div class="middle-chip authority">Authority governs state change</div>
+            <div class="middle-chip context">Context carries meaning, not power</div>
+            <div class="middle-chip execution">Execution leaves evidence</div>
+          </div>
+          <div class="loop-row loop-row-bottom">
+            <div class="loop-node state"><div class="tag">Authority + Context</div><strong>ACCEPTED STATE<br>+ SELECTED CONTEXT</strong><small>正式世界更新；下一轮只把相关 Context 重新交给 Leader。</small></div>
+            <div class="loop-node claim flow-left"><div class="tag">Authority spine</div><strong>CLAIM → REVIEW → DECISION</strong><small>Agent 可以提出变化；Preview / Confirm 让用户看到将要提交的决定，只有 Authority Decision 能改变正式状态。</small></div>
+            <div class="loop-node handoff flow-left"><div class="tag">Context spine</div><strong>HANDOFF</strong><small>压缩真正需要向后传递的结果、问题、建议与来源。</small></div>
+            <div class="loop-node evidence flow-left"><div class="tag">Execution spine</div><strong>COMPLETION / EVIDENCE</strong><small>保存实际结果、验证与执行来源；完成本身仍不等于项目接受。</small></div>
+          </div>
+        </div>
+        <div class="loop-return">Project persists · the next execution starts from the updated world</div>
+      </div>
+      <div class="loop-legend"><span class="c"><i></i>Context · 下一位 Agent 需要知道什么</span><span class="a"><i></i>Authority · 项目正式相信什么</span><span class="e"><i></i>Execution · 实际发生了什么</span></div>
+      <div class="spine-row compact">
+        <div class="spine context"><div class="spine-name">Context Spine</div><strong>压缩与选择信息</strong><p>Handoff / Summary / Library / Selected Context 可以组织认知，但不自动定义 Truth。</p></div>
+        <div class="spine authority"><div class="spine-name">Authority Spine</div><strong>控制正式状态变化</strong><p>Claim → Decision → Authority History → Accepted Project State。</p></div>
+        <div class="spine execution"><div class="spine-name">Execution Spine</div><strong>保存实际执行语义</strong><p>BaseCommit、Workspace、State Machine、Evidence 与 Recovery 让结果可解释、可恢复。</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="flow">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">04 · One certified cycle</div><h2>一次 Agent 工作，<br>如何真正成为项目的一部分。</h2></div>
+      <p>当前主闭环已从架构图进入真实产品：Worker 完成只会产生 Completion / Evidence / Claim / Handoff；用户在 Review 中 Preview → Confirm，Authority 决定是否写入 AcceptedProjectState。</p>
+    </div>
+    <div class="lifecycle reveal">
+      <div class="life-node execution"><span>01 · Work</span><strong>Worker Execution</strong></div>
+      <div class="life-node execution"><span>02 · Result</span><strong>Completion + Evidence</strong></div>
+      <div class="life-node context"><span>03 · Proposal</span><strong>Claim + Handoff</strong></div>
+      <div class="life-node authority"><span>04 · Review</span><strong>Preview → Confirm</strong></div>
+      <div class="life-node authority"><span>05 · Authority</span><strong>Accept / Revise / Reject</strong></div>
+      <div class="life-node authority"><span>06 · Truth</span><strong>Accepted Project State</strong></div>
+      <div class="life-node context"><span>07 · Continuity</span><strong>Summary + Next Context</strong></div>
+      <div class="life-node execution"><span>08 · Resume</span><strong>Restart → Fresh Leader</strong></div>
+    </div>
+    <div class="life-caption reveal">Worker → Completion / Evidence → Claim / Handoff → Review → Authority Decision → AcceptedProjectState → Summary / Context → Restart / Next Execution <strong style="color:#fff">↺ Project World</strong></div>
+  </div>
+</section>
+
+<section id="spines">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">05 · Three different questions</div><h2>三条 Spine 不是三个功能。<br><span class="muted">它们解决三个不同的问题。</span></h2></div>
+      <p>Handoff、Library、Authority、Execution Record 都会交叉影响多个痛点，所以 Workbench 更像基础设施，而不是功能集合。</p>
+    </div>
+    <div class="spine-detail">
+      <div class="card reveal" style="border-color:rgba(125,211,252,.35)">
+        <h3 class="accent-context">Context</h3><div class="question">下一位 Agent 需要知道什么？</div><p>目标不是“记住全部”，而是提高信息密度，让长期项目拥有比 Session 更长的记忆，同时让每次执行读取更少的历史。</p>
+        <div class="chain"><div class="step">Session / Source</div><div class="small-arrow">↓</div><div class="step">Handoff</div><div class="small-arrow">↓</div><div class="step">Summary</div><div class="small-arrow">↓</div><div class="step">Library</div><div class="small-arrow">↓</div><div class="step">Selected Context</div></div>
+      </div>
+      <div class="card reveal" style="border-color:rgba(251,191,36,.35)">
+        <h3 class="accent-authority">Authority</h3><div class="question">项目现在正式相信什么？</div><p>Agent 可以表达自己认为发生了什么，但这种表达不能因为被写进 Summary 或 Handoff，就自动获得项目最高权威。</p>
+        <div class="chain"><div class="step">Claim</div><div class="small-arrow">↓</div><div class="step">Authority Decision</div><div class="small-arrow">↓</div><div class="step">Authority History</div><div class="small-arrow">↓</div><div class="step">Accepted Project State</div></div>
+      </div>
+      <div class="card reveal" style="border-color:rgba(134,239,172,.35)">
+        <h3 class="accent-execution">Execution</h3><div class="question">实际上发生了什么？</div><p>最终回答不够。Agent 开始采取行动后，工作本身需要边界、状态、执行前提、证据、恢复和审计。</p>
+        <div class="chain"><div class="step">Leader</div><div class="small-arrow">↓</div><div class="step">Worker / Task Revision</div><div class="small-arrow">↓</div><div class="step">Workspace + BaseCommit</div><div class="small-arrow">↓</div><div class="step">Worker Execution</div><div class="small-arrow">↓</div><div class="step">Agent Session</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="roles">
+  <div class="wrap">
+    <div class="kicker reveal">06 · Human attention is scarce</div>
+    <div class="role-statement reveal"><span class="human-t">Human governs.</span><br><span class="leader-t">Leader coordinates.</span><br><span class="worker-t">Worker executes.</span></div>
+    <div class="roles">
+      <div class="role reveal"><div class="r">Human</div><h3>只处理真正需要人的地方</h3><ul><li>长期目标与优先级</li><li>高风险状态变化</li><li>Authority 越界与冲突</li><li>目标改变与不可逆决策</li></ul></div>
+      <div class="role reveal"><div class="r">Leader</div><h3>全局语义 → 下一步工作</h3><ul><li>重启后读取 Accepted Project State</li><li>提出下一轮工作与 Context</li><li>创建或恢复 successor Assignment</li><li>按用户确认与 Policy 进入 Worker</li></ul></div>
+      <div class="role reveal"><div class="r">Worker</div><h3>在收紧边界里执行</h3><ul><li>接受 Assignment / Revision</li><li>在冻结的 BaseCommit / Workspace 上工作</li><li>返回 Completion、Evidence、Claim、Handoff</li><li>完成后进入 Review，而不是直接改写 Project Truth</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="certified">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">07 · Certified in the product</div><h2>现在它不只是架构。<br><span class="muted">主闭环已经在真实桌面上连续成立。</span></h2></div>
+      <p>2026-09-15 基线：Kernel / Acceptance Spine / Product Loop / Overview / Work / Review / First-use UI 已分别封存；真实 Provider、Godot、正常退出与 Provider-owned authentication 都有独立 gate。</p>
+    </div>
+    <div class="grid cards-3">
+      <div class="card fail-card reveal"><span class="num">01 · Acceptance Spine</span><strong>Completion ≠ Acceptance</strong><p>真实 Worker 完成后生成 Completion / Evidence / Claim / Handoff；Accept 前 AcceptedProjectState 保持不变。</p></div>
+      <div class="card fail-card reveal"><span class="num">02 · Three rounds</span><strong>+2 → Reset → High Score</strong><p>首次使用 UI 三轮闭环通过；每轮 Review → Accept 后正常退出、重开，再由 fresh Leader 继续。</p></div>
+      <div class="card fail-card reveal"><span class="num">03 · Product Shell</span><strong>Overview / Work / Review</strong><p>用户不需要理解内部 Assignment、Claim、Attempt 等对象，也能看懂当前状态、执行与待决事项。</p></div>
+      <div class="card fail-card reveal"><span class="num">04 · Real Providers</span><strong>Codex + OpenCode / DeepSeek</strong><p>真实 Codex 路径与 OpenCode + deepseek/deepseek-v4-flash 路径均已跑通；Provider 可以更换，Project World 不随之重建。</p></div>
+      <div class="card fail-card reveal"><span class="num">05 · Recovery</span><strong>Normal Exit × 6</strong><p>三轮中每轮 Accept 后正常托盘退出并重开；六次正常退出记录均成功，Accepted State 与 Leader continuity 保持一致。</p></div>
+      <div class="card fail-card reveal"><span class="num">06 · Distribution</span><strong>Windows Alpha Surface</strong><p>Self-contained ZIP、per-user installer、Environment Readiness 与 Provider-owned authentication 已实现；公开 Alpha 正在收尾。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="boundaries">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">08 · Defense in depth</div><h2>错误可以发生。<br><span class="muted">但不应该自动跨层传播。</span></h2></div>
+      <p>Workbench 的工程价值，不是保证 Agent 永远正确，而是让一次局部错误尽量停留在它发生的层级，并保留重新判断与恢复的路径。</p>
+    </div>
+    <div class="boundary-list">
+      <div class="boundary reveal"><div class="source">Worker 判断错了</div><div class="effect">它仍然可以产生 Claim 与 Handoff。</div><div class="stop"><b>不会自动变成 Accepted State。</b></div></div>
+      <div class="boundary reveal"><div class="source">Handoff 写错了</div><div class="effect">错误可以被继续当作 Context 读取。</div><div class="stop"><b>Context 不拥有 Authority。</b></div></div>
+      <div class="boundary reveal"><div class="source">Leader 读到旧状态</div><div class="effect">它可能基于旧 Project World 做判断。</div><div class="stop"><b>CAS 阻止旧认知静默覆盖新世界。</b></div></div>
+      <div class="boundary reveal"><div class="source">Worker 崩溃了</div><div class="effect">Runtime 中断，但项目已经留下执行状态。</div><div class="stop"><b>Runtime Failure ≠ Semantic Reset。</b></div></div>
+      <div class="boundary reveal"><div class="source">Library 过期了</div><div class="effect">Derived knowledge 可能不再反映当前正式状态。</div><div class="stop"><b>Library 不能反向修改 Canonical State。</b></div></div>
+      <div class="boundary reveal"><div class="source">Provider 换了</div><div class="effect">执行 Agent、模型与工具链发生变化。</div><div class="stop"><b>Project World 不需要跟着重建。</b></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="engineering">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">09 · Engineering muscle</div><h2>真正让架构跑起来的，<br>是这些可验证边界。</h2></div>
+      <p>Kernel 已冻结。当前实现把身份、执行前提、Completion、Authority、恢复、产品壳与 Provider 生命周期分开，并用真实桌面 gate 防止它们重新混回一条“聊天状态”。</p>
+    </div>
+    <div class="details-grid">
+      <details class="reveal"><summary>Canonical Acceptance Spine</summary><p>Completion → Evidence / Claim / Handoff → Review → Authority Decision → AcceptedProjectState。Completion、Evidence、Summary 都不能绕过 Authority 改变项目真相。</p></details>
+      <details class="reveal"><summary>BaseCommit + Execution Preconditions</summary><p>Worker 启动时冻结关键前提，使验证结果明确绑定到代码版本、任务修订与执行配置；历史完成工作不会重新冒充当前工作。</p></details>
+      <details class="reveal"><summary>Immutable Authority History + Projection</summary><p>正式状态变化以不可变 Authority 历史存在；AcceptedProjectState 从历史重建，因此“现在是什么”和“为什么变成这样”可以同时回答。</p></details>
+      <details class="reveal"><summary>Crash / Restart Recovery</summary><p>恢复的是 Project State、Worker execution、pending review、successor routing 与上下文，而不是复活原 Agent 的“心理状态”。真实认证包含正常托盘退出与进程重开。</p></details>
+      <details class="reveal"><summary>Product Shell</summary><p>Overview / Work / Review / World / History / Settings 已收束为用户语言：项目现在是什么、Agent 正在做什么、有什么待决定、项目为什么变成这样。</p></details>
+      <details class="reveal"><summary>Verification Classification</summary><p>路径与交付物范围可机器分类；无法可靠机器判断的自由文本 acceptance criteria 保留 NotVerifiable，不用“全绿”掩盖能力边界。</p></details>
+      <details class="reveal"><summary>Provider-owned Authentication</summary><p>Workbench 只发起 OpenCode 自己的登录流程，不读取或保存 credential；登录完成后必须重新 runtime probe，只有真实可用才进入 Ready。</p></details>
+      <details class="reveal"><summary>Git / Distribution Boundary</summary><p>Git 负责文件历史；Workbench 负责项目语义与治理。Windows self-contained 包采用 per-user 安装，程序文件与 Project World 数据分离。</p></details>
+    </div>
+  </div>
+</section>
+
+<section id="open-questions">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div><div class="kicker">10 · What remains open</div><h2>内部主闭环已经成立。<br><span class="muted">下一步是公开发布与外部验证。</span></h2></div>
+      <p>Workbench 现在可以诚实地作为经过真实工程认证的 Alpha 发布，但它仍不是长期 Agent 协作的终局答案。剩余问题更多是边界、分发与外部价值，而不是再发明一个 Kernel 概念。</p>
+    </div>
+    <div class="questions">
+      <div class="q reveal"><span>Public Release</span><strong>完成仓库历史清理、发行材料与公开 Alpha 发布。</strong></div>
+      <div class="q reveal"><span>Clean Machine</span><strong>安装包与首次 Provider 登录尚未在陌生 Windows 环境完成独立认证。</strong></div>
+      <div class="q reveal"><span>Verification Boundary</span><strong>自由文本 acceptance criteria 何时值得机器判断，何时应保留 NotVerifiable？</strong></div>
+      <div class="q reveal"><span>External Value</span><strong>真实用户是否愿意为“Accepted Project State”引入这一层？净收益从什么项目规模开始出现？</strong></div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<section class="finale">
+  <div class="wrap reveal">
+    <div class="kicker">AI Game Workbench · Certified Alpha</div>
+    <h2>会话会结束。Agent 会更换。<br><span class="muted">项目必须知道自己真正接受过什么。</span></h2>
+    <p>Codex 可以结束。OpenCode 可以替换它。Session 可以轮换。模型可以升级。Worker 可以失败。应用可以退出再启动。<br><br><strong style="color:#fff">但 Accepted Project State 不需要跟着消失。</strong></p>
+    <div class="signature">Project Continuity & Acceptance Layer · Certified Alpha · September 2026</div>
+    <div class="signature"><a href="https://github.com/pupet2004/AI-Game-Workbench">Repository</a> · <a href="https://github.com/pupet2004/AI-Game-Workbench/releases/tag/v0.2.0-alpha">Download Alpha</a> · <a href="https://github.com/pupet2004/AI-Game-Workbench/blob/master/LICENSE">Apache-2.0</a></div>
+  </div>
+</section>
+
+<script>
+  const progress = document.getElementById('progress');
+  const navLinks = [...document.querySelectorAll('.nav a')];
+  const sections = navLinks.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  const update = () => {
+    const h = document.documentElement.scrollHeight - innerHeight;
+    const p = h > 0 ? scrollY / h : 0;
+    progress.style.width = `${Math.max(0,Math.min(1,p))*100}%`;
+    let active = sections[0];
+    for(const s of sections){ if(s.getBoundingClientRect().top < innerHeight*.42) active = s; }
+    navLinks.forEach(a=>a.classList.toggle('active', a.getAttribute('href') === `#${active?.id}`));
+  };
+  addEventListener('scroll', update, {passive:true}); update();
+  const io = new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('show')}),{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>
 </body>
 </html>
