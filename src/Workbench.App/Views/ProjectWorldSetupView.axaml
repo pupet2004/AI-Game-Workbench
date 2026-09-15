@@ -12,16 +12,24 @@
                 <TextBlock Text="{Binding [FirstRun.Project]}" FontWeight="SemiBold" />
                 <TextBlock Grid.Column="1" Text="{Binding ProjectDetectionText}" TextWrapping="Wrap" />
                 <TextBlock Grid.Row="1" Text="Git" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding GitStatusText}" TextWrapping="Wrap" />
+                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="3">
+                    <TextBlock Text="{Binding GitReadinessStatusText}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding GitStatusText}" TextWrapping="Wrap" />
+                </StackPanel>
                 <TextBlock Grid.Row="2" Text="{Binding [FirstRun.Database]}" FontWeight="SemiBold" />
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DatabaseStatusText}" TextWrapping="Wrap" />
+                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="3">
+                    <TextBlock Text="{Binding DatabaseReadinessStatusText}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding DatabaseStatusText}" TextWrapping="Wrap" />
+                </StackPanel>
                 <TextBlock Grid.Row="3" Text="Godot" IsVisible="{Binding IsGodotProject}" FontWeight="SemiBold" />
                 <StackPanel Grid.Row="3" Grid.Column="1" IsVisible="{Binding IsGodotProject}" Spacing="4">
+                    <TextBlock Text="{Binding GodotReadinessStatusText}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding GodotStatusText}" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding GodotDetailText}" TextWrapping="Wrap" MaxHeight="70" />
                 </StackPanel>
                 <TextBlock Grid.Row="4" Text="Agent" FontWeight="SemiBold" />
                 <StackPanel Grid.Row="4" Grid.Column="1" Spacing="6">
+                    <TextBlock Text="{Binding AgentReadinessStatusText}" FontWeight="SemiBold" />
                     <TextBlock Text="{Binding AgentStatusText}" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding AgentDetailText}" TextWrapping="Wrap" MaxHeight="90" />
                     <WrapPanel>

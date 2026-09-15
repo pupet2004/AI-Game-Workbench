@@ -21,6 +21,7 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
     private bool _databaseReady;
     private bool _checksCompleted;
     private string? _godotExecutablePath;
+    private EnvironmentReadinessSnapshot? _readiness;
 
     public ProjectWorldSetupViewModel(
         AppServices services,
@@ -99,6 +100,11 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
         }
     }
     public string ProjectStateText => LocalizationService.Current["FirstRun.NoAcceptedState"];
+    public EnvironmentReadinessSnapshot? Readiness => _readiness;
+    public string GitReadinessStatusText => FormatReadiness(_readiness?.Git.Status);
+    public string GodotReadinessStatusText => FormatReadiness(_readiness?.Godot.Status);
+    public string DatabaseReadinessStatusText => FormatReadiness(_readiness?.WorkbenchData.Status);
+    public string AgentReadinessStatusText => FormatReadiness(_readiness?.Agent.Status);
     public string PrimaryActionText =>
         !IsGovernanceEstablished
             ? LocalizationService.Current["FirstRun.StartProject"]
@@ -299,6 +305,7 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
         _availableModels = [];
         _databaseReady = false;
         _godotExecutablePath = null;
+        _readiness = null;
         _checksCompleted = false;
         try
         {
@@ -312,6 +319,13 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
             await _services.RetryRuntimeAsync(timeout.Token);
             var resources = await _services.RuntimeRegistry.GetWorkerResourcesAsync(timeout.Token);
             _availableModels = resources.Select(resource => $"{resource.DisplayLabel} · {resource.ModelProfileId}").ToArray();
+            _readiness = new EnvironmentReadinessService().Evaluate(
+                _openResult.Git,
+                _databaseReady,
+                IsGodotProject,
+                _godotExecutablePath,
+                resources,
+                _services.RuntimeUnavailableDetail);
         }
         catch (Exception)
         {
@@ -330,8 +344,26 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsGodotProject));
             OnPropertyChanged(nameof(GodotStatusText));
             OnPropertyChanged(nameof(GodotDetailText));
+            OnPropertyChanged(nameof(Readiness));
+            OnPropertyChanged(nameof(GitReadinessStatusText));
+            OnPropertyChanged(nameof(GodotReadinessStatusText));
+            OnPropertyChanged(nameof(DatabaseReadinessStatusText));
+            OnPropertyChanged(nameof(AgentReadinessStatusText));
         }
     }
+
+    private static string FormatReadiness(EnvironmentReadinessStatus? status) =>
+        status switch
+        {
+            EnvironmentReadinessStatus.Ready => LocalizationService.Current["Readiness.Ready"],
+            EnvironmentReadinessStatus.NotInstalled => LocalizationService.Current["Readiness.NotInstalled"],
+            EnvironmentReadinessStatus.InstalledButNotConfigured => LocalizationService.Current["Readiness.InstalledButNotConfigured"],
+            EnvironmentReadinessStatus.AuthenticationRequired => LocalizationService.Current["Readiness.AuthenticationRequired"],
+            EnvironmentReadinessStatus.Unavailable => LocalizationService.Current["Readiness.Unavailable"],
+            EnvironmentReadinessStatus.UnsupportedVersion => LocalizationService.Current["Readiness.UnsupportedVersion"],
+            EnvironmentReadinessStatus.NotApplicable => LocalizationService.Current["Readiness.NotApplicable"],
+            _ => LocalizationService.Current["Readiness.NotChecked"]
+        };
 
     private ProjectWorldInitializationRequest BuildRequest() => new(
         new ProjectRef(_openResult.Project.Id),
