@@ -49,6 +49,7 @@ public sealed class ProjectReviewViewModelTests
             context.Services,
             result,
             () => Task.CompletedTask,
+            () => Task.CompletedTask,
             handoffRef =>
             {
                 opened = handoffRef;

@@ -361,7 +361,8 @@ public sealed class AppServices : IAsyncDisposable
             libraryEvolutionRepository);
         var projectWorldEntryStatus = new ProjectWorldEntryStatusService(
             b1ProjectGovernance,
-            b1Projections);
+            b1Projections,
+            projectRepository);
         var userPrincipalProvider = new LocalUserPrincipalProvider();
         var projectWorldInitialization = new ProjectWorldInitializationService(
             b1AuthorityRepository,

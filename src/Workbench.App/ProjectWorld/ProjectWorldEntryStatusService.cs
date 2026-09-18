@@ -3,18 +3,22 @@ using Workbench.App.Services;
 using Workbench.Core.Continuity;
 using Workbench.Core.Projects;
 using Workbench.Storage.Continuity;
+using Workbench.Storage.Projects;
 using CoreProject = Workbench.Core.Projects.Project;
 
 namespace Workbench.App.ProjectWorld;
 
 public sealed class ProjectWorldEntryStatusService(
     B1ProjectGovernanceRepository governanceRepository,
-    B1ProjectionService projectionService)
+    B1ProjectionService projectionService,
+    ProjectRepository projectRepository)
 {
     private readonly B1ProjectGovernanceRepository _governanceRepository =
         governanceRepository ?? throw new ArgumentNullException(nameof(governanceRepository));
     private readonly B1ProjectionService _projectionService =
         projectionService ?? throw new ArgumentNullException(nameof(projectionService));
+    private readonly ProjectRepository _projectRepository =
+        projectRepository ?? throw new ArgumentNullException(nameof(projectRepository));
 
     public async Task<ProjectWorldEntryStatus> GetStatusAsync(
         CoreProject project,
@@ -25,6 +29,12 @@ public sealed class ProjectWorldEntryStatusService(
         if (!Directory.Exists(project.RootPath))
         {
             return new(projectRef, ProjectWorldEntryKind.PathUnavailable, false, LocalizationService.Current["Status.PathUnavailable"]);
+        }
+
+        if (await _projectRepository.IsSetupRequiredAsync(project.Id, cancellationToken))
+        {
+            return new(projectRef, ProjectWorldEntryKind.ProjectWorldReconfirmationRequired,
+                false, LocalizationService.Current["Status.SetupIncomplete"]);
         }
 
         var facts = await _governanceRepository.GetEntryFactsAsync(projectRef, cancellationToken);

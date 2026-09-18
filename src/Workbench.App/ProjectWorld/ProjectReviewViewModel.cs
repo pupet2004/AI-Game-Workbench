@@ -13,17 +13,20 @@ public sealed partial class ProjectReviewViewModel : ViewModelBase
     private readonly AppServices _services;
     private readonly ProjectOpenResult _result;
     private readonly Func<Task> _backToOverview;
+    private readonly Func<Task> _backToWorkspace;
     private readonly Func<HandoffRef, Task> _openGuidedDecision;
 
     public ProjectReviewViewModel(
         AppServices services,
         ProjectOpenResult result,
         Func<Task> backToOverview,
+        Func<Task> backToWorkspace,
         Func<HandoffRef, Task> openGuidedDecision)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _result = result ?? throw new ArgumentNullException(nameof(result));
         _backToOverview = backToOverview ?? throw new ArgumentNullException(nameof(backToOverview));
+        _backToWorkspace = backToWorkspace ?? throw new ArgumentNullException(nameof(backToWorkspace));
         _openGuidedDecision = openGuidedDecision ?? throw new ArgumentNullException(nameof(openGuidedDecision));
     }
 
@@ -101,6 +104,9 @@ public sealed partial class ProjectReviewViewModel : ViewModelBase
 
     [RelayCommand]
     private Task BackAsync() => _backToOverview();
+
+    [RelayCommand]
+    private Task BackToWorkspaceAsync() => _backToWorkspace();
 
     [RelayCommand]
     private Task ReviewHandoffAsync(HandoffRef handoffRef) => _openGuidedDecision(handoffRef);

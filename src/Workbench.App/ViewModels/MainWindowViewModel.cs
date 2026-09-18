@@ -182,7 +182,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         // Project Home adoption/create confirmation flow is introduced. B1
         // initialization is entered only for an adopted Legacy project or an
         // already-governed empty Project World.
-        if (entryStatus.Kind is ProjectWorldEntryKind.LegacySetupRequired or ProjectWorldEntryKind.ProjectWorldSetupIncomplete)
+        if (entryStatus.Kind is ProjectWorldEntryKind.LegacySetupRequired
+            or ProjectWorldEntryKind.LegacyWorkspaceReady
+            or ProjectWorldEntryKind.ProjectWorldSetupIncomplete
+            or ProjectWorldEntryKind.ProjectWorldReconfirmationRequired)
         {
             await ShowProjectSetupAsync(result, entryStatus);
             return;
@@ -252,10 +255,10 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
              authorityRepository: _services.B1AuthorityRepository,
              workerExecutionBridge: _services.B1WorkerExecutionBridge,
              canonicalWorkerCompletions: _services.CanonicalWorkerCompletions,
-             openGuidedDecision: _ => ShowProjectReviewAsync(result),
+             openGuidedDecision: _ => ShowProjectReviewAsync(result, ReturnToWorkspaceAsync),
              openHostedSurface: OpenHostedWorkerSurfaceAsync,
              openProjectOverview: () => ShowProjectOverviewAsync(result),
-             openProjectReview: () => ShowProjectReviewAsync(result),
+             openProjectReview: () => ShowProjectReviewAsync(result, ReturnToWorkspaceAsync),
              openSettings: () => ShowSettingsAsync(ReturnToWorkspaceAsync, result.Project.Id),
              openProjectHistory: () => ShowProjectHistoryAsync(result, ReturnToWorkspaceAsync),
              acceptAuthorityConfirmation: AcceptAuthorityConfirmationAsync);
@@ -277,6 +280,13 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task ShowProjectOverviewAsync(ProjectOpenResult result)
     {
+        var entryStatus = await _services.ProjectWorldEntryStatus.GetStatusAsync(result.Project);
+        if (entryStatus.Kind != ProjectWorldEntryKind.ProjectWorldReady)
+        {
+            await ShowProjectSetupAsync(result, entryStatus);
+            return;
+        }
+
         ProjectWorldExplorerViewModel? explorer = null;
         async Task ReturnToProjectOverviewAsync()
         {
@@ -311,16 +321,19 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
         await history.InitializeAsync();
     }
 
-    private async Task ShowProjectReviewAsync(ProjectOpenResult result)
+    private async Task ShowProjectReviewAsync(
+        ProjectOpenResult result,
+        Func<Task>? backToWorkspace = null)
     {
         var review = new ProjectReviewViewModel(
             _services,
             result,
             () => ShowProjectOverviewAsync(result),
+            backToWorkspace ?? (() => ShowWorkspace(result)),
             handoffRef => ShowGuidedDecisionAsync(
                 result,
                 handoffRef,
-                () => ShowProjectReviewAsync(result)));
+                () => ShowProjectReviewAsync(result, backToWorkspace)));
         CurrentPage = review;
         await review.InitializeAsync();
     }

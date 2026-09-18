@@ -94,7 +94,8 @@ public sealed class HomeViewModelTests
         await home.ConfirmProjectRemovalCommand.ExecuteAsync(null);
 
         Assert.Empty(home.RecentProjects);
-        Assert.Null(await context.Services.ProjectRepository.GetByIdAsync(opened.Project.Id));
+        Assert.NotNull(await context.Services.ProjectRepository.GetByIdAsync(opened.Project.Id));
+        Assert.Empty(await context.Services.ProjectRepository.GetRecentAsync(10));
     }
 
     [Fact]
@@ -158,7 +159,8 @@ public sealed class HomeViewModelTests
 
         Assert.Empty(home.RecentProjects);
         Assert.True(Directory.Exists(folder.Path));
-        Assert.Null(await context.Services.ProjectRepository.GetByIdAsync(item.Project.Id));
+        Assert.NotNull(await context.Services.ProjectRepository.GetByIdAsync(item.Project.Id));
+        Assert.Empty(await context.Services.ProjectRepository.GetRecentAsync(10));
     }
 
     [Fact]

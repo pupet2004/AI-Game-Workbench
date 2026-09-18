@@ -6,6 +6,7 @@ public enum ProjectWorldEntryKind
 {
     ProjectWorldReady,
     ProjectWorldSetupIncomplete,
+    ProjectWorldReconfirmationRequired,
     BootstrapRecoveryRequired,
     LegacySetupRequired,
     LegacyWorkspaceReady,

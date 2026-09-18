@@ -22,6 +22,7 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
     private bool _checksCompleted;
     private string? _godotExecutablePath;
     private EnvironmentReadinessSnapshot? _readiness;
+    private bool IsReconfirmation => Status.Kind == ProjectWorldEntryKind.ProjectWorldReconfirmationRequired;
 
     public ProjectWorldSetupViewModel(
         AppServices services,
@@ -164,7 +165,9 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
 
     public bool CanEstablishGovernance => !IsBusy && !IsGovernanceEstablished &&
         !string.IsNullOrWhiteSpace(UserPrincipal) &&
-        Status.Kind is ProjectWorldEntryKind.UnmanagedProjectUnavailable or ProjectWorldEntryKind.LegacySetupRequired;
+        Status.Kind is ProjectWorldEntryKind.UnmanagedProjectUnavailable
+            or ProjectWorldEntryKind.LegacySetupRequired
+            or ProjectWorldEntryKind.LegacyWorkspaceReady;
 
     partial void OnUserPrincipalChanged(string value) => InvalidatePreview();
     partial void OnSelectedRoleKindChanged(RoleKind value) => InvalidatePreview();
@@ -194,7 +197,7 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
         {
             var projectRef = new ProjectRef(_openResult.Project.Id);
             var principal = new UserPrincipalRef(UserPrincipal);
-            if (Status.Kind == ProjectWorldEntryKind.LegacySetupRequired)
+            if (Status.Kind is ProjectWorldEntryKind.LegacySetupRequired or ProjectWorldEntryKind.LegacyWorkspaceReady)
             {
                 await _services.B1ProjectGovernance.AdoptLegacyProjectAsync(
                     projectRef, principal, _services.TimeProvider.GetUtcNow());
@@ -259,7 +262,15 @@ public sealed partial class ProjectWorldSetupViewModel : ViewModelBase
         ErrorMessage = null;
         try
         {
-            await _services.ProjectWorldInitialization.CommitAsync(_previewRequest!);
+            if (IsReconfirmation)
+            {
+                await _services.ProjectRepository.CompleteSetupAsync(_openResult.Project.Id);
+            }
+            else
+            {
+                await _services.ProjectWorldInitialization.CommitAsync(_previewRequest!);
+                await _services.ProjectRepository.CompleteSetupAsync(_openResult.Project.Id);
+            }
             InvalidatePreview();
             await _openWorkspace(_openResult);
         }

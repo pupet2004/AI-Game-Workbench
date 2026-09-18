@@ -138,7 +138,7 @@ public sealed class ProjectRepositoryTests
     }
 
     [Fact]
-    public async Task Remove_project_removes_project()
+    public async Task Remove_project_hides_project_and_marks_setup_required()
     {
         await using var temporary = new TemporaryDatabase();
         var repository = await CreateRepositoryAsync(temporary.DatabasePath);
@@ -147,7 +147,16 @@ public sealed class ProjectRepositoryTests
 
         await repository.RemoveAsync(project.Id);
 
-        Assert.Null(await repository.GetByIdAsync(project.Id));
+        Assert.NotNull(await repository.GetByIdAsync(project.Id));
+        Assert.Empty(await repository.GetRecentAsync(10));
+        Assert.True(await repository.IsSetupRequiredAsync(project.Id));
+
+        await repository.UpsertAsync(project);
+        Assert.Single(await repository.GetRecentAsync(10));
+        Assert.True(await repository.IsSetupRequiredAsync(project.Id));
+
+        await repository.CompleteSetupAsync(project.Id);
+        Assert.False(await repository.IsSetupRequiredAsync(project.Id));
     }
 
     private static async Task<ProjectRepository> CreateRepositoryAsync(string databasePath)

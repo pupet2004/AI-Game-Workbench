@@ -44,8 +44,6 @@
             <TextBlock Text="{Binding [ProjectSetup.LegacyDescription]}" IsVisible="{Binding Status.HasLegacyContext}" TextWrapping="Wrap" />
             <TextBlock Text="{Binding [ProjectSetup.Step1Description]}" IsVisible="{Binding !IsGovernanceEstablished}" TextWrapping="Wrap" />
             <StackPanel Spacing="8" IsVisible="{Binding IsGovernanceEstablished}" IsEnabled="{Binding !IsBusy}">
-                <TextBlock Text="{Binding [ProjectSetup.FirstAssignment]}" FontWeight="SemiBold" />
-                <TextBox Text="{Binding InitialAssignment}" AutomationProperties.AutomationId="FirstRunWork" />
                 <TextBlock Text="{Binding [ProjectSetup.Expected]}" />
                 <TextBox Text="{Binding ResponsibilityExpectedOutcome}" />
                 <Expander Header="{Binding [FirstRun.Details]}">

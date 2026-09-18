@@ -243,7 +243,8 @@ public sealed class ProjectWorldEntryStatusServiceTests
                 governance,
                 new ProjectWorldEntryStatusService(
                     governance,
-                    new B1ProjectionService(new B1AuthorityRepository(database))));
+                    new B1ProjectionService(new B1AuthorityRepository(database)),
+                    new ProjectRepository(database)));
         }
 
         public CoreProject CreateProject(string name)

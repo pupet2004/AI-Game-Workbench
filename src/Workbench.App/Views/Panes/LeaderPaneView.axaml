@@ -103,6 +103,24 @@
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="8">
+                        <Border IsVisible="{Binding !HasConversation}"
+                                Padding="14"
+                                Background="#101828"
+                                CornerRadius="6">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Leader 已准备接管这个项目"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FFFFFF" />
+                                <TextBlock Text="先进行只读项目审计并汇报现状，不会自动修改文件或创建任务。"
+                                           TextWrapping="Wrap"
+                                           Foreground="#B9C5D6" />
+                                <Button Content="开始项目审计"
+                                        Command="{Binding StartProjectIntakeCommand}"
+                                        IsEnabled="{Binding IsRuntimeAvailable}"
+                                        HorizontalAlignment="Left" />
+                            </StackPanel>
+                        </Border>
                         <StackPanel IsVisible="{Binding HasHistory}" Spacing="8">
                             <Button Content="{Binding [Leader.LoadEarlier]}"
                                     Command="{Binding History.LoadEarlierCommand}"

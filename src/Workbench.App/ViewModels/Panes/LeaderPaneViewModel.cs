@@ -185,6 +185,8 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
     public LeaderEpochHistoryViewModel? History { get; }
 
     public bool HasHistory => History is not null;
+    public bool HasConversation => Messages.Count > 0 || Session is not null;
+    public string ProjectIntakePrompt => LocalizationService.Current["Leader.ProjectIntakePrompt"];
 
     [ObservableProperty]
     public partial int InitialAnchorRequestVersion { get; set; }
@@ -551,6 +553,16 @@ public sealed partial class LeaderPaneViewModel : ViewModelBase
 
     public Task SendAsync(CancellationToken cancellationToken = default) =>
         SendAsync([], cancellationToken);
+
+    [RelayCommand]
+    private async Task StartProjectIntakeAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsBusy || HasConversation || SelectedModel is null)
+            return;
+
+        DraftMessage = ProjectIntakePrompt;
+        await SendAsync(cancellationToken);
+    }
 
     public async Task SendAsync(
         IReadOnlyList<AgentInputPart> inputs,
